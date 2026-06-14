@@ -1,0 +1,5 @@
+-keep class com.fourunet.pro.Models { *; }
+-keep class com.fourunet.pro.Models$* { *; }
+-keep class com.fourunet.pro.SmsReceiver { *; }
+-keep class com.fourunet.pro.SmsStatusReceiver { *; }
+-keepattributes *Annotation*

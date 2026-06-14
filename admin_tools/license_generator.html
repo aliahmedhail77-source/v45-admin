@@ -1,0 +1,152 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>مولّد رموز ONLINE V30 - أوفلاين آمن</title>
+<style>
+body{margin:0;background:#120f1d;color:#f7f4ff;font-family:Tahoma,Arial,sans-serif;line-height:1.75}
+.wrap{max-width:1100px;margin:0 auto;padding:22px}
+.card{background:#211b35;border:1px solid #4d3e75;border-radius:18px;padding:20px;box-shadow:0 10px 30px rgba(0,0,0,.25);margin-bottom:16px}
+h1{margin:0 0 8px;font-size:26px;color:#fff} h2{margin:0 0 10px;font-size:20px;color:#fff}
+.note,.small{color:#cfc7e8;font-size:14px} .warn{background:#3a1f26;border:1px solid #8d4658;border-radius:14px;padding:12px;color:#ffe3e8;margin-top:12px}
+.ok{background:#173527;border:1px solid #46b97a;border-radius:14px;padding:12px;color:#d9ffea;margin-top:12px}
+label{display:block;margin-top:12px;margin-bottom:6px;font-weight:bold}
+input,textarea,select{box-sizing:border-box;width:100%;border:1px solid #745aa8;border-radius:14px;background:#151222;color:#fff;padding:13px;font-size:16px}
+textarea{min-height:120px;resize:vertical;direction:ltr;text-align:left}
+input{direction:ltr;text-align:left}
+button{border:0;border-radius:14px;background:#b994ff;color:#201a33;padding:13px;font-size:16px;font-weight:bold;cursor:pointer}
+button.secondary{background:#2e2942;color:#fff;border:1px solid #4d3e75}
+button.danger{background:#ff6f8e;color:#250b12}
+.grid{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-top:12px}
+.grid2{display:grid;grid-template-columns:repeat(2,1fr);gap:10px;margin-top:12px}
+.out{margin-top:18px;background:#0d0b14;border:1px dashed #b994ff;border-radius:14px;padding:16px;direction:ltr;text-align:left;font-size:13px;font-weight:bold;color:#fff;word-break:break-all;white-space:pre-wrap}
+.pill{display:inline-block;background:#2e2942;border:1px solid #4d3e75;border-radius:999px;padding:4px 10px;margin:4px;color:#fff;font-size:13px}
+table{width:100%;border-collapse:collapse;margin-top:10px;direction:rtl}td,th{border-bottom:1px solid #3b3353;padding:8px;text-align:right;font-size:13px} th{color:#dcccff} .ltr{direction:ltr;text-align:left}
+@media(max-width:780px){.grid,.grid2{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="card">
+    <h1>مولّد رموز ONLINE V30</h1>
+    <div class="note">مولّد أوفلاين خاص بالإدارة فقط. يستخدم توقيع RSA؛ التطبيق يحتوي مفتاح تحقق عام فقط، وهذا الملف يحتوي مفتاح التوقيع الخاص. لا ترسل هذا الملف لأي عميل.</div>
+    <div><span class="pill">شهر تجريبي 30 يوم</span><span class="pill">سنة 365 يوم</span><span class="pill">مدى الحياة</span><span class="pill">منع تكرار التجربة لنفس الجهاز</span></div>
+    <div class="warn">مهم: احفظ نسخة احتياطية من سجل الأجهزة. بدون سيرفر، السجل المحلي عندك هو الذي يمنع تكرار الشهر التجريبي لنفس الجهاز.</div>
+  </div>
+
+  <div class="card">
+    <h2>1) بيانات طلب التفعيل</h2>
+    <label>الصق نص الطلب كاملًا من واتساب أو الصق كود الطلب فقط</label>
+    <textarea id="activationRequest" placeholder="مثال: كود الطلب: REQ-ABCD-1234-EF56"></textarea>
+    <div class="grid2">
+      <button class="secondary" onclick="parseRequest()">استخراج كود الطلب من النص</button>
+      <button class="secondary" onclick="clearForm()">تنظيف الحقول</button>
+    </div>
+    <label>كود الطلب</label>
+    <input id="requestCode" placeholder="REQ-ABCD-1234-EF56" autocomplete="off">
+    <div class="grid2">
+      <div><label>اسم الزبون / الشبكة اختياري</label><input id="customer" placeholder="اسم الزبون أو الشبكة"></div>
+      <div><label>رقم الزبون اختياري</label><input id="phone" placeholder="777000000"></div>
+    </div>
+    <label>نوع الترخيص</label>
+    <select id="licenseType">
+      <option value="TRIAL30">شهر تجريبي 30 يوم</option>
+      <option value="YEAR365">سنة كاملة 365 يوم</option>
+      <option value="LIFE">مدى الحياة</option>
+    </select>
+    <div class="grid">
+      <button onclick="generateLicense()">توليد رمز التفعيل</button>
+      <button class="secondary" onclick="copyCode()">نسخ الرمز</button>
+      <button class="secondary" onclick="copyShortInfo()">نسخ ملخص للزبون</button>
+    </div>
+    <div id="status" class="small"></div>
+    <div id="output" class="out">لم يتم توليد رمز بعد</div>
+  </div>
+
+  <div class="card">
+    <h2>2) سجل الأجهزة المحلي</h2>
+    <div class="grid2">
+      <button class="secondary" onclick="exportEncryptedRecords()">تصدير سجل مشفّر</button>
+      <button class="secondary" onclick="document.getElementById('importFile').click()">استيراد سجل مشفّر</button>
+    </div>
+    <input id="importFile" type="file" style="display:none" onchange="importEncryptedRecords(event)">
+    <label>بحث في السجل</label>
+    <input id="search" oninput="renderRecords()" placeholder="ابحث بكود الطلب أو الاسم أو الرقم">
+    <div id="recordsTable"></div>
+    <div class="grid2">
+      <button class="secondary" onclick="downloadPlainRecordsForEmergency()">تصدير نسخة JSON غير مشفرة للطوارئ</button>
+      <button class="danger" onclick="clearRecords()">مسح السجل من هذا المتصفح</button>
+    </div>
+    <div class="small">يفضل استخدام التصدير المشفّر وحفظ الملف في مكان آمن. ملف الطوارئ غير مشفّر لا تستخدمه إلا إذا كنت فاهمًا الخطر.</div>
+  </div>
+</div>
+<script>
+const PRIVATE_JWK = {"kty":"RSA","alg":"RS256","key_ops":["sign"],"ext":true,"n":"zKzQlafXbENxDcKYzlixdR7CsXZvN1MI1krljglZX1HbAi2R2fPlXYD7eoIv7N1gMTRDINgFx4kODpZp6jjP5tcE4She-VHbOUT-m_MUYTfPq9DuAeBXPzFF8fXWKV2kSHxGE5N-j2-KMpUhfYGYx2TmQAEo0TgyvB0xOiUh7bRnJuvEFpWDm_ChDBjZJ616TviCsKmO6cB34vgzZLA-dt5_VcLo4N-8cHQzdHzz0_JRBR5hk1FBQsRZSfwiikCCWV01-PM4WcdyUdBnkOD4E9PhkppJfjeAuFtgb6u7f9sxNI3RjuJeqEG470UoB2IhfkCN6OI0ieu2g5KUcuRVfw","e":"AQAB","d":"LZhL6SLYPxJxE28nykQA2EXvekgXc3woalCJ_c_AXJcoEj6jkKmgDWnn2703vuz7-koZsC3fb7ls67v_QUHBsrtwp1Xufl0JWKMxkv0eK6Aav7xN4RYgaX_pBINO360wJUOl-sNvPLXM1ALb0JE3vyePkW-Qr7b0umpIZpsSCVkyOJAiF-lCaoaP7o_TI37JMbQTdNvrx28JcvEBYOQ4-3zmvfQOa39LqZ3gWm0usO5SZ1qAuxS39R8brCevGKsnsKh18vNpg7BbvIm9HQr4QhjTmej3L6xkoxPKvddrGxjRAysLhcdfCkxskWLCj_Eqj8gtlBv03bc_8SCPFUM-MQ","p":"85fDLEtCplJ_tfVYt-2aQ0VF9rFEuf6yskJdvwJGPHTPBC3DsR8Se630_la-ZOoD6qHU-L5qeOlNZRwNe0imvjJYs2yNqP8CHfKsvuN_EFT_E8DX6PAwv5zJ1FQV_6aUMQeOrEXpd9wtlWfK8goLgDEZ899VsbkNabPLgrLCabE","q":"1xmZRyRVSYiDqe-btNaeZP809aDxzzjOeSZFs_5v-M6tOHTLWhkc3fzMscrbRP5gbFZ86qh-0V183d7YBSzsMzQxQcs1f2DpBeeu_zTxYP0syBcQiXzJyfsYYnpJrWQX5DL-GVaQSrUwA0S3as0Pmukr8Yo4DgogWd5U3rWvTi8","dp":"nR6mpUtmEiHkflligECh4AIuvpBY5B-E47YrAalV5Gjznp5mOzjvkxcBj4wkArNvE0iPNmKcCqFxamZNy9dwtf2DeTfrp7XUh7yf8ACNVNt-LB-XJIjI6M8Y3_vctKmdrIJTZIszrDw4qsXoAXa5NFZ3hvXnMFtMa4GtIwBqpgE","dq":"xTnAlD2ZQeo9J0T_FQowg9SI_6uJ7IJetzDDeq2Sh6UhqQFWL4-VK2oPWfnxoUpIqS2ILjU-ysOYqWsZ0W0GSlDR1Uz5CYmXQAXWLESkClU5iWG0lQvpjhyAmFMeWTDMwz2KRTtc5FNL6cNJFlFdvKGN3FPq39yjGyPD18zpJ5s","qi":"WSwgw0O9iz6io5mQ5U-e5EZKSFiuoBt8MCttiQdGJEe3kmQKv80jxtG9gAIAuIpF4WEzsN8E4FJ6M-GRlbhlwFFPMs2yxGlhEL-XNcELcLTEnwDh9NQc_02GhXbJWAfqE8qGcONpb44dnc5mQQyXRXIGE0yaVEI_SCY6bMg3g6o"};
+const APP_PACKAGE = 'com.fourunet.onlineadmin.stable';
+const APP_NAME = 'ONLINE_ADMIN';
+const STORAGE_KEY = 'ONLINE_V30_LICENSE_RECORDS';
+let lastCode = '';
+let lastPayload = null;
+function normalizeRequest(v){ return String(v||'').trim().toUpperCase().replace(/[^A-Z0-9]/g,''); }
+function prettyReq(v){ let n=normalizeRequest(v); if(n.startsWith('REQ')) n=n.substring(3); while(n.length<12)n+='0'; return 'REQ-'+n.substring(0,4)+'-'+n.substring(4,8)+'-'+n.substring(8,12); }
+function extractReq(text){ const s=String(text||'').toUpperCase(); const m=s.match(/REQ[-\s:]*([A-Z0-9]{4})[-\s]*([A-Z0-9]{4})[-\s]*([A-Z0-9]{4})/); if(m) return 'REQ-'+m[1]+'-'+m[2]+'-'+m[3]; const m2=s.match(/REQ[A-Z0-9]{12}/); if(m2) return prettyReq(m2[0]); return ''; }
+function parseRequest(){ const req=extractReq(document.getElementById('activationRequest').value); if(req){ document.getElementById('requestCode').value=req; setStatus('تم استخراج كود الطلب: '+req, true); } else setStatus('لم أجد كود طلب داخل النص. الصقه يدويًا.', false); }
+function clearForm(){ document.getElementById('activationRequest').value=''; document.getElementById('requestCode').value=''; document.getElementById('customer').value=''; document.getElementById('phone').value=''; document.getElementById('output').textContent='لم يتم توليد رمز بعد'; lastCode=''; lastPayload=null; }
+function getRecords(){ try{ return JSON.parse(localStorage.getItem(STORAGE_KEY)||'[]'); }catch(e){ return []; } }
+function saveRecords(list){ localStorage.setItem(STORAGE_KEY, JSON.stringify(list||[])); renderRecords(); }
+function alreadyTrial(req){ const n=normalizeRequest(req); return getRecords().some(r => normalizeRequest(r.request || r.requestCode)===n && r.type==='TRIAL30'); }
+function b64urlBytes(bytes){ let bin=''; bytes.forEach(b=>bin+=String.fromCharCode(b)); return btoa(bin).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,''); }
+function utf8Bytes(str){ return new TextEncoder().encode(str); }
+async function importPrivateKey(){ return await crypto.subtle.importKey('jwk', PRIVATE_JWK, {name:'RSASSA-PKCS1-v1_5', hash:'SHA-256'}, false, ['sign']); }
+function makeLicenseId(){ return 'LIC-'+Date.now().toString(36).toUpperCase()+'-'+Math.random().toString(36).substring(2,8).toUpperCase(); }
+function daysToMs(days){ return days*24*60*60*1000; }
+function dateStr(ms){ if(!ms) return 'مدى الحياة'; const d=new Date(ms); return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); }
+async function generateLicense(){
+  try{
+    if(!crypto.subtle) throw new Error('افتح المولد بمتصفح حديث مثل Chrome.');
+    let req=document.getElementById('requestCode').value.trim(); if(!req){ parseRequest(); req=document.getElementById('requestCode').value.trim(); }
+    if(!req) throw new Error('أدخل كود الطلب أولًا.');
+    req=prettyReq(req);
+    const type=document.getElementById('licenseType').value;
+    if(type==='TRIAL30' && alreadyTrial(req)) throw new Error('هذا الجهاز حصل على شهر تجريبي سابقًا. لا تصدر له شهرًا جديدًا؛ اختر سنة أو مدى الحياة.');
+    const issuedMs=Date.now();
+    const expiresMs= type==='LIFE' ? 0 : issuedMs + (type==='TRIAL30' ? daysToMs(30) : daysToMs(365));
+    const payload={v:2, app:APP_NAME, pkg:APP_PACKAGE, request:req, type, issuedMs, expiresMs, licenseId:makeLicenseId(), customer:document.getElementById('customer').value.trim(), phone:document.getElementById('phone').value.trim()};
+    const payloadText=JSON.stringify(payload);
+    const key=await importPrivateKey();
+    const sig=new Uint8Array(await crypto.subtle.sign('RSASSA-PKCS1-v1_5', key, utf8Bytes(payloadText)));
+    const code='ONL2.'+b64urlBytes(utf8Bytes(payloadText))+'.'+b64urlBytes(sig);
+    lastCode=code; lastPayload=payload;
+    document.getElementById('output').textContent=code;
+    const records=getRecords();
+    records.unshift({...payload, createdAt:new Date().toISOString(), codePreview: code.substring(0,32)+'...'+code.substring(code.length-16)});
+    saveRecords(records);
+    setStatus('تم توليد الترخيص. النوع: '+labelType(type)+'، الانتهاء: '+dateStr(expiresMs), true);
+  }catch(e){ setStatus(e.message||String(e), false); }
+}
+function labelType(t){ return t==='TRIAL30'?'شهر تجريبي':(t==='YEAR365'?'سنة كاملة':'مدى الحياة'); }
+function setStatus(msg, ok){ const el=document.getElementById('status'); el.className= ok?'ok':'warn'; el.textContent=msg; }
+function copyCode(){ if(!lastCode) return alert('لا يوجد رمز'); navigator.clipboard.writeText(lastCode); alert('تم نسخ رمز التفعيل'); }
+function copyShortInfo(){
+  if(!lastCode||!lastPayload) return alert('لا يوجد رمز');
+  const msg = 'رمز تفعيل ONLINE:\n'
+    + lastCode + '\n\n'
+    + 'النوع: ' + labelType(lastPayload.type) + '\n'
+    + 'ينتهي: ' + dateStr(lastPayload.expiresMs) + '\n'
+    + 'الصق الرمز كاملًا في صفحة التفعيل.';
+  navigator.clipboard.writeText(msg);
+  alert('تم نسخ الملخص');
+}
+function renderRecords(){ const list=getRecords(); const q=String(document.getElementById('search')?.value||'').toLowerCase(); const filtered=list.filter(r=>!q || JSON.stringify(r).toLowerCase().includes(q)); let html='<table><tr><th>النوع</th><th>كود الطلب</th><th>الزبون</th><th>الهاتف</th><th>الانتهاء</th><th>رقم الترخيص</th></tr>'; for(const r of filtered.slice(0,200)) html+='<tr><td>'+labelType(r.type)+'</td><td class="ltr">'+r.request+'</td><td>'+(r.customer||'-')+'</td><td class="ltr">'+(r.phone||'-')+'</td><td>'+dateStr(r.expiresMs)+'</td><td class="ltr">'+(r.licenseId||'-')+'</td></tr>'; html+='</table><div class="small">عدد السجلات: '+list.length+'</div>'; const el=document.getElementById('recordsTable'); if(el) el.innerHTML=html; }
+async function deriveKey(password, salt){ const enc=new TextEncoder(); const base=await crypto.subtle.importKey('raw', enc.encode(password), 'PBKDF2', false, ['deriveKey']); return await crypto.subtle.deriveKey({name:'PBKDF2', salt, iterations:150000, hash:'SHA-256'}, base, {name:'AES-GCM', length:256}, false, ['encrypt','decrypt']); }
+async function exportEncryptedRecords(){ try{ const pass=prompt('اكتب كلمة سر لتشفير سجل الأجهزة:'); if(!pass) return; const salt=crypto.getRandomValues(new Uint8Array(16)); const iv=crypto.getRandomValues(new Uint8Array(12)); const key=await deriveKey(pass,salt); const plain=utf8Bytes(JSON.stringify({app:'ONLINE_ADMIN', version:'V30', exportedAt:new Date().toISOString(), records:getRecords()})); const cipher=new Uint8Array(await crypto.subtle.encrypt({name:'AES-GCM', iv}, key, plain)); download('ONLINE_LICENSE_RECORDS_V30.enc', JSON.stringify({alg:'AES-GCM-PBKDF2-SHA256', salt:b64urlBytes(salt), iv:b64urlBytes(iv), data:b64urlBytes(cipher)})); }catch(e){ alert('فشل التصدير: '+e.message); } }
+function b64urlToBytes(s){ s=s.replace(/-/g,'+').replace(/_/g,'/'); while(s.length%4)s+='='; const bin=atob(s); return Uint8Array.from(bin, c=>c.charCodeAt(0)); }
+async function importEncryptedRecords(ev){ try{ const f=ev.target.files[0]; if(!f) return; const text=await f.text(); const obj=JSON.parse(text); const pass=prompt('كلمة سر فك تشفير السجل:'); if(!pass) return; const key=await deriveKey(pass,b64urlToBytes(obj.salt)); const plain=await crypto.subtle.decrypt({name:'AES-GCM', iv:b64urlToBytes(obj.iv)}, key, b64urlToBytes(obj.data)); const data=JSON.parse(new TextDecoder().decode(plain)); if(!Array.isArray(data.records)) throw new Error('ملف غير صالح'); saveRecords(data.records); alert('تم استيراد السجل: '+data.records.length+' سجل'); }catch(e){ alert('فشل الاستيراد: '+e.message); } }
+function download(filename, content){ const blob=new Blob([content],{type:'application/octet-stream'}); const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download=filename; a.click(); setTimeout(()=>URL.revokeObjectURL(a.href),1000); }
+function downloadPlainRecordsForEmergency(){ if(!confirm('هذا الملف غير مشفر. استخدمه للطوارئ فقط. هل تريد المتابعة؟')) return; download('ONLINE_LICENSE_RECORDS_V30_PLAIN.json', JSON.stringify(getRecords(), null, 2)); }
+function clearRecords(){ if(confirm('سيتم مسح سجل الأجهزة من هذا المتصفح فقط. هل أنت متأكد؟')) saveRecords([]); }
+renderRecords();
+</script>
+</body>
+</html>

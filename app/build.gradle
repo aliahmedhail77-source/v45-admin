@@ -1,0 +1,34 @@
+plugins {
+    id 'com.android.application'
+}
+
+android {
+    namespace 'com.fourunet.pro'
+    compileSdk 35
+
+    defaultConfig {
+        applicationId 'com.fourunet.onlineadmin.stable'
+        minSdk 23
+        targetSdk 35
+        versionCode 49
+        versionName '45.0-whatsapp-business-default'
+    }
+
+    signingConfigs {
+        release {
+            storeFile file('../keystore/online_stable_release.jks')
+            storePassword 'ONLINE_STABLE_2026'
+            keyAlias 'online_release'
+            keyPassword 'ONLINE_STABLE_2026'
+        }
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled true
+            shrinkResources false
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+            signingConfig signingConfigs.release
+        }
+    }
+}
