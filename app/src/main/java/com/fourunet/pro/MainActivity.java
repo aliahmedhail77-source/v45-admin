@@ -2197,10 +2197,8 @@ public class MainActivity extends Activity {
         LinearLayout security = cardBox();
         security.addView(tv("الأمان والدخول", 17, text, true));
         security.addView(small("الحالة: " + (AppStore.isAppLockRequired(this) ? "مفعّل" : "غير مفعّل")
-                + "
-طريقة الدخول: " + AppStore.appLockMethodLabel(AppStore.getAppLockMethod(this))
-                + "
-PIN احتياطي: " + (AppStore.hasAppPin(this) ? "موجود" : "غير محدد")));
+                + "\nطريقة الدخول: " + AppStore.appLockMethodLabel(AppStore.getAppLockMethod(this))
+                + "\nPIN احتياطي: " + (AppStore.hasAppPin(this) ? "موجود" : "غير محدد")));
         security.addView(action("فتح إعدادات الأمان", purple, Color.WHITE, v -> showSecuritySettings()));
         content.addView(security);
 
