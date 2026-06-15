@@ -1744,12 +1744,45 @@ class AppStore {
         return keys.trim().isEmpty();
     }
 
-    static boolean hasPendingCriticalLogs(Context c) {
+    static boolean isPendingCriticalLog(OperationLog log) {
+        if (log == null) return false;
+        String st = log.status == null ? "" : log.status;
+        if (st.contains("تمت المراجعة") || st.contains("محذوف") || st.contains("تم إرسال") || st.contains("تم تسليم") || st.equals("تم الإرسال")) return false;
+        return st.contains("معلق")
+                || st.contains("يحتاج إضافة")
+                || st.contains("دفع صريح")
+                || st.contains("فشل")
+                || st.contains("لا يوجد رقم")
+                || st.contains("مرفوض")
+                || st.contains("تجاوز السقف")
+                || st.contains("نفدت الكمية");
+    }
+
+    static OperationLog firstPendingCriticalLog(Context c) {
         for (OperationLog log : loadLogs(c)) {
-            String st = log.status == null ? "" : log.status;
-            if (st.contains("معلق") || st.contains("يحتاج إضافة") || st.contains("دفع صريح")) return true;
+            if (isPendingCriticalLog(log)) return log;
         }
-        return false;
+        return null;
+    }
+
+    static boolean hasPendingCriticalLogs(Context c) {
+        return firstPendingCriticalLog(c) != null;
+    }
+
+    static void markLogReviewed(Context c, String id) {
+        ArrayList<OperationLog> logs = loadLogs(c);
+        boolean changed = false;
+        for (OperationLog log : logs) {
+            if (log.id.equals(id)) {
+                log.status = "تمت المراجعة";
+                String base = log.message == null ? "" : log.message;
+                String stamp = "تمت مراجعة العملية يدويًا بتاريخ: " + now();
+                if (!base.contains(stamp)) log.message = base + (base.trim().isEmpty() ? "" : "\n") + stamp;
+                changed = true;
+                break;
+            }
+        }
+        if (changed) saveLogs(c, logs);
     }
 
     private static String sha256(String value) {

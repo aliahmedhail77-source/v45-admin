@@ -67,7 +67,7 @@ class SmsProcessor {
                 AppStore.updateLogStatus(item.context, item.rawLogId, "تمت قراءة الطابور", "انتهت قراءة الرسالة الموثوقة. راجع سجل العملية الناتجة للتنفيذ أو سبب التعليق.\nالنص: " + item.body);
             } catch (Exception ex) {
                 AppStore.updateLogStatus(item.context, item.rawLogId, "فشل الطابور", "فشل غير متوقع أثناء معالجة SMS موثوق. السبب: " + ex.getMessage() + "\nالنص: " + item.body);
-                NotifyHelper.notifyPendingAction(item.context, 0, "", "فشل في طابور SMS الموثوق");
+                NotifyHelper.notifyPendingAction(item.context, item.rawLogId, 0, "", "فشل في طابور SMS الموثوق");
             }
         }
     }
@@ -167,18 +167,18 @@ class SmsProcessor {
             String note = name.isEmpty()
                     ? "تم التعرف على عملية إيداع صحيحة لكن لا يوجد رقم زبون صحيح مكون من 9 أرقام ويبدأ بـ 7. راجع الرسالة ثم احذفها أو أضف الاسم إلى المحافظ الموثوقة إذا كنت تعرف رقم العميل."
                     : "تم التعرف على عملية إيداع صحيحة باسم: " + name + "، لكن لا يوجد رقم زبون صحيح مكون من 9 أرقام ويبدأ بـ 7. من السجل يمكنك الضغط على زر إضافة الاسم للمحافظ الموثوقة أو حذف الإشعار.";
-            addLog(context, payment.provider, sender, name, "", payment.amount, "معلق: يحتاج إضافة اسم", note, "");
+            String pendingLogId = addLog(context, payment.provider, sender, name, "", payment.amount, "معلق: يحتاج إضافة اسم", note, "");
             NotifyHelper.notifySendFailed(context, payment.amount, "", "لا يوجد رقم استلام صحيح");
-            NotifyHelper.notifyPendingAction(context, payment.amount, "", "عملية إيداع بلا رقم صحيح");
+            NotifyHelper.notifyPendingAction(context, pendingLogId, payment.amount, "", "عملية إيداع بلا رقم صحيح");
             return;
         }
 
         CardItem card = AppStore.takeAvailableCard(context, payment.amount, receiver);
         if (card == null) {
-            addLog(context, payment.provider, sender, payment.customerName, receiver, payment.amount,
+            String pendingLogId = addLog(context, payment.provider, sender, payment.customerName, receiver, payment.amount,
                     "معلق: نفدت الكمية", "تم تسجيل عملية سداد صحيحة لكن لا توجد كروت متاحة لهذه الفئة. لم يتم سحب كرت ولم يتم إرسال رسالة كرت.", "");
             NotifyHelper.notifySendFailed(context, payment.amount, "", "نفدت فئة " + payment.amount);
-            NotifyHelper.notifyPendingAction(context, payment.amount, "", "نفدت فئة " + payment.amount);
+            NotifyHelper.notifyPendingAction(context, pendingLogId, payment.amount, "", "نفدت فئة " + payment.amount);
             AppStore.performAutoBackupIfDue(context, "عملية تلقائية - نفاد فئة");
             return;
         }
@@ -232,10 +232,10 @@ class SmsProcessor {
 
         CardItem card = AppStore.takeAvailableCard(context, req.amount, customerPhone);
         if (card == null) {
-            addLog(context, provider, sender, agentName, customerPhone, req.amount, "معلق: نفدت الكمية",
+            String pendingLogId = addLog(context, provider, sender, agentName, customerPhone, req.amount, "معلق: نفدت الكمية",
                     "طلب رقم موثوق صحيح لكن لا توجد كروت متاحة لهذه الفئة. لم يتم خصم السقف وسيبقى الطلب للمراجعة.", "");
             NotifyHelper.notifySendFailed(context, req.amount, "", "نفدت فئة " + req.amount);
-            NotifyHelper.notifyPendingAction(context, req.amount, "", "طلب رقم موثوق معلّق بسبب نفاد فئة " + req.amount);
+            NotifyHelper.notifyPendingAction(context, pendingLogId, req.amount, "", "طلب رقم موثوق معلّق بسبب نفاد فئة " + req.amount);
             return;
         }
 

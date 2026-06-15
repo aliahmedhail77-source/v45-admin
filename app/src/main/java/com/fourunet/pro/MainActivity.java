@@ -77,6 +77,7 @@ public class MainActivity extends Activity {
     String rewardsPanelTab = "overview";
     boolean pendingRewardImport = false;
     int pendingRewardImportAmount = 100;
+    String reviewFocusLogId = "";
 
     final int purple = Color.rgb(109, 75, 179);
     final int purpleLight = Color.rgb(200, 179, 255);
@@ -108,7 +109,30 @@ public class MainActivity extends Activity {
         requestPermissionsIfNeeded();
         buildLayout();
         showHome();
+        handleIncomingReviewIntent(getIntent());
         AppStore.performAutoBackupIfDue(this, "فتح التطبيق");
+    }
+
+    @Override
+    protected void onNewIntent(Intent intent) {
+        super.onNewIntent(intent);
+        setIntent(intent);
+        handleIncomingReviewIntent(intent);
+    }
+
+    private void handleIncomingReviewIntent(Intent intent) {
+        if (intent == null || content == null) return;
+        String id = intent.getStringExtra("open_review_log_id");
+        if (id != null && !id.trim().isEmpty()) {
+            reviewFocusLogId = id.trim();
+            showLogs();
+            return;
+        }
+        if (intent.getBooleanExtra("open_pending_reviews", false)) {
+            OperationLog first = AppStore.firstPendingCriticalLog(this);
+            reviewFocusLogId = first == null ? "" : first.id;
+            showLogs();
+        }
     }
 
     private void showActivationScreen() {
@@ -542,6 +566,18 @@ public class MainActivity extends Activity {
         box.setOrientation(LinearLayout.VERTICAL);
         box.setPadding(dp(14), dp(14), dp(14), dp(14));
         box.setBackground(round(card, dp(18), Color.argb(35, 255,255,255), dp(1)));
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, -2);
+        lp.setMargins(0, 0, 0, dp(12));
+        box.setLayoutParams(lp);
+        return box;
+    }
+
+    private LinearLayout reviewAlertBox(boolean focused) {
+        LinearLayout box = new LinearLayout(this);
+        box.setOrientation(LinearLayout.VERTICAL);
+        box.setPadding(dp(14), dp(14), dp(14), dp(14));
+        int bgColor = focused ? Color.rgb(70, 18, 30) : Color.rgb(48, 24, 34);
+        box.setBackground(round(bgColor, dp(18), Color.rgb(255, 64, 80), focused ? dp(3) : dp(2)));
         LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, -2);
         lp.setMargins(0, 0, 0, dp(12));
         box.setLayoutParams(lp);
@@ -1104,8 +1140,8 @@ public class MainActivity extends Activity {
         return b;
     }
 
-    private boolean isPendingAlertStatus(String status) {
-        return status != null && status.contains("معلق");
+    private boolean isPendingAlertStatus(OperationLog log) {
+        return AppStore.isPendingCriticalLog(log);
     }
 
     private void showLogs() {
@@ -1130,17 +1166,28 @@ public class MainActivity extends Activity {
             return;
         }
 
+        if (reviewFocusLogId != null && !reviewFocusLogId.trim().isEmpty()) {
+            ArrayList<OperationLog> ordered = new ArrayList<>();
+            for (OperationLog log : logs) if (reviewFocusLogId.equals(log.id)) ordered.add(log);
+            for (OperationLog log : logs) if (!reviewFocusLogId.equals(log.id)) ordered.add(log);
+            logs = ordered;
+        }
+
         for (OperationLog log : logs) {
-            LinearLayout box = cardBox();
+            boolean focused = reviewFocusLogId != null && reviewFocusLogId.equals(log.id);
+            boolean pendingAlert = isPendingAlertStatus(log);
+            LinearLayout box = focused || pendingAlert ? reviewAlertBox(focused) : cardBox();
             String statusText = log.status == null ? "" : log.status;
-            boolean pendingAlert = isPendingAlertStatus(statusText);
-            int color = statusText.contains("تم") ? green : (pendingAlert ? Color.rgb(255, 64, 129) : red);
+            int color = statusText.contains("تمت المراجعة") ? green : (pendingAlert ? Color.rgb(255, 64, 80) : (statusText.contains("تم") ? green : red));
             box.addView(badge(statusText.isEmpty() ? "غير محدد" : statusText, color));
-            if (pendingAlert) box.addView(badge("🚨 يحتاج مراجعة / طابور معلّق", Color.rgb(255, 64, 129)));
+            if (pendingAlert) box.addView(badge(focused ? "🚨 هذه العملية من الإشعار وتحتاج مراجعة" : "🚨 يحتاج مراجعة", Color.rgb(255, 64, 80)));
             box.addView(tv(log.amount + " ريال", 18, text, true));
             String phoneText = log.customerPhone == null || log.customerPhone.isEmpty() ? "-" : log.customerPhone;
             String nameText = log.customerName == null || log.customerName.isEmpty() ? "-" : log.customerName;
             box.addView(small("الدفع: " + log.provider + "\nالرقم: " + phoneText + "\nالاسم: " + nameText + "\nالكرت: " + displayCardCode(log.cardCode) + "\nالوقت: " + log.createdAt + "\nملاحظة: " + log.message));
+            if (pendingAlert) {
+                box.addView(action("✅ تمت المراجعة", green, Color.rgb(12, 30, 18), v -> confirmMarkReviewed(log)));
+            }
             if (canAddTrustedNameFromLog(log)) {
                 box.addView(action("➕ إضافة الاسم للمحافظ الموثوقة", gold, Color.rgb(35, 24, 8), v -> showApproveTrustedNameDialog(log)));
             }
@@ -1161,6 +1208,23 @@ public class MainActivity extends Activity {
         }
     }
 
+
+    private void confirmMarkReviewed(OperationLog log) {
+        if (log == null) return;
+        new AlertDialog.Builder(this)
+                .setTitle("تأكيد المراجعة")
+                .setMessage("هل تمت مراجعة هذه العملية؟\n\nبعد التأكيد سيتوقف إشعارها ولن تظهر باللون الأحمر.")
+                .setPositiveButton("نعم، تمت المراجعة", (d, w) -> {
+                    AppStore.markLogReviewed(this, log.id);
+                    NotifyHelper.cancelReviewNotification(this, log.id);
+                    if (!AppStore.hasPendingCriticalLogs(this)) NotifyHelper.cancelPendingReviewAlert(this);
+                    toast("تم إنهاء إشعار هذه العملية");
+                    reviewFocusLogId = "";
+                    showLogs();
+                })
+                .setNegativeButton("إلغاء", null)
+                .show();
+    }
 
     private boolean canAddTrustedNameFromLog(OperationLog log) {
         if (log == null) return false;
@@ -1249,7 +1313,7 @@ public class MainActivity extends Activity {
         CardItem cardItem = AppStore.takeAvailableCard(this, log.amount, cleanPhone);
         if (cardItem == null) {
             AppStore.updateLogDetails(this, log.id, fullName, cleanPhone, "معلق: نفدت الكمية", "تمت إضافة الاسم إلى المحافظ الموثوقة، لكن لا توجد كروت متاحة لفئة " + log.amount + " ريال. لم يتم إرسال رسالة كرت.", "");
-            NotifyHelper.notifyPendingAction(this, log.amount, "", "نفدت فئة " + log.amount);
+            NotifyHelper.notifyPendingAction(this, log.id, log.amount, "", "نفدت فئة " + log.amount);
             toast("تم حفظ الاسم، لكن الكمية نافدة");
             dialog.dismiss();
             showLogs();
@@ -4067,11 +4131,7 @@ public class MainActivity extends Activity {
                     + "\nالمكافآت: " + (a.rewardsEnabled ? "مفعلة لهذا الرقم" : "معطلة لهذا الرقم")));
             LinearLayout row1 = new LinearLayout(this); row1.setOrientation(LinearLayout.HORIZONTAL);
             row1.addView(action("تعديل", purple, Color.WHITE, v -> showTrustedCreditAgentDialog(a)), new LinearLayout.LayoutParams(0, -2, 1));
-            row1.addView(action("تصفير السقف", Color.rgb(51, 90, 64), Color.WHITE, v -> {
-                AppStore.resetTrustedCreditAgentUsage(this, a.id);
-                toast("تم تصفير المستخدم لهذا الرقم");
-                showTrustedCreditAgents();
-            }), new LinearLayout.LayoutParams(0, -2, 1));
+            row1.addView(action("تصفير السقف", Color.rgb(51, 90, 64), Color.WHITE, v -> confirmResetTrustedCreditAgent(a)), new LinearLayout.LayoutParams(0, -2, 1));
             box.addView(row1);
             box.addView(action("حذف الرقم", Color.rgb(82,30,42), Color.WHITE, v -> new AlertDialog.Builder(this)
                     .setTitle("حذف رقم موثوق")
@@ -4084,6 +4144,26 @@ public class MainActivity extends Activity {
         LinearLayout back = cardBox();
         back.addView(action("رجوع للإعدادات", card2, text, v -> showSettings()));
         content.addView(back);
+    }
+
+    private void confirmResetTrustedCreditAgent(TrustedCreditAgent a) {
+        if (a == null) return;
+        String msg = "هل تريد تصفير المستخدم من سقف نقطة البيع؟\n\n"
+                + "الاسم: " + a.name + "\n"
+                + "الرقم: " + a.senderPhone + "\n"
+                + "المستخدم الحالي: " + a.usedAmount + " ريال\n"
+                + "المتبقي الحالي: " + AppStore.remainingTrustedCredit(a) + " ريال\n\n"
+                + "اختر نعم للتصفير أو لا للإلغاء.";
+        new AlertDialog.Builder(this)
+                .setTitle("تأكيد تصفير السقف")
+                .setMessage(msg)
+                .setPositiveButton("نعم، صفّر", (d, w) -> {
+                    AppStore.resetTrustedCreditAgentUsage(this, a.id);
+                    toast("تم تصفير المستخدم لهذا الرقم");
+                    showTrustedCreditAgents();
+                })
+                .setNegativeButton("لا", null)
+                .show();
     }
 
     private void showTrustedCreditAgentDialog(TrustedCreditAgent old) {
