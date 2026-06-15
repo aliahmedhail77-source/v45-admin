@@ -1486,26 +1486,26 @@ public class MainActivity extends Activity {
     }
 
     private void openBackupSaveToDrive() {
-        Intent intent = new Intent(Intent.ACTION_CREATE_DOCUMENT);
-        intent.addCategory(Intent.CATEGORY_OPENABLE);
-        intent.setType("application/json");
-        intent.putExtra(Intent.EXTRA_TITLE, AppStore.buildBackupFileName(this));
-        if (intent.resolveActivity(getPackageManager()) == null) {
-            toast("لا يوجد تطبيق ملفات أو Drive يدعم حفظ النسخة");
-            return;
+        try {
+            Intent intent = new Intent(Intent.ACTION_CREATE_DOCUMENT);
+            intent.addCategory(Intent.CATEGORY_OPENABLE);
+            intent.setType("application/json");
+            intent.putExtra(Intent.EXTRA_TITLE, AppStore.buildBackupFileName(this));
+            startActivityForResult(Intent.createChooser(intent, "اختر Drive أو مكان حفظ النسخة"), REQ_BACKUP_SAVE);
+        } catch (Exception e) {
+            toast("تعذر فتح نافذة حفظ الملفات. ثبّت تطبيق Files أو Google Drive ثم حاول مرة أخرى");
         }
-        startActivityForResult(Intent.createChooser(intent, "اختر Drive أو مكان حفظ النسخة"), REQ_BACKUP_SAVE);
     }
 
     private void openBackupRestoreFromDrive() {
-        Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT);
-        intent.addCategory(Intent.CATEGORY_OPENABLE);
-        intent.setType("*/*");
-        if (intent.resolveActivity(getPackageManager()) == null) {
-            toast("لا يوجد تطبيق ملفات أو Drive يدعم اختيار النسخة");
-            return;
+        try {
+            Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT);
+            intent.addCategory(Intent.CATEGORY_OPENABLE);
+            intent.setType("application/json");
+            startActivityForResult(Intent.createChooser(intent, "اختر ملف النسخة من Drive أو الملفات"), REQ_BACKUP_RESTORE);
+        } catch (Exception e) {
+            toast("تعذر فتح نافذة اختيار الملفات. ثبّت تطبيق Files أو Google Drive ثم حاول مرة أخرى");
         }
-        startActivityForResult(Intent.createChooser(intent, "اختر ملف النسخة من Drive أو الملفات"), REQ_BACKUP_RESTORE);
     }
 
     private void showLocalBackupsForRestore() {
