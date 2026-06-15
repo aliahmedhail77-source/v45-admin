@@ -6,6 +6,7 @@ import android.app.AlertDialog;
 import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.database.Cursor;
+import android.hardware.biometrics.BiometricPrompt;
 import android.graphics.Canvas;
 import android.graphics.Color;
 import android.graphics.Paint;
@@ -15,6 +16,7 @@ import android.graphics.drawable.GradientDrawable;
 import android.graphics.pdf.PdfDocument;
 import android.net.Uri;
 import android.os.Build;
+import android.os.CancellationSignal;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
@@ -78,6 +80,7 @@ public class MainActivity extends Activity {
     boolean pendingRewardImport = false;
     int pendingRewardImportAmount = 100;
     String reviewFocusLogId = "";
+    boolean appUnlocked = false;
 
     final int purple = Color.rgb(109, 75, 179);
     final int purpleLight = Color.rgb(200, 179, 255);
@@ -106,12 +109,162 @@ public class MainActivity extends Activity {
             showActivationScreen();
             return;
         }
+        if (AppStore.isAppLockRequired(this)) {
+            showAppLockScreen();
+            return;
+        }
+        openMainAfterSecurity();
+    }
+
+    private void openMainAfterSecurity() {
+        appUnlocked = true;
         requestPermissionsIfNeeded();
         buildLayout();
         showHome();
         handleIncomingReviewIntent(getIntent());
         AppStore.performAutoBackupIfDue(this, "فتح التطبيق");
     }
+
+    private void showAppLockScreen() {
+        LinearLayout page = new LinearLayout(this);
+        page.setOrientation(LinearLayout.VERTICAL);
+        page.setBackgroundColor(bg);
+        page.setPadding(dp(22), dp(40), dp(22), dp(28));
+        page.setGravity(Gravity.CENTER_HORIZONTAL);
+        setContentView(page);
+
+        TextView lockIcon = tv("🔐", 72, purpleLight, false);
+        lockIcon.setGravity(Gravity.CENTER);
+        page.addView(lockIcon, new LinearLayout.LayoutParams(-1, -2));
+
+        TextView title = tv("حماية الدخول", 27, text, true);
+        title.setGravity(Gravity.CENTER);
+        title.setPadding(0, dp(16), 0, dp(8));
+        page.addView(title, new LinearLayout.LayoutParams(-1, -2));
+
+        TextView note = small("اختر طريقة الدخول التي قمت بتفعيلها من إعدادات الأمان. إذا كانت البصمة غير متاحة استخدم رقم PIN الاحتياطي.");
+        note.setGravity(Gravity.CENTER);
+        page.addView(note, new LinearLayout.LayoutParams(-1, -2));
+
+        LinearLayout box = cardBox();
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, -2);
+        lp.setMargins(0, dp(24), 0, 0);
+        box.setLayoutParams(lp);
+        String method = AppStore.getAppLockMethod(this);
+        box.addView(tv("طريقة الدخول الحالية", 17, text, true));
+        box.addView(small(AppStore.appLockMethodLabel(method)));
+        box.addView(separator());
+
+        boolean canUsePin = AppStore.hasAppPin(this);
+        boolean wantsFingerprint = AppStore.LOCK_METHOD_FINGERPRINT.equals(method) || AppStore.LOCK_METHOD_FINGERPRINT_PIN.equals(method);
+        boolean wantsPin = AppStore.LOCK_METHOD_PIN.equals(method) || AppStore.LOCK_METHOD_FINGERPRINT_PIN.equals(method);
+
+        if (wantsFingerprint) {
+            box.addView(action("فتح بالبصمة", purple, Color.WHITE, v -> startBiometricUnlock(() -> openMainAfterSecurity(), canUsePin)));
+        }
+        if (wantsPin || canUsePin) {
+            box.addView(action("إدخال PIN", card2, text, v -> showPinUnlockDialog(() -> openMainAfterSecurity(), false)));
+        }
+        box.addView(action("خروج", Color.rgb(82,30,42), Color.WHITE, v -> finish()));
+        page.addView(box);
+
+        if (wantsFingerprint) {
+            new Handler(Looper.getMainLooper()).postDelayed(() -> startBiometricUnlock(() -> openMainAfterSecurity(), canUsePin), 450);
+        }
+    }
+
+    private boolean isBiometricSupportedForPrompt() {
+        if (Build.VERSION.SDK_INT < 28) return false;
+        try {
+            return getPackageManager().hasSystemFeature(PackageManager.FEATURE_FINGERPRINT);
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    private void startBiometricUnlock(Runnable onSuccess, boolean allowPinFallback) {
+        if (!isBiometricSupportedForPrompt()) {
+            if (allowPinFallback && AppStore.hasAppPin(this)) {
+                toast("البصمة غير متاحة على هذا الجهاز، استخدم PIN");
+                showPinUnlockDialog(onSuccess, true);
+            } else {
+                new AlertDialog.Builder(this)
+                        .setTitle("البصمة غير متاحة")
+                        .setMessage("هذا الجهاز لا يدعم البصمة أو لم يتم إعداد بصمة من إعدادات الهاتف. يمكنك تفعيل PIN كطريقة دخول احتياطية من إعدادات الأمان.")
+                        .setPositiveButton("حسنًا", null)
+                        .show();
+            }
+            return;
+        }
+        try {
+            BiometricPrompt.Builder builder = new BiometricPrompt.Builder(this)
+                    .setTitle("تأكيد الهوية")
+                    .setSubtitle("استخدم بصمة الإصبع للدخول إلى التطبيق");
+            if (allowPinFallback && AppStore.hasAppPin(this)) {
+                builder.setNegativeButton("استخدام PIN", getMainExecutor(), (dialog, which) -> showPinUnlockDialog(onSuccess, true));
+            } else {
+                builder.setNegativeButton("إلغاء", getMainExecutor(), (dialog, which) -> { });
+            }
+            BiometricPrompt prompt = builder.build();
+            prompt.authenticate(new CancellationSignal(), getMainExecutor(), new BiometricPrompt.AuthenticationCallback() {
+                @Override public void onAuthenticationSucceeded(BiometricPrompt.AuthenticationResult result) {
+                    super.onAuthenticationSucceeded(result);
+                    toast("تم التحقق بنجاح");
+                    onSuccess.run();
+                }
+                @Override public void onAuthenticationError(int errorCode, CharSequence errString) {
+                    super.onAuthenticationError(errorCode, errString);
+                    if (allowPinFallback && AppStore.hasAppPin(MainActivity.this)) {
+                        toast("يمكنك الدخول باستخدام PIN");
+                    }
+                }
+                @Override public void onAuthenticationFailed() {
+                    super.onAuthenticationFailed();
+                    toast("لم يتم التعرف على البصمة");
+                }
+            });
+        } catch (Exception e) {
+            if (allowPinFallback && AppStore.hasAppPin(this)) {
+                toast("تعذر تشغيل البصمة، استخدم PIN");
+                showPinUnlockDialog(onSuccess, true);
+            } else {
+                toast("تعذر تشغيل البصمة");
+            }
+        }
+    }
+
+    private void showPinUnlockDialog(Runnable onSuccess, boolean allowCancel) {
+        LinearLayout layout = new LinearLayout(this);
+        layout.setOrientation(LinearLayout.VERTICAL);
+        layout.setPadding(dp(8), dp(4), dp(8), dp(4));
+        EditText pin = new EditText(this);
+        pin.setHint("أدخل رقم PIN");
+        pin.setGravity(Gravity.CENTER);
+        pin.setInputType(InputType.TYPE_CLASS_NUMBER | InputType.TYPE_NUMBER_VARIATION_PASSWORD);
+        layout.addView(pin, new LinearLayout.LayoutParams(-1, dp(58)));
+        AlertDialog dlg = new AlertDialog.Builder(this)
+                .setTitle("الدخول برقم PIN")
+                .setView(layout)
+                .setPositiveButton("دخول", null)
+                .setNegativeButton(allowCancel ? "إلغاء" : "خروج", null)
+                .create();
+        dlg.setOnShowListener(d -> {
+            dlg.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(v -> {
+                if (AppStore.verifyAppPin(this, pin.getText().toString())) {
+                    dlg.dismiss();
+                    onSuccess.run();
+                } else {
+                    toast("PIN غير صحيح");
+                }
+            });
+            dlg.getButton(AlertDialog.BUTTON_NEGATIVE).setOnClickListener(v -> {
+                dlg.dismiss();
+                if (!allowCancel) finish();
+            });
+        });
+        dlg.show();
+    }
+
 
     @Override
     protected void onNewIntent(Intent intent) {
@@ -2041,6 +2194,16 @@ public class MainActivity extends Activity {
         backupRestore.addView(action("فتح النسخ والاسترجاع", purple, Color.WHITE, v -> showBackupRestoreDialog()));
         content.addView(backupRestore);
 
+        LinearLayout security = cardBox();
+        security.addView(tv("الأمان والدخول", 17, text, true));
+        security.addView(small("الحالة: " + (AppStore.isAppLockRequired(this) ? "مفعّل" : "غير مفعّل")
+                + "
+طريقة الدخول: " + AppStore.appLockMethodLabel(AppStore.getAppLockMethod(this))
+                + "
+PIN احتياطي: " + (AppStore.hasAppPin(this) ? "موجود" : "غير محدد")));
+        security.addView(action("فتح إعدادات الأمان", purple, Color.WHITE, v -> showSecuritySettings()));
+        content.addView(security);
+
         LinearLayout auto = cardBox();
         Switch sw = new Switch(this);
         sw.setText("تشغيل الإرسال التلقائي");
@@ -2100,6 +2263,124 @@ public class MainActivity extends Activity {
                 .setNegativeButton("إلغاء", null)
                 .show()));
         content.addView(danger);
+    }
+
+
+    private void showSecuritySettings() {
+        setTab("settings");
+        clear();
+        content.addView(title("الأمان والدخول"));
+
+        LinearLayout current = cardBox();
+        current.addView(tv("حماية فتح التطبيق", 18, text, true));
+        current.addView(small("اختر طريقة الدخول التي تناسبك. الأفضل استخدام: بصمة + PIN احتياطي حتى لا يتم قفل التطبيق عليك إذا تعطلت البصمة."));
+        current.addView(separator());
+        current.addView(small("الحالة الحالية: " + (AppStore.isAppLockRequired(this) ? "الحماية مفعلة" : "بدون حماية")
+                + "\nطريقة الدخول: " + AppStore.appLockMethodLabel(AppStore.getAppLockMethod(this))
+                + "\nPIN احتياطي: " + (AppStore.hasAppPin(this) ? "موجود" : "غير محدد")
+                + "\nدعم البصمة على هذا الجهاز: " + (isBiometricSupportedForPrompt() ? "متاح" : "غير متاح أو غير مفعّل")));
+        content.addView(current);
+
+        LinearLayout pinBox = cardBox();
+        pinBox.addView(tv("رقم PIN الاحتياطي", 17, text, true));
+        pinBox.addView(small("استخدم PIN من 4 إلى 8 أرقام. هذا الرقم ضروري كخطة بديلة عند فشل البصمة."));
+        pinBox.addView(action(AppStore.hasAppPin(this) ? "تغيير PIN" : "تعيين PIN", goldDark, goldSoft, v -> showSetPinDialog(() -> showSecuritySettings())));
+        content.addView(pinBox);
+
+        LinearLayout methods = cardBox();
+        methods.addView(tv("اختيار طريقة الدخول", 17, text, true));
+        methods.addView(action("بدون حماية", card2, text, v -> confirmDisableAppLock()));
+        methods.addView(action("PIN فقط", purple, Color.WHITE, v -> configureAppLockMethod(AppStore.LOCK_METHOD_PIN)));
+        methods.addView(action("بصمة فقط", purple, Color.WHITE, v -> configureAppLockMethod(AppStore.LOCK_METHOD_FINGERPRINT)));
+        methods.addView(action("بصمة + PIN احتياطي", Color.rgb(50, 90, 72), Color.WHITE, v -> configureAppLockMethod(AppStore.LOCK_METHOD_FINGERPRINT_PIN)));
+        content.addView(methods);
+
+        LinearLayout test = cardBox();
+        test.addView(tv("اختبار الحماية", 17, text, true));
+        test.addView(small("يمكنك اختبار البصمة أو PIN قبل إغلاق التطبيق."));
+        test.addView(action("اختبار البصمة", card2, text, v -> startBiometricUnlock(() -> toast("اختبار البصمة ناجح"), AppStore.hasAppPin(this))));
+        test.addView(action("اختبار PIN", card2, text, v -> showPinUnlockDialog(() -> toast("اختبار PIN ناجح"), true)));
+        content.addView(test);
+
+        LinearLayout back = cardBox();
+        back.addView(action("رجوع للإعدادات", card2, text, v -> showSettings()));
+        content.addView(back);
+    }
+
+    private void configureAppLockMethod(String method) {
+        boolean needsPin = AppStore.LOCK_METHOD_PIN.equals(method) || AppStore.LOCK_METHOD_FINGERPRINT_PIN.equals(method);
+        boolean needsFingerprint = AppStore.LOCK_METHOD_FINGERPRINT.equals(method) || AppStore.LOCK_METHOD_FINGERPRINT_PIN.equals(method);
+        if (needsFingerprint && !isBiometricSupportedForPrompt()) {
+            new AlertDialog.Builder(this)
+                    .setTitle("البصمة غير متاحة")
+                    .setMessage("هذا الجهاز لا يدعم البصمة أو لم يتم إعداد بصمة من إعدادات الهاتف. يمكنك استخدام PIN فقط، أو إعداد البصمة من إعدادات الجهاز ثم العودة للتطبيق.")
+                    .setPositiveButton("استخدام PIN فقط", (d,w) -> configureAppLockMethod(AppStore.LOCK_METHOD_PIN))
+                    .setNegativeButton("إلغاء", null)
+                    .show();
+            return;
+        }
+        if (needsPin && !AppStore.hasAppPin(this)) {
+            new AlertDialog.Builder(this)
+                    .setTitle("تعيين PIN أولاً")
+                    .setMessage("هذه الطريقة تحتاج رقم PIN احتياطي. قم بتعيينه الآن ثم سيتم تفعيل طريقة الدخول المطلوبة.")
+                    .setPositiveButton("تعيين PIN", (d,w) -> showSetPinDialog(() -> {
+                        AppStore.setAppLockMethod(this, method);
+                        toast("تم تفعيل: " + AppStore.appLockMethodLabel(method));
+                        showSecuritySettings();
+                    }))
+                    .setNegativeButton("إلغاء", null)
+                    .show();
+            return;
+        }
+        AppStore.setAppLockMethod(this, method);
+        toast("تم تفعيل: " + AppStore.appLockMethodLabel(method));
+        showSecuritySettings();
+    }
+
+    private void confirmDisableAppLock() {
+        new AlertDialog.Builder(this)
+                .setTitle("تعطيل حماية الدخول")
+                .setMessage("هل تريد إلغاء حماية الدخول؟ سيتم فتح التطبيق بدون بصمة أو PIN.")
+                .setPositiveButton("نعم، إلغاء الحماية", (d,w) -> {
+                    AppStore.setAppLockMethod(this, AppStore.LOCK_METHOD_NONE);
+                    toast("تم تعطيل حماية الدخول");
+                    showSecuritySettings();
+                })
+                .setNegativeButton("لا", null)
+                .show();
+    }
+
+    private void showSetPinDialog(Runnable afterSave) {
+        LinearLayout layout = new LinearLayout(this);
+        layout.setOrientation(LinearLayout.VERTICAL);
+        layout.setPadding(dp(8), dp(4), dp(8), dp(4));
+        EditText pin = new EditText(this);
+        pin.setHint("PIN من 4 إلى 8 أرقام");
+        pin.setGravity(Gravity.CENTER);
+        pin.setInputType(InputType.TYPE_CLASS_NUMBER | InputType.TYPE_NUMBER_VARIATION_PASSWORD);
+        EditText confirm = new EditText(this);
+        confirm.setHint("تأكيد PIN");
+        confirm.setGravity(Gravity.CENTER);
+        confirm.setInputType(InputType.TYPE_CLASS_NUMBER | InputType.TYPE_NUMBER_VARIATION_PASSWORD);
+        layout.addView(pin, new LinearLayout.LayoutParams(-1, dp(58)));
+        layout.addView(confirm, new LinearLayout.LayoutParams(-1, dp(58)));
+        AlertDialog dlg = new AlertDialog.Builder(this)
+                .setTitle("تعيين PIN")
+                .setView(layout)
+                .setPositiveButton("حفظ", null)
+                .setNegativeButton("إلغاء", null)
+                .create();
+        dlg.setOnShowListener(d -> dlg.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(v -> {
+            String p1 = pin.getText().toString().trim();
+            String p2 = confirm.getText().toString().trim();
+            if (!AppStore.isValidAppPin(p1)) { toast("PIN يجب أن يكون من 4 إلى 8 أرقام"); return; }
+            if (!p1.equals(p2)) { toast("تأكيد PIN غير مطابق"); return; }
+            AppStore.setAppPin(this, p1);
+            dlg.dismiss();
+            toast("تم حفظ PIN");
+            if (afterSave != null) afterSave.run();
+        }));
+        dlg.show();
     }
 
 

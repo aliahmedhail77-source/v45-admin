@@ -35,6 +35,8 @@ class AppStore {
     private static final String KEY_IMPORTED_BATCHES = "imported_batches";
     private static final String KEY_RESTORE_HISTORY = "restore_history";
     private static final String KEY_AUTO_BACKUP_ENABLED = "auto_backup_enabled";
+    private static final String KEY_APP_LOCK_METHOD = "app_lock_method_v47";
+    private static final String KEY_APP_LOCK_PIN_HASH = "app_lock_pin_hash_v47";
     private static final String KEY_AUTO_BACKUP_INTERVAL_HOURS = "auto_backup_interval_hours";
     private static final String KEY_LAST_AUTO_BACKUP_AT = "last_auto_backup_at";
     private static final String KEY_CARD_PRIVACY_ENABLED = "card_privacy_enabled";
@@ -88,6 +90,11 @@ class AppStore {
     private static final int ANNUAL_DAYS = 365;
     private static final long DAY_MS = 24L * 60L * 60L * 1000L;
     private static final long CLOCK_ROLLBACK_TOLERANCE_MS = 10L * 60L * 1000L;
+    static final String LOCK_METHOD_NONE = "none";
+    static final String LOCK_METHOD_FINGERPRINT = "fingerprint";
+    static final String LOCK_METHOD_PIN = "pin";
+    static final String LOCK_METHOD_FINGERPRINT_PIN = "fingerprint_pin";
+
     private static final String DEFAULT_NETWORK_NAME = "فور يو اونلاين";
     private static final String DEFAULT_ADMIN_PHONE = "776901570";
     private static final String OFFLINE_LIFETIME_SECRET = "ONLINE_V14_PRIVATE_LIFETIME_SECRET_776901570";
@@ -139,6 +146,56 @@ class AppStore {
 
     static SharedPreferences prefs(Context c) {
         return c.getSharedPreferences(PREF, Context.MODE_PRIVATE);
+    }
+
+
+    static String getAppLockMethod(Context c) {
+        String method = prefs(c).getString(KEY_APP_LOCK_METHOD, LOCK_METHOD_NONE);
+        if (method == null || method.trim().isEmpty()) return LOCK_METHOD_NONE;
+        if (!LOCK_METHOD_FINGERPRINT.equals(method) && !LOCK_METHOD_PIN.equals(method) && !LOCK_METHOD_FINGERPRINT_PIN.equals(method)) return LOCK_METHOD_NONE;
+        return method;
+    }
+
+    static void setAppLockMethod(Context c, String method) {
+        String clean = method == null ? LOCK_METHOD_NONE : method.trim();
+        if (!LOCK_METHOD_FINGERPRINT.equals(clean) && !LOCK_METHOD_PIN.equals(clean) && !LOCK_METHOD_FINGERPRINT_PIN.equals(clean)) clean = LOCK_METHOD_NONE;
+        prefs(c).edit().putString(KEY_APP_LOCK_METHOD, clean).apply();
+    }
+
+    static boolean isAppLockRequired(Context c) {
+        return !LOCK_METHOD_NONE.equals(getAppLockMethod(c));
+    }
+
+    static String appLockMethodLabel(String method) {
+        if (LOCK_METHOD_FINGERPRINT.equals(method)) return "بصمة الإصبع";
+        if (LOCK_METHOD_PIN.equals(method)) return "PIN / رقم سري";
+        if (LOCK_METHOD_FINGERPRINT_PIN.equals(method)) return "بصمة + PIN احتياطي";
+        return "بدون حماية";
+    }
+
+    static boolean isValidAppPin(String pin) {
+        if (pin == null) return false;
+        String v = pin.trim();
+        return v.matches("\\d{4,8}");
+    }
+
+    static boolean hasAppPin(Context c) {
+        return !prefs(c).getString(KEY_APP_LOCK_PIN_HASH, "").isEmpty();
+    }
+
+    static void setAppPin(Context c, String pin) {
+        if (!isValidAppPin(pin)) return;
+        prefs(c).edit().putString(KEY_APP_LOCK_PIN_HASH, appPinHash(c, pin.trim())).apply();
+    }
+
+    static boolean verifyAppPin(Context c, String pin) {
+        if (!isValidAppPin(pin)) return false;
+        String saved = prefs(c).getString(KEY_APP_LOCK_PIN_HASH, "");
+        return !saved.isEmpty() && saved.equals(appPinHash(c, pin.trim()));
+    }
+
+    private static String appPinHash(Context c, String pin) {
+        return sha256("APP_LOCK_PIN|" + getDeviceId(c) + "|" + (pin == null ? "" : pin.trim()));
     }
 
     static String getNetworkName(Context c) {
