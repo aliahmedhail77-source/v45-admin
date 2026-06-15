@@ -105,15 +105,17 @@ class PosOutlet {
     String requestCode;
     String notes;
     boolean active;
+    boolean rewardsEnabled;
     long createdAt;
 
-    PosOutlet(String id, String name, String phone, String requestCode, String notes, boolean active, long createdAt) {
+    PosOutlet(String id, String name, String phone, String requestCode, String notes, boolean active, boolean rewardsEnabled, long createdAt) {
         this.id = id;
         this.name = name == null ? "" : name.trim();
         this.phone = phone == null ? "" : phone.trim();
         this.requestCode = requestCode == null ? "" : requestCode.trim();
         this.notes = notes == null ? "" : notes.trim();
         this.active = active;
+        this.rewardsEnabled = rewardsEnabled;
         this.createdAt = createdAt;
     }
 }

@@ -37,10 +37,6 @@ class AppStore {
     private static final String KEY_AUTO_BACKUP_ENABLED = "auto_backup_enabled";
     private static final String KEY_AUTO_BACKUP_INTERVAL_HOURS = "auto_backup_interval_hours";
     private static final String KEY_LAST_AUTO_BACKUP_AT = "last_auto_backup_at";
-    private static final String KEY_DRIVE_BACKUP_TREE_URI = "drive_backup_tree_uri";
-    private static final String KEY_DRIVE_AUTO_BACKUP_ENABLED = "drive_auto_backup_enabled";
-    private static final String KEY_LAST_DRIVE_BACKUP_AT = "last_drive_backup_at";
-    private static final String KEY_LAST_DRIVE_BACKUP_MILLIS = "last_drive_backup_millis";
     private static final String KEY_CARD_PRIVACY_ENABLED = "card_privacy_enabled";
     private static final String KEY_TRUSTED = "trusted_contacts";
     private static final String KEY_TRUSTED_CREDIT_AGENTS = "trusted_credit_agents";
@@ -90,7 +86,7 @@ class AppStore {
     private static final int ANNUAL_DAYS = 365;
     private static final long DAY_MS = 24L * 60L * 60L * 1000L;
     private static final long CLOCK_ROLLBACK_TOLERANCE_MS = 10L * 60L * 1000L;
-    private static final String DEFAULT_NETWORK_NAME = "فور يو";
+    private static final String DEFAULT_NETWORK_NAME = "فور يو اونلاين";
     private static final String DEFAULT_ADMIN_PHONE = "776901570";
     private static final String OFFLINE_LIFETIME_SECRET = "ONLINE_V14_PRIVATE_LIFETIME_SECRET_776901570";
     private static final String OFFLINE_TRIAL_SECRET = "ONLINE_V29_PRIVATE_TRIAL_30_DAYS_SECRET_776901570";
@@ -159,9 +155,11 @@ class AppStore {
     static String formatNetworkName(String name) {
         String value = name == null ? "" : name.trim();
         if (value.isEmpty()) value = DEFAULT_NETWORK_NAME;
-        value = value.replace("أونلاين", "").replace("اونلاين", "").replace("انلاين", "");
+        value = value.replace("أونلاين", "اونلاين").replace("انلاين", "اونلاين");
+        value = value.replace("ONLINE", "اونلاين").replace("Online", "اونلاين").replace("online", "اونلاين");
         while (value.contains("  ")) value = value.replace("  ", " ");
-        if (value.trim().isEmpty()) value = DEFAULT_NETWORK_NAME;
+        String lower = value.toLowerCase(Locale.US);
+        if (!lower.contains("اونلاين") && !lower.contains("online")) value = value + " اونلاين";
         return value.trim();
     }
 
@@ -645,13 +643,13 @@ class AppStore {
     }
 
     static int getAutoBackupIntervalHours(Context c) {
-        int hours = prefs(c).getInt(KEY_AUTO_BACKUP_INTERVAL_HOURS, 8);
-        if (hours != 8 && hours != 12 && hours != 24 && hours != 48) hours = 8;
+        int hours = prefs(c).getInt(KEY_AUTO_BACKUP_INTERVAL_HOURS, 12);
+        if (hours != 6 && hours != 12 && hours != 24 && hours != 48) hours = 12;
         return hours;
     }
 
     static void setAutoBackupIntervalHours(Context c, int hours) {
-        if (hours != 8 && hours != 12 && hours != 24 && hours != 48) hours = 8;
+        if (hours != 6 && hours != 12 && hours != 24 && hours != 48) hours = 12;
         prefs(c).edit().putInt(KEY_AUTO_BACKUP_INTERVAL_HOURS, hours).apply();
     }
 
@@ -659,46 +657,10 @@ class AppStore {
         return prefs(c).getString(KEY_LAST_AUTO_BACKUP_AT, "لم يتم بعد");
     }
 
-    static String getDriveBackupTreeUri(Context c) {
-        return prefs(c).getString(KEY_DRIVE_BACKUP_TREE_URI, "");
-    }
-
-    static void setDriveBackupTreeUri(Context c, String uri) {
-        String value = uri == null ? "" : uri.trim();
-        prefs(c).edit()
-                .putString(KEY_DRIVE_BACKUP_TREE_URI, value)
-                .putBoolean(KEY_DRIVE_AUTO_BACKUP_ENABLED, !value.isEmpty())
-                .apply();
-    }
-
-    static boolean isDriveAutoBackupEnabled(Context c) {
-        return prefs(c).getBoolean(KEY_DRIVE_AUTO_BACKUP_ENABLED, false) && !getDriveBackupTreeUri(c).isEmpty();
-    }
-
-    static void setDriveAutoBackupEnabled(Context c, boolean enabled) {
-        prefs(c).edit().putBoolean(KEY_DRIVE_AUTO_BACKUP_ENABLED, enabled).apply();
-    }
-
-    static String getLastDriveBackupAt(Context c) {
-        return prefs(c).getString(KEY_LAST_DRIVE_BACKUP_AT, "لم يتم بعد");
-    }
-
-    static long getLastDriveBackupMillis(Context c) {
-        return prefs(c).getLong(KEY_LAST_DRIVE_BACKUP_MILLIS, 0L);
-    }
-
-    static void markDriveBackupDone(Context c, String reason) {
-        String stamp = now();
-        prefs(c).edit()
-                .putLong(KEY_LAST_DRIVE_BACKUP_MILLIS, System.currentTimeMillis())
-                .putString(KEY_LAST_DRIVE_BACKUP_AT, stamp + " | " + (reason == null ? "Drive" : reason))
-                .apply();
-    }
-
     static File getAutoBackupDir(Context c) {
         File base = c.getExternalFilesDir(null);
         if (base == null) base = c.getFilesDir();
-        File dir = new File(base, "B_auto_backups");
+        File dir = new File(base, "ONLINE_auto_backups");
         if (!dir.exists()) dir.mkdirs();
         return dir;
     }
@@ -1279,6 +1241,7 @@ class AppStore {
                         o.optString("requestCode"),
                         o.optString("notes"),
                         o.optBoolean("active", true),
+                        o.optBoolean("rewardsEnabled", true),
                         o.optLong("createdAt", System.currentTimeMillis())
                 ));
             }
@@ -1297,6 +1260,7 @@ class AppStore {
                 o.put("requestCode", pos.requestCode == null ? "" : pos.requestCode);
                 o.put("notes", pos.notes == null ? "" : pos.notes);
                 o.put("active", pos.active);
+                o.put("rewardsEnabled", pos.rewardsEnabled);
                 o.put("createdAt", pos.createdAt);
                 arr.put(o);
             }
@@ -1304,7 +1268,7 @@ class AppStore {
         } catch (Exception ignored) {}
     }
 
-    static void addOrUpdatePosOutlet(Context c, String id, String name, String phone, String requestCode, String notes, boolean active) {
+    static void addOrUpdatePosOutlet(Context c, String id, String name, String phone, String requestCode, String notes, boolean active, boolean rewardsEnabled) {
         ArrayList<PosOutlet> list = loadPosOutlets(c);
         String cleanId = id == null ? "" : id.trim();
         String cleanPhone = normalizeLocalPhone(phone);
@@ -1318,12 +1282,13 @@ class AppStore {
                 pos.requestCode = cleanReq;
                 pos.notes = notes == null ? "" : notes.trim();
                 pos.active = active;
+                pos.rewardsEnabled = rewardsEnabled;
                 updated = true;
                 break;
             }
         }
         if (!updated) {
-            list.add(0, new PosOutlet(cleanId, name, cleanPhone, cleanReq, notes, active, System.currentTimeMillis()));
+            list.add(0, new PosOutlet(cleanId, name, cleanPhone, cleanReq, notes, active, rewardsEnabled, System.currentTimeMillis()));
         }
         savePosOutlets(c, list);
     }
@@ -1372,6 +1337,7 @@ class AppStore {
         root.put("device_request_code", pos.requestCode.trim());
         root.put("pos_name", pos.name);
         root.put("pos_phone", pos.phone);
+        root.put("rewards_enabled", pos.rewardsEnabled);
         root.put("network_name", getNetworkName(c));
         root.put("created_at", now());
         root.put("amount", amount);
@@ -1400,7 +1366,7 @@ class AppStore {
         saveCards(c, cards);
 
         addLog(c, new OperationLog(UUID.randomUUID().toString(), "تغذية نقطة بيع", "pos_pack", pos.name, pos.phone, amount,
-                "تم إنشاء ملف نقطة بيع", "تم تجهيز " + codes.size() + " كرت فئة " + amount + " لنقطة البيع: " + pos.name + " | الدفعة: " + batchId + " | الملف: " + file.getAbsolutePath(), "", now()));
+                "تم إنشاء ملف نقطة بيع", "تم تجهيز " + codes.size() + " كرت فئة " + amount + " لنقطة البيع: " + pos.name + " | المكافآت: " + (pos.rewardsEnabled ? "مفعلة" : "بدون مكافآت") + " | الدفعة: " + batchId + " | الملف: " + file.getAbsolutePath(), "", now()));
         performAutoBackupIfDue(c, "إنشاء ملف كروت لنقطة بيع");
         return file;
     }
@@ -2197,7 +2163,10 @@ class AppStore {
     }
 
     static String buildBackupFileName(Context c) {
-        return "B_" + new SimpleDateFormat("yyyy-MM-dd_HH-mm", Locale.US).format(new Date()) + ".json";
+        String name = getNetworkName(c);
+        name = name.replaceAll("[^A-Za-z0-9_\\-\\u0600-\\u06FF]", "_");
+        if (name.trim().isEmpty()) name = "ONLINE";
+        return "ONLINE_backup_" + name + "_" + new SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(new Date()) + ".json";
     }
 
     static void restoreBackupJson(Context c, String jsonText) throws Exception {
@@ -2212,7 +2181,7 @@ class AppStore {
             if (settings.has(KEY_SUCCESS_TEMPLATE)) editor.putString(KEY_SUCCESS_TEMPLATE, settings.optString(KEY_SUCCESS_TEMPLATE, DEFAULT_SUCCESS_TEMPLATE));
             if (settings.has(KEY_NO_STOCK_TEMPLATE)) editor.putString(KEY_NO_STOCK_TEMPLATE, settings.optString(KEY_NO_STOCK_TEMPLATE, DEFAULT_NO_STOCK_TEMPLATE));
             if (settings.has(KEY_AUTO_BACKUP_ENABLED)) editor.putBoolean(KEY_AUTO_BACKUP_ENABLED, settings.optBoolean(KEY_AUTO_BACKUP_ENABLED, true));
-            if (settings.has(KEY_AUTO_BACKUP_INTERVAL_HOURS)) editor.putInt(KEY_AUTO_BACKUP_INTERVAL_HOURS, settings.optInt(KEY_AUTO_BACKUP_INTERVAL_HOURS, 8));
+            if (settings.has(KEY_AUTO_BACKUP_INTERVAL_HOURS)) editor.putInt(KEY_AUTO_BACKUP_INTERVAL_HOURS, settings.optInt(KEY_AUTO_BACKUP_INTERVAL_HOURS, 12));
             if (settings.has(KEY_LAST_AUTO_BACKUP_AT)) editor.putString(KEY_LAST_AUTO_BACKUP_AT, settings.optString(KEY_LAST_AUTO_BACKUP_AT, ""));
             if (settings.has(KEY_CARD_PRIVACY_ENABLED)) editor.putBoolean(KEY_CARD_PRIVACY_ENABLED, settings.optBoolean(KEY_CARD_PRIVACY_ENABLED, true));
             if (settings.has(KEY_REWARDS_ENABLED)) editor.putBoolean(KEY_REWARDS_ENABLED, settings.optBoolean(KEY_REWARDS_ENABLED, true));

@@ -69,6 +69,7 @@ public class MainActivity extends Activity {
     EditText pendingContactName;
     String directSalePhoneDraft = "";
     String directSaleNameDraft = "";
+    boolean directSaleRewardsDraft = true;
     String routerStudioTab = "connect";
     boolean routerStudioConnected = false;
     String routerStudioPasswordDraft = "";
@@ -1036,12 +1037,21 @@ public class MainActivity extends Activity {
         form.addView(sendSms);
         form.addView(sendWhats);
 
+        CheckBox saleRewards = channelCheckBox("🎁 احتساب المكافأة لهذه العملية", directSaleRewardsDraft && AppStore.isRewardsEnabled(this), goldSoft);
+        saleRewards.setEnabled(AppStore.isRewardsEnabled(this));
+        saleRewards.setOnCheckedChangeListener((buttonView, isChecked) -> directSaleRewardsDraft = isChecked);
+        form.addView(saleRewards);
+        if (!AppStore.isRewardsEnabled(this)) {
+            form.addView(small("نظام المكافآت متوقف من إعدادات المكافآت العامة، لذلك لن تُحسب مكافأة لهذه العملية."));
+        }
+
         Button primary = action("🚀 بيع وإرسال حسب الاختيار", purple, Color.WHITE, v ->
                 performDirectSaleCombined(
                         phone.getText().toString(),
                         name.getText().toString(),
                         sendSms.isChecked(),
-                        sendWhats.isChecked()
+                        sendWhats.isChecked(),
+                        saleRewards.isChecked()
                 ));
         LinearLayout.LayoutParams primaryLp = new LinearLayout.LayoutParams(-1, dp(58));
         primaryLp.setMargins(0, dp(10), 0, dp(6));
@@ -1294,16 +1304,17 @@ public class MainActivity extends Activity {
     }
 
 
-    private void performDirectSaleCombined(String rawPhone, String rawName, boolean viaSms, boolean viaWhatsApp) {
+    private void performDirectSaleCombined(String rawPhone, String rawName, boolean viaSms, boolean viaWhatsApp, boolean rewardsForThisSale) {
         String clean = SmsProcessor.cleanPhone(rawPhone);
         String name = rawName == null ? "" : rawName.trim();
         if (!SmsProcessor.isValidLocalMobile(clean)) { toast("اكتب رقم زبون صحيح: 9 أرقام ويبدأ بـ 7"); return; }
         if (!viaSms && !viaWhatsApp) { toast("اختر SMS أو واتساب على الأقل"); return; }
 
         String channels = selectedChannelsLabel(viaSms, viaWhatsApp);
+        boolean effectiveRewards = rewardsForThisSale && AppStore.isRewardsEnabled(this);
         new AlertDialog.Builder(this)
                 .setTitle("تأكيد البيع والإرسال")
-                .setMessage("سيتم حجز كرت واحد فقط من فئة " + selectedAmount + " ريال للرقم:\n" + clean + "\n\nطرق الإرسال المختارة:\n" + channels + "\n\nتنبيه: واتساب يفتح الرسالة جاهزة، وقد تحتاج الضغط على زر الإرسال داخل واتساب.")
+                .setMessage("سيتم حجز كرت واحد فقط من فئة " + selectedAmount + " ريال للرقم:\n" + clean + "\n\nطرق الإرسال المختارة:\n" + channels + "\n\nالمكافأة لهذه العملية: " + (effectiveRewards ? "مفعلة" : "معطلة") + "\n\nتنبيه: واتساب يفتح الرسالة جاهزة، وقد تحتاج الضغط على زر الإرسال داخل واتساب.")
                 .setPositiveButton("موافق، بيع وإرسال", (d,w) -> {
                     CardItem reserved = AppStore.takeAvailableCard(this, selectedAmount, clean);
                     if (reserved == null) {
@@ -1325,7 +1336,16 @@ public class MainActivity extends Activity {
                     String msg = AppStore.buildDirectSaleMessage(this, selectedAmount, code);
                     String id = java.util.UUID.randomUUID().toString();
                     String status = viaSms ? "جاري إرسال SMS" : "بانتظار إرسال خارجي";
-                    String note = "بيع مباشر: تم حجز كرت واحد وتم تجهيز الإرسال عبر: " + channels + "\nتنبيه: البيع المباشر لا يضيف نقاطًا للعميل.";
+                    String note = "بيع مباشر: تم حجز كرت واحد وتم تجهيز الإرسال عبر: " + channels;
+                    if (effectiveRewards) {
+                        RewardResult reward = AppStore.applyRewardsForPaidSale(this, clean, name, selectedAmount, code);
+                        if (reward != null) {
+                            if (reward.customerMessagePart != null && !reward.customerMessagePart.isEmpty()) msg += reward.customerMessagePart;
+                            if (reward.internalNote != null && !reward.internalNote.isEmpty()) note += "\n" + reward.internalNote;
+                        }
+                    } else {
+                        note += "\nالمكافأة معطلة لهذه العملية؛ لم يتم احتساب نقاط جديدة.";
+                    }
                     AppStore.addLog(this, new OperationLog(id, "بيع مباشر", "manual", name, clean, selectedAmount, status, note, code, AppStore.now()));
 
                     if (viaSms) {
@@ -2048,6 +2068,7 @@ public class MainActivity extends Activity {
             box.addView(small("الرقم: " + (pos.phone.isEmpty() ? "-" : pos.phone)
                     + "\nكود الطلب: " + (pos.requestCode.isEmpty() ? "-" : pos.requestCode)
                     + "\nالحالة: " + (pos.active ? "مفعلة" : "موقوفة")
+                    + "\nالمكافآت: " + (pos.rewardsEnabled ? "مفعلة" : "بدون مكافآت")
                     + (pos.notes.isEmpty() ? "" : "\nملاحظات: " + pos.notes)));
             box.addView(action("📦 إنشاء دفعة محمية وإرسالها", Color.rgb(50, 90, 72), Color.WHITE, v -> showCreatePosPackDialog(pos)));
             LinearLayout row = new LinearLayout(this);
@@ -2073,7 +2094,8 @@ public class MainActivity extends Activity {
         EditText req = new EditText(this); req.setHint("كود الطلب من تطبيق ONLINE POS"); req.setText(existing == null ? "" : existing.requestCode); req.setGravity(Gravity.RIGHT);
         EditText notes = new EditText(this); notes.setHint("ملاحظات اختيارية"); notes.setText(existing == null ? "" : existing.notes); notes.setGravity(Gravity.RIGHT);
         CheckBox active = new CheckBox(this); active.setText("نقطة البيع مفعلة"); active.setChecked(existing == null || existing.active);
-        layout.addView(name); layout.addView(phone); layout.addView(req); layout.addView(notes); layout.addView(active);
+        CheckBox rewards = new CheckBox(this); rewards.setText("مع تفعيل المكافآت لهذه النقطة"); rewards.setChecked(existing == null || existing.rewardsEnabled);
+        layout.addView(name); layout.addView(phone); layout.addView(req); layout.addView(notes); layout.addView(active); layout.addView(rewards);
 
         new AlertDialog.Builder(this)
                 .setTitle(existing == null ? "إضافة نقطة بيع" : "تعديل نقطة بيع")
@@ -2081,7 +2103,7 @@ public class MainActivity extends Activity {
                 .setPositiveButton("حفظ", (d,w) -> {
                     if (name.getText().toString().trim().isEmpty()) { toast("اكتب اسم نقطة البيع"); return; }
                     if (req.getText().toString().trim().isEmpty()) { toast("اكتب كود الطلب الخاص بنقطة البيع"); return; }
-                    AppStore.addOrUpdatePosOutlet(this, existing == null ? "" : existing.id, name.getText().toString(), phone.getText().toString(), req.getText().toString(), notes.getText().toString(), active.isChecked());
+                    AppStore.addOrUpdatePosOutlet(this, existing == null ? "" : existing.id, name.getText().toString(), phone.getText().toString(), req.getText().toString(), notes.getText().toString(), active.isChecked(), rewards.isChecked());
                     toast("تم حفظ نقطة البيع");
                     showPosOutlets();
                 })
