@@ -60,6 +60,8 @@ class AppStore {
     private static final String KEY_REWARD_POINTS_TEMPLATE = "reward_points_template";
     private static final String KEY_REWARD_SENT_TEMPLATE = "reward_sent_template";
     private static final String KEY_REWARD_PENDING_TEMPLATE = "reward_pending_template";
+    private static final String KEY_REWARD_EXPIRY_ENABLED = "reward_expiry_enabled";
+    private static final String KEY_REWARD_EXPIRY_DAYS = "reward_expiry_days";
 
     private static final String KEY_UPDATE_MANIFEST_URL = "update_manifest_url";
     private static final String DEFAULT_UPDATE_MANIFEST_URL = "https://example.com/online_update.json";
@@ -128,6 +130,8 @@ class AppStore {
     static final int[] DEFAULT_AMOUNTS = new int[]{50, 100, 150, 200, 250, 300, 500};
     static final int DEFAULT_REWARD_PERCENT = 8;
     static final int DEFAULT_REWARD_THRESHOLD = 100;
+    static final int DEFAULT_REWARD_EXPIRY_DAYS = 10;
+    static final int DEFAULT_REWARD_EXPIRY_WARNING_DAYS = 2;
     static final int DEFAULT_REWARD_CARD_AMOUNT = 100;
     static final String DEFAULT_REWARD_POINTS_TEMPLATE = "نقاط:+{points} رصيد:{balance} باقي:{remain}";
     static final String DEFAULT_REWARD_SENT_TEMPLATE = "مبروك هديتك:{rewardCard} رصيد:{balance}";
@@ -1774,6 +1778,7 @@ class AppStore {
                         o.optInt("creditLimit", 5000),
                         o.optInt("usedAmount", 0),
                         o.optBoolean("active", true),
+                        o.optBoolean("rewardsEnabled", true),
                         o.optLong("createdAt", System.currentTimeMillis())
                 ));
             }
@@ -1792,6 +1797,7 @@ class AppStore {
                 o.put("creditLimit", Math.max(0, a.creditLimit));
                 o.put("usedAmount", Math.max(0, a.usedAmount));
                 o.put("active", a.active);
+                o.put("rewardsEnabled", a.rewardsEnabled);
                 o.put("createdAt", a.createdAt);
                 arr.put(o);
             }
@@ -1800,6 +1806,10 @@ class AppStore {
     }
 
     static void addOrUpdateTrustedCreditAgent(Context c, String name, String senderPhone, int creditLimit, boolean active) {
+        addOrUpdateTrustedCreditAgent(c, name, senderPhone, creditLimit, active, true);
+    }
+
+    static void addOrUpdateTrustedCreditAgent(Context c, String name, String senderPhone, int creditLimit, boolean active, boolean rewardsEnabled) {
         String phone = normalizeLocalPhone(senderPhone);
         if (phone.isEmpty()) return;
         ArrayList<TrustedCreditAgent> list = loadTrustedCreditAgents(c);
@@ -1809,11 +1819,12 @@ class AppStore {
                 a.senderPhone = phone;
                 a.creditLimit = Math.max(0, creditLimit);
                 a.active = active;
+                a.rewardsEnabled = rewardsEnabled;
                 saveTrustedCreditAgents(c, list);
                 return;
             }
         }
-        list.add(0, new TrustedCreditAgent(UUID.randomUUID().toString(), name == null || name.trim().isEmpty() ? phone : name.trim(), phone, Math.max(0, creditLimit), 0, active, System.currentTimeMillis()));
+        list.add(0, new TrustedCreditAgent(UUID.randomUUID().toString(), name == null || name.trim().isEmpty() ? phone : name.trim(), phone, Math.max(0, creditLimit), 0, active, rewardsEnabled, System.currentTimeMillis()));
         saveTrustedCreditAgents(c, list);
     }
 
@@ -1906,6 +1917,8 @@ class AppStore {
         settings.put(KEY_REWARD_POINTS_TEMPLATE, getRewardPointsTemplate(c));
         settings.put(KEY_REWARD_SENT_TEMPLATE, getRewardSentTemplate(c));
         settings.put(KEY_REWARD_PENDING_TEMPLATE, getRewardPendingTemplate(c));
+        settings.put(KEY_REWARD_EXPIRY_ENABLED, isRewardExpiryEnabled(c));
+        settings.put(KEY_REWARD_EXPIRY_DAYS, getRewardExpiryDays(c));
         settings.put(KEY_UPDATE_MANIFEST_URL, getUpdateManifestUrl(c));
         root.put("settings", settings);
 
@@ -1990,6 +2003,133 @@ class AppStore {
                 .putInt(KEY_REWARDS_THRESHOLD, Math.max(1, threshold))
                 .putInt(KEY_REWARDS_REWARD_AMOUNT, Math.max(1, rewardAmount))
                 .apply();
+    }
+
+
+    static boolean isRewardExpiryEnabled(Context c) {
+        return prefs(c).getBoolean(KEY_REWARD_EXPIRY_ENABLED, false);
+    }
+
+    static int getRewardExpiryDays(Context c) {
+        return Math.max(1, prefs(c).getInt(KEY_REWARD_EXPIRY_DAYS, DEFAULT_REWARD_EXPIRY_DAYS));
+    }
+
+    static void setRewardExpirySettings(Context c, boolean enabled, int days) {
+        prefs(c).edit()
+                .putBoolean(KEY_REWARD_EXPIRY_ENABLED, enabled)
+                .putInt(KEY_REWARD_EXPIRY_DAYS, Math.max(1, days))
+                .apply();
+    }
+
+    private static long parseRewardDateMillis(String value) {
+        if (value == null || value.trim().isEmpty()) return 0L;
+        String v = value.trim();
+        String[] formats = new String[]{"yyyy/MM/dd HH:mm:ss", "yyyy-MM-dd HH:mm:ss", "yyyy-MM-dd HH:mm", "yyyy/MM/dd HH:mm"};
+        for (String f : formats) {
+            try {
+                Date d = new SimpleDateFormat(f, Locale.US).parse(v);
+                if (d != null) return d.getTime();
+            } catch (Exception ignored) {}
+        }
+        return 0L;
+    }
+
+    private static String formatRewardDateMillis(long millis) {
+        if (millis <= 0L) return "-";
+        return new SimpleDateFormat("yyyy/MM/dd HH:mm:ss", Locale.US).format(new Date(millis));
+    }
+
+    private static int rewardDaysLeft(long expiryMillis, long nowMillis) {
+        long diff = expiryMillis - nowMillis;
+        if (diff <= 0L) return 0;
+        return (int)Math.ceil(diff / (double)DAY_MS);
+    }
+
+    private static boolean shouldExpireCustomerReward(Context c, CustomerReward cr, long nowMillis) {
+        if (cr == null || cr.points <= 0) return false;
+        long last = parseRewardDateMillis(cr.lastPurchaseAt);
+        if (last <= 0L) return false;
+        long expiry = last + (getRewardExpiryDays(c) * DAY_MS);
+        return nowMillis >= expiry;
+    }
+
+    static int applyRewardPointExpiry(Context c) {
+        if (!isRewardExpiryEnabled(c)) return 0;
+        ArrayList<CustomerReward> list = loadCustomerRewards(c);
+        long nowMs = System.currentTimeMillis();
+        int expiredCount = 0;
+        for (CustomerReward cr : list) {
+            if (!shouldExpireCustomerReward(c, cr, nowMs)) continue;
+            int expiredPoints = cr.points;
+            long last = parseRewardDateMillis(cr.lastPurchaseAt);
+            long expiry = last + (getRewardExpiryDays(c) * DAY_MS);
+            cr.points = 0;
+            expiredCount++;
+            addLog(c, new OperationLog(UUID.randomUUID().toString(), "مصادرة نقاط", "rewards_expiry", cr.name, cr.phone, expiredPoints,
+                    "تمت مصادرة نقاط", "تمت مصادرة " + expiredPoints + " نقطة بسبب عدم إجراء تعبئة خلال " + getRewardExpiryDays(c) + " أيام. آخر تعبئة: " + cr.lastPurchaseAt + " | تاريخ المصادرة: " + formatRewardDateMillis(expiry), "", now()));
+        }
+        if (expiredCount > 0) saveCustomerRewards(c, list);
+        return expiredCount;
+    }
+
+    static ArrayList<RewardExpiryInfo> loadRewardExpiringSoon(Context c, int warningDays) {
+        ArrayList<RewardExpiryInfo> out = new ArrayList<>();
+        long nowMs = System.currentTimeMillis();
+        int days = getRewardExpiryDays(c);
+        int warn = Math.max(0, warningDays);
+        for (CustomerReward cr : loadCustomerRewards(c)) {
+            if (cr == null || cr.points <= 0) continue;
+            long last = parseRewardDateMillis(cr.lastPurchaseAt);
+            if (last <= 0L) continue;
+            long expiry = last + (days * DAY_MS);
+            if (nowMs > expiry) continue;
+            int left = rewardDaysLeft(expiry, nowMs);
+            if (left <= warn) {
+                out.add(new RewardExpiryInfo(cr.phone, cr.name, cr.points, cr.totalPaid, cr.totalEarnedPoints, cr.totalUsedPoints, cr.rewardCards, cr.lastPurchaseAt, formatRewardDateMillis(expiry), left));
+            }
+        }
+        return out;
+    }
+
+    static ArrayList<OperationLog> loadRewardExpiryLogs(Context c, int limit) {
+        ArrayList<OperationLog> out = new ArrayList<>();
+        for (OperationLog log : loadLogs(c)) {
+            if (log == null) continue;
+            boolean match = "مصادرة نقاط".equals(log.provider) || "rewards_expiry".equals(log.sender) || "تمت مصادرة نقاط".equals(log.status);
+            if (!match) continue;
+            out.add(log);
+            if (limit > 0 && out.size() >= limit) break;
+        }
+        return out;
+    }
+
+    static String buildRewardExpiryWarningStatement(Context c, RewardExpiryInfo info) {
+        if (info == null) return "";
+        return "مرحباً بك عميلنا العزيز\n\n"
+                + "كشف نقاط المكافآت الخاصة بك:\n\n"
+                + "رقم العميل: " + info.phone + "\n"
+                + (info.name.isEmpty() ? "" : "اسم العميل: " + info.name + "\n")
+                + "رصيد النقاط الحالي: " + info.points + " نقطة\n"
+                + "آخر تعبئة: " + (info.lastPurchaseAt.isEmpty() ? "-" : info.lastPurchaseAt) + "\n"
+                + "تاريخ انتهاء صلاحية النقاط: " + info.expiryAt + "\n"
+                + "المدة المتبقية: " + info.daysLeft + " يوم\n\n"
+                + "تنبيه: نقاطك معرضة للمصادرة إذا لم يتم إجراء تعبئة جديدة قبل تاريخ الانتهاء.\n"
+                + "للحفاظ على نقاطك، يرجى إجراء تعبئة جديدة قبل انتهاء المهلة.\n\n"
+                + "مع تحيات " + getNetworkName(c);
+    }
+
+    static String buildRewardExpiryLogStatement(Context c, OperationLog log) {
+        if (log == null) return "";
+        return "مرحباً بك عميلنا العزيز\n\n"
+                + "كشف مصادرة نقاط المكافآت:\n\n"
+                + "رقم العميل: " + (log.customerPhone == null ? "" : log.customerPhone) + "\n"
+                + ((log.customerName == null || log.customerName.trim().isEmpty()) ? "" : "اسم العميل: " + log.customerName + "\n")
+                + "النقاط المصادرة: " + log.amount + " نقطة\n"
+                + "تاريخ المصادرة: " + (log.createdAt == null ? "" : log.createdAt) + "\n"
+                + "سبب المصادرة: عدم إجراء أي تعبئة خلال " + getRewardExpiryDays(c) + " أيام.\n"
+                + ((log.message == null || log.message.trim().isEmpty()) ? "" : "\nتفاصيل النظام:\n" + log.message + "\n")
+                + "\nيمكنك الاستفادة من نظام المكافآت من جديد عند إجراء تعبئة جديدة.\n\n"
+                + "مع تحيات " + getNetworkName(c);
     }
 
     private static JSONObject loadRewardCategorySettingsObject(Context c) {
@@ -2121,6 +2261,12 @@ class AppStore {
             list.add(cr);
         }
         if (customerName != null && !customerName.trim().isEmpty()) cr.name = customerName.trim();
+        if (isRewardExpiryEnabled(c) && shouldExpireCustomerReward(c, cr, System.currentTimeMillis())) {
+            int expiredPoints = cr.points;
+            cr.points = 0;
+            addLog(c, new OperationLog(UUID.randomUUID().toString(), "مصادرة نقاط", "rewards_expiry", cr.name, phone, expiredPoints,
+                    "تمت مصادرة نقاط", "تمت مصادرة " + expiredPoints + " نقطة بسبب عدم إجراء تعبئة خلال " + getRewardExpiryDays(c) + " أيام قبل احتساب التعبئة الجديدة. آخر تعبئة: " + cr.lastPurchaseAt, "", now()));
+        }
         cr.points += added;
         cr.totalPaid += Math.max(0, amount);
         cr.totalEarnedPoints += added;
@@ -2191,6 +2337,8 @@ class AppStore {
             if (settings.has(KEY_REWARD_POINTS_TEMPLATE)) editor.putString(KEY_REWARD_POINTS_TEMPLATE, settings.optString(KEY_REWARD_POINTS_TEMPLATE, DEFAULT_REWARD_POINTS_TEMPLATE));
             if (settings.has(KEY_REWARD_SENT_TEMPLATE)) editor.putString(KEY_REWARD_SENT_TEMPLATE, settings.optString(KEY_REWARD_SENT_TEMPLATE, DEFAULT_REWARD_SENT_TEMPLATE));
             if (settings.has(KEY_REWARD_PENDING_TEMPLATE)) editor.putString(KEY_REWARD_PENDING_TEMPLATE, settings.optString(KEY_REWARD_PENDING_TEMPLATE, DEFAULT_REWARD_PENDING_TEMPLATE));
+            if (settings.has(KEY_REWARD_EXPIRY_ENABLED)) editor.putBoolean(KEY_REWARD_EXPIRY_ENABLED, settings.optBoolean(KEY_REWARD_EXPIRY_ENABLED, false));
+            if (settings.has(KEY_REWARD_EXPIRY_DAYS)) editor.putInt(KEY_REWARD_EXPIRY_DAYS, Math.max(1, settings.optInt(KEY_REWARD_EXPIRY_DAYS, DEFAULT_REWARD_EXPIRY_DAYS)));
             if (settings.has(KEY_UPDATE_MANIFEST_URL)) editor.putString(KEY_UPDATE_MANIFEST_URL, settings.optString(KEY_UPDATE_MANIFEST_URL, DEFAULT_UPDATE_MANIFEST_URL));
         }
 

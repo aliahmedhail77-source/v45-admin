@@ -241,10 +241,15 @@ class SmsProcessor {
 
         int usedAfter = agent.usedAmount + req.amount;
         String reply = AppStore.buildSuccessMessage(context, req.amount, card.code);
-        RewardResult reward = AppStore.applyRewardsForPaidSale(context, customerPhone, agentName, req.amount, card.code);
-        if (reward != null && reward.customerMessagePart != null && !reward.customerMessagePart.isEmpty()) reply += reward.customerMessagePart;
+        boolean effectiveRewards = AppStore.isRewardsEnabled(context) && agent.rewardsEnabled;
+        RewardResult reward = null;
+        if (effectiveRewards) {
+            reward = AppStore.applyRewardsForPaidSale(context, customerPhone, agentName, req.amount, card.code);
+            if (reward != null && reward.customerMessagePart != null && !reward.customerMessagePart.isEmpty()) reply += reward.customerMessagePart;
+        }
         String note = "تم تنفيذ طلب رقم موثوق: " + agentName + " | السقف: " + agent.creditLimit + " | سيخصم من السقف بعد نجاح إرسال SMS | المستخدم المتوقع بعد النجاح: " + usedAfter;
         if (reward != null && reward.internalNote != null && !reward.internalNote.isEmpty()) note += "\n" + reward.internalNote;
+        if (!effectiveRewards) note += "\nالمكافأة معطلة لهذا الرقم الموثوق؛ تم تنفيذ البيع بدون احتساب نقاط جديدة.";
         String logId = addLog(context, provider, sender, agentName, customerPhone, req.amount, "جاري إرسال SMS", note, card.code);
         sendSmsWithTracking(context, customerPhone, reply, logId, req.amount, card.code, false,
                 "تم إرسال الكرت لزبون الرقم الموثوق وتم خصم العملية من السقف",

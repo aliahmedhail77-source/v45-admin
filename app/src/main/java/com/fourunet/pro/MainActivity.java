@@ -2598,6 +2598,7 @@ public class MainActivity extends Activity {
         else if ("categories".equals(rewardsPanelTab)) renderRewardsCategories(pane);
         else if ("customers".equals(rewardsPanelTab)) renderRewardsCustomersPanel(pane);
         else if ("gift".equals(rewardsPanelTab)) renderRewardsGiftPanel(pane);
+        else if ("expiry".equals(rewardsPanelTab)) renderRewardsExpiryPanel(pane);
         else renderRewardsOverview(pane);
     }
 
@@ -2612,6 +2613,7 @@ public class MainActivity extends Activity {
         side.addView(rewardsSideButton("categories", "الفئات"));
         side.addView(rewardsSideButton("customers", "العملاء"));
         side.addView(rewardsSideButton("gift", "المكافأة"));
+        side.addView(rewardsSideButton("expiry", "الصلاحية"));
         Space sp = new Space(this);
         side.addView(sp, new LinearLayout.LayoutParams(-1, dp(8)));
         Button back = action("رجوع", Color.rgb(48, 38, 55), Color.WHITE, v -> showSettings());
@@ -2712,7 +2714,7 @@ public class MainActivity extends Activity {
 
         LinearLayout info = rewardsGoldCard();
         info.addView(tv("ملخص النظام", 16, text, true));
-        info.addView(small("النسبة الافتراضية 8%، وحد المكافأة الحالي " + AppStore.getRewardThreshold(this) + " نقطة، وفئة كرت المكافأة " + AppStore.getRewardCardAmount(this) + " ريال."));
+        info.addView(small("النسبة الافتراضية 8%، وحد المكافأة الحالي " + AppStore.getRewardThreshold(this) + " نقطة، وفئة كرت المكافأة " + AppStore.getRewardCardAmount(this) + " ريال.\nصلاحية النقاط: " + (AppStore.isRewardExpiryEnabled(this) ? (AppStore.getRewardExpiryDays(this) + " أيام") : "متوقفة")));
         pane.addView(info);
         pane.addView(action("تعديل الإعدادات", goldDark, goldSoft, v -> { rewardsPanelTab = "settings"; showRewardsSettings(); }), new LinearLayout.LayoutParams(-1, dp(50)));
     }
@@ -2801,6 +2803,106 @@ public class MainActivity extends Activity {
                     + "\nآخر شراء: " + (cr.lastPurchaseAt.isEmpty() ? "-" : cr.lastPurchaseAt)));
             pane.addView(box);
         }
+    }
+
+
+    private void renderRewardsExpiryPanel(LinearLayout pane) {
+        pane.addView(rewardsSectionTitle("صلاحية النقاط والكشوفات"));
+        int expiredNow = AppStore.applyRewardPointExpiry(this);
+
+        LinearLayout settings = rewardsGoldCard();
+        settings.addView(tv("إعدادات صلاحية النقاط", 16, text, true));
+        Switch enabled = new Switch(this);
+        enabled.setText("تصفير النقاط عند عدم التعبئة");
+        enabled.setTextColor(text);
+        enabled.setTextSize(15);
+        enabled.setTypeface(appTypeface(true));
+        enabled.setChecked(AppStore.isRewardExpiryEnabled(this));
+        settings.addView(enabled);
+        EditText days = new EditText(this);
+        days.setHint("مدة عدم النشاط بالأيام - مثال 10");
+        days.setInputType(InputType.TYPE_CLASS_NUMBER);
+        days.setGravity(Gravity.RIGHT);
+        days.setText(String.valueOf(AppStore.getRewardExpiryDays(this)));
+        days.setTextColor(text);
+        days.setHintTextColor(muted);
+        settings.addView(days);
+        settings.addView(small("عند تفعيل هذا الخيار: إذا لم يقم العميل بأي تعبئة جديدة خلال المدة المحددة، يتم تصفير نقاطه وتسجيلها في سجل النقاط المصادرة. العملاء الذين بقي لهم يومان أو أقل يظهرون في كشف التحذير."));
+        settings.addView(action("حفظ صلاحية النقاط", goldDark, goldSoft, v -> {
+            int d = safeInt(days.getText().toString(), 10);
+            AppStore.setRewardExpirySettings(this, enabled.isChecked(), d);
+            toast("تم حفظ إعدادات صلاحية النقاط");
+            rewardsPanelTab = "expiry";
+            showRewardsSettings();
+        }));
+        if (expiredNow > 0) settings.addView(small("تمت مصادرة نقاط " + expiredNow + " عميل بعد انتهاء مدة عدم النشاط."));
+        pane.addView(settings);
+
+        LinearLayout warnHint = rewardsGoldCard();
+        warnHint.addView(tv("عملاء قرب انتهاء النقاط", 16, goldSoft, true));
+        warnHint.addView(small("يعرض العملاء الذين بقي على مصادرة نقاطهم يومان أو أقل. تستطيع تجهيز كشف مرتب وإرساله عبر WhatsApp Business بعد المراجعة."));
+        pane.addView(warnHint);
+
+        ArrayList<RewardExpiryInfo> soon = AppStore.loadRewardExpiringSoon(this, AppStore.DEFAULT_REWARD_EXPIRY_WARNING_DAYS);
+        if (soon.isEmpty()) {
+            LinearLayout empty = rewardsGoldCard();
+            empty.addView(small("لا يوجد عملاء نقاطهم قاربت على الانتهاء حالياً."));
+            pane.addView(empty);
+        } else {
+            for (RewardExpiryInfo info : soon) {
+                LinearLayout box = rewardsGoldCard();
+                box.addView(tv(info.phone, 17, goldSoft, true));
+                box.addView(small((info.name.isEmpty() ? "" : "الاسم: " + info.name + "\n")
+                        + "النقاط المعرضة للمصادرة: " + info.points
+                        + "\nآخر تعبئة: " + (info.lastPurchaseAt.isEmpty() ? "-" : info.lastPurchaseAt)
+                        + "\nتاريخ انتهاء النقاط: " + info.expiryAt
+                        + "\nالمتبقي: " + info.daysLeft + " يوم"));
+                LinearLayout row = new LinearLayout(this);
+                row.setOrientation(LinearLayout.HORIZONTAL);
+                row.addView(action("عرض الكشف", card2, text, v -> showRewardStatementDialog("كشف نقاط معرضة للمصادرة", info.phone, AppStore.buildRewardExpiryWarningStatement(this, info))), new LinearLayout.LayoutParams(0, dp(48), 1));
+                LinearLayout.LayoutParams waLp = new LinearLayout.LayoutParams(0, dp(48), 1);
+                waLp.setMargins(dp(8), 0, 0, 0);
+                row.addView(action("واتساب", Color.rgb(37, 211, 102), Color.WHITE, v -> openWhatsAppBusinessMessage(info.phone, AppStore.buildRewardExpiryWarningStatement(this, info))), waLp);
+                box.addView(row);
+                pane.addView(box);
+            }
+        }
+
+        pane.addView(rewardsSectionTitle("سجل النقاط المصادرة"));
+        ArrayList<OperationLog> expired = AppStore.loadRewardExpiryLogs(this, 50);
+        if (expired.isEmpty()) {
+            LinearLayout empty = rewardsGoldCard();
+            empty.addView(small("لا توجد نقاط مصادرة حتى الآن."));
+            pane.addView(empty);
+        } else {
+            for (OperationLog log : expired) {
+                LinearLayout box = rewardsGoldCard();
+                box.addView(tv(log.customerPhone == null || log.customerPhone.isEmpty() ? "عميل بدون رقم" : log.customerPhone, 17, red, true));
+                box.addView(small(((log.customerName == null || log.customerName.trim().isEmpty()) ? "" : "الاسم: " + log.customerName + "\n")
+                        + "النقاط المصادرة: " + log.amount
+                        + "\nتاريخ المصادرة: " + log.createdAt
+                        + "\nالتفاصيل: " + log.message));
+                LinearLayout row = new LinearLayout(this);
+                row.setOrientation(LinearLayout.HORIZONTAL);
+                row.addView(action("عرض كشف المصادرة", card2, text, v -> showRewardStatementDialog("كشف مصادرة النقاط", log.customerPhone, AppStore.buildRewardExpiryLogStatement(this, log))), new LinearLayout.LayoutParams(0, dp(48), 1));
+                LinearLayout.LayoutParams waLp = new LinearLayout.LayoutParams(0, dp(48), 1);
+                waLp.setMargins(dp(8), 0, 0, 0);
+                row.addView(action("واتساب", Color.rgb(37, 211, 102), Color.WHITE, v -> openWhatsAppBusinessMessage(log.customerPhone, AppStore.buildRewardExpiryLogStatement(this, log))), waLp);
+                box.addView(row);
+                pane.addView(box);
+            }
+        }
+    }
+
+    private void showRewardStatementDialog(String titleText, String phone, String message) {
+        TextView msg = messagePreviewText(message == null ? "" : message);
+        msg.setPadding(dp(10), dp(10), dp(10), dp(10));
+        new AlertDialog.Builder(this)
+                .setTitle(titleText)
+                .setView(msg)
+                .setPositiveButton("إرسال واتساب", (d,w) -> openWhatsAppBusinessMessage(phone, message))
+                .setNegativeButton("إغلاق", null)
+                .show();
     }
 
     private void renderRewardsGiftPanel(LinearLayout pane) {
@@ -3940,11 +4042,11 @@ public class MainActivity extends Activity {
     private void showTrustedCreditAgents() {
         setTab("settings");
         clear();
-        content.addView(title("الأرقام الموثوقة بالسقف"));
+        content.addView(title("الأرقام الموثوقة / نقاط البيع"));
 
         LinearLayout intro = cardBox();
         intro.addView(tv("إضافة رصيد عبر رقم موثوق", 17, text, true));
-        intro.addView(small("الصيغة المدعومة: تم اضافة 100 من-733938509. الرقم الموثوق هو رقم نقطة البيع الذي يرسل SMS إلى رقم الإدارة. الرقم بعد من- هو رقم الزبون الذي سيستلم الكرت."));
+        intro.addView(small("الأرقام الموثوقة هي نقاط البيع أو أي شخص تثق فيه. الصيغة المدعومة: تم اضافة 100 من-733938509. الرقم الأول هو قيمة الكرت، والرقم بعد من- هو رقم الزبون الذي سيستلم الكرت."));
         intro.addView(action("➕ إضافة رقم موثوق", purple, Color.WHITE, v -> showTrustedCreditAgentDialog(null)));
         content.addView(intro);
 
@@ -3961,7 +4063,8 @@ public class MainActivity extends Activity {
             box.addView(small("رقم نقطة البيع: " + a.senderPhone
                     + "\nالسقف: " + a.creditLimit + " ريال"
                     + "\nالمستخدم: " + a.usedAmount + " ريال"
-                    + "\nالمتبقي: " + remain + " ريال"));
+                    + "\nالمتبقي: " + remain + " ريال"
+                    + "\nالمكافآت: " + (a.rewardsEnabled ? "مفعلة لهذا الرقم" : "معطلة لهذا الرقم")));
             LinearLayout row1 = new LinearLayout(this); row1.setOrientation(LinearLayout.HORIZONTAL);
             row1.addView(action("تعديل", purple, Color.WHITE, v -> showTrustedCreditAgentDialog(a)), new LinearLayout.LayoutParams(0, -2, 1));
             row1.addView(action("تصفير السقف", Color.rgb(51, 90, 64), Color.WHITE, v -> {
@@ -3987,16 +4090,18 @@ public class MainActivity extends Activity {
         LinearLayout layout = new LinearLayout(this);
         layout.setOrientation(LinearLayout.VERTICAL);
         layout.setPadding(dp(8), dp(8), dp(8), dp(8));
-        TextView help = small("رقم نقطة البيع هو الرقم الذي سيرسل لك SMS. مثال رسالته: تم اضافة 100 من-733938509. عند تجاوز السقف يوقف النظام ويرسل له تنبيه السداد.");
-        EditText name = new EditText(this); name.setHint("اسم نقطة البيع / المندوب"); name.setGravity(Gravity.RIGHT); name.setInputType(InputType.TYPE_CLASS_TEXT);
-        EditText phone = new EditText(this); phone.setHint("رقم نقطة البيع الموثوق"); phone.setGravity(Gravity.RIGHT); phone.setInputType(InputType.TYPE_CLASS_PHONE);
+        TextView help = small("الرقم الموثوق هو رقم نقطة البيع أو أي شخص تثق فيه ويرسل لك SMS. مثال رسالته: تم اضافة 100 من-733938509. تستطيع تفعيل أو تعطيل المكافآت لكل رقم بشكل مستقل.");
+        EditText name = new EditText(this); name.setHint("اسم نقطة البيع / الشخص الموثوق"); name.setGravity(Gravity.RIGHT); name.setInputType(InputType.TYPE_CLASS_TEXT);
+        EditText phone = new EditText(this); phone.setHint("رقم المرسل الموثوق"); phone.setGravity(Gravity.RIGHT); phone.setInputType(InputType.TYPE_CLASS_PHONE);
         EditText limit = new EditText(this); limit.setHint("السقف بالريال مثل 5000"); limit.setGravity(Gravity.RIGHT); limit.setInputType(InputType.TYPE_CLASS_NUMBER);
         CheckBox active = new CheckBox(this); active.setText("مفعل"); active.setTextColor(text); active.setGravity(Gravity.RIGHT); active.setChecked(true);
+        CheckBox rewards = new CheckBox(this); rewards.setText("تفعيل المكافآت لهذا الرقم"); rewards.setTextColor(text); rewards.setGravity(Gravity.RIGHT); rewards.setChecked(true);
         if (old != null) {
             name.setText(old.name);
             phone.setText(old.senderPhone);
             limit.setText(String.valueOf(old.creditLimit));
             active.setChecked(old.active);
+            rewards.setChecked(old.rewardsEnabled);
         } else {
             limit.setText("5000");
         }
@@ -4005,6 +4110,10 @@ public class MainActivity extends Activity {
         layout.addView(phone);
         layout.addView(limit);
         layout.addView(active);
+        layout.addView(rewards);
+        if (!AppStore.isRewardsEnabled(this)) {
+            layout.addView(small("ملاحظة: نظام المكافآت العام متوقف حالياً. هذا الخيار سيُحفظ للرقم، لكنه لن يعمل فعلياً حتى يتم تشغيل المكافآت من إعدادات المكافآت العامة."));
+        }
         new AlertDialog.Builder(this)
                 .setTitle(old == null ? "إضافة رقم موثوق" : "تعديل رقم موثوق")
                 .setView(layout)
@@ -4013,8 +4122,8 @@ public class MainActivity extends Activity {
                     if (ph.isEmpty()) { toast("رقم نقطة البيع مطلوب"); return; }
                     int lim = 5000;
                     try { lim = Integer.parseInt(limit.getText().toString().trim()); } catch(Exception ignored) {}
-                    AppStore.addOrUpdateTrustedCreditAgent(this, name.getText().toString().trim(), ph, lim, active.isChecked());
-                    toast("تم حفظ الرقم الموثوق");
+                    AppStore.addOrUpdateTrustedCreditAgent(this, name.getText().toString().trim(), ph, lim, active.isChecked(), rewards.isChecked());
+                    toast("تم حفظ الرقم الموثوق" + (rewards.isChecked() ? " مع تفعيل المكافآت" : " بدون مكافآت"));
                     showTrustedCreditAgents();
                 })
                 .setNegativeButton("إلغاء", null)

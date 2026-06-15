@@ -143,6 +143,33 @@ class CustomerReward {
     }
 }
 
+
+class RewardExpiryInfo {
+    String phone;
+    String name;
+    int points;
+    int totalPaid;
+    int totalEarnedPoints;
+    int totalUsedPoints;
+    int rewardCards;
+    String lastPurchaseAt;
+    String expiryAt;
+    int daysLeft;
+
+    RewardExpiryInfo(String phone, String name, int points, int totalPaid, int totalEarnedPoints, int totalUsedPoints, int rewardCards, String lastPurchaseAt, String expiryAt, int daysLeft) {
+        this.phone = phone == null ? "" : phone.trim();
+        this.name = name == null ? "" : name.trim();
+        this.points = Math.max(0, points);
+        this.totalPaid = Math.max(0, totalPaid);
+        this.totalEarnedPoints = Math.max(0, totalEarnedPoints);
+        this.totalUsedPoints = Math.max(0, totalUsedPoints);
+        this.rewardCards = Math.max(0, rewardCards);
+        this.lastPurchaseAt = lastPurchaseAt == null ? "" : lastPurchaseAt.trim();
+        this.expiryAt = expiryAt == null ? "" : expiryAt.trim();
+        this.daysLeft = Math.max(0, daysLeft);
+    }
+}
+
 class RewardResult {
     String customerMessagePart;
     String internalNote;
@@ -171,15 +198,17 @@ class TrustedCreditAgent {
     int creditLimit;
     int usedAmount;
     boolean active;
+    boolean rewardsEnabled;
     long createdAt;
 
-    TrustedCreditAgent(String id, String name, String senderPhone, int creditLimit, int usedAmount, boolean active, long createdAt) {
+    TrustedCreditAgent(String id, String name, String senderPhone, int creditLimit, int usedAmount, boolean active, boolean rewardsEnabled, long createdAt) {
         this.id = id == null ? "" : id;
         this.name = name == null ? "" : name.trim();
         this.senderPhone = senderPhone == null ? "" : senderPhone.trim();
         this.creditLimit = Math.max(0, creditLimit);
         this.usedAmount = Math.max(0, usedAmount);
         this.active = active;
+        this.rewardsEnabled = rewardsEnabled;
         this.createdAt = createdAt;
     }
 
