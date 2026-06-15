@@ -20,7 +20,6 @@ import android.os.Handler;
 import android.os.Looper;
 import android.provider.OpenableColumns;
 import android.provider.ContactsContract;
-import android.provider.DocumentsContract;
 import android.os.StrictMode;
 import android.text.InputType;
 import android.text.Editable;
@@ -31,7 +30,6 @@ import android.widget.*;
 
 import java.io.BufferedReader;
 import java.io.File;
-import java.io.FileInputStream;
 import java.lang.reflect.Method;
 import java.io.InputStream;
 import java.io.InputStreamReader;
@@ -42,7 +40,6 @@ import java.net.URL;
 import java.net.URLEncoder;
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.Date;
 import java.util.Locale;
 import java.util.Random;
@@ -58,7 +55,6 @@ public class MainActivity extends Activity {
     private static final int REQ_PDF = 30;
     private static final int REQ_BACKUP_SAVE = 40;
     private static final int REQ_BACKUP_RESTORE = 41;
-    private static final int REQ_BACKUP_DRIVE_FOLDER = 42;
     private static final int REQ_ADMIN_PACK = 50;
     private static final int REQ_PICK_CONTACT = 60;
 
@@ -112,7 +108,6 @@ public class MainActivity extends Activity {
         buildLayout();
         showHome();
         AppStore.performAutoBackupIfDue(this, "فتح التطبيق");
-        performDriveAutoBackupIfDue("فتح التطبيق");
     }
 
     private void showActivationScreen() {
@@ -1404,11 +1399,11 @@ public class MainActivity extends Activity {
 
     private void manualAutoBackupNow() {
         try {
-            String path = AppStore.writeAutoBackupNow(this, "نسخة يدوية إلى الهاتف");
-            toast("تم حفظ نسخة في الهاتف: " + path);
+            String path = AppStore.writeAutoBackupNow(this, "نسخة يدوية من زر النسخ التلقائي");
+            toast("تم حفظ نسخة تلقائية: " + path);
             showSettings();
         } catch (Exception e) {
-            toast("فشل النسخ إلى الهاتف: " + e.getMessage());
+            toast("فشل النسخ التلقائي: " + e.getMessage());
         }
     }
 
@@ -1419,10 +1414,10 @@ public class MainActivity extends Activity {
         enabled.setText("تفعيل النسخ الاحتياطي التلقائي");
         enabled.setChecked(AppStore.isAutoBackupEnabled(this));
         layout.addView(enabled);
-        final String[] labels = new String[]{"كل 8 ساعات (الموصى به)", "كل 12 ساعة", "يوميًا / كل 24 ساعة", "كل 48 ساعة"};
-        final int[] values = new int[]{8, 12, 24, 48};
+        final String[] labels = new String[]{"كل 6 ساعات", "كل 12 ساعة", "يوميًا / كل 24 ساعة", "كل 48 ساعة"};
+        final int[] values = new int[]{6, 12, 24, 48};
         int current = AppStore.getAutoBackupIntervalHours(this);
-        int checked = 0;
+        int checked = 1;
         for (int i = 0; i < values.length; i++) if (values[i] == current) checked = i;
         final int[] selected = new int[]{checked};
         RadioGroup group = new RadioGroup(this);
@@ -1436,7 +1431,7 @@ public class MainActivity extends Activity {
         group.check(1000 + checked);
         group.setOnCheckedChangeListener((g, id) -> selected[0] = id - 1000);
         layout.addView(group);
-        TextView note = small("يتم حفظ النسخ داخل مجلد التطبيق B_auto_backups عند فتح التطبيق أو تنفيذ عمليات مهمة بعد مرور الفترة المحددة. أسماء النسخ تبدأ بالحرف B ثم التاريخ والساعة.");
+        TextView note = small("يتم حفظ النسخ داخل مجلد التطبيق ONLINE_auto_backups عند فتح التطبيق أو تنفيذ عمليات مهمة بعد مرور الفترة المحددة.");
         layout.addView(note);
         new AlertDialog.Builder(this)
                 .setTitle("إعدادات النسخ التلقائي")
@@ -1453,123 +1448,136 @@ public class MainActivity extends Activity {
                 .show();
     }
 
+
+    private void showBackupRestoreDialog() {
+        LinearLayout layout = new LinearLayout(this);
+        layout.setOrientation(LinearLayout.VERTICAL);
+        layout.setPadding(dp(4), dp(4), dp(4), dp(4));
+
+        layout.addView(tv("النسخ الاحتياطي", 16, text, true));
+        layout.addView(small("اختر مكان حفظ النسخة. النسخ إلى الهاتف يحفظ داخل مجلد التطبيق، أما Drive فيفتح نافذة اختيار مكان الحفظ حتى تختار Google Drive أو أي مزود ملفات."));
+        layout.addView(action("نسخ إلى الهاتف", purple, Color.WHITE, v -> createPhoneBackupNow()));
+        layout.addView(action("نسخ إلى Drive", Color.rgb(168, 113, 24), Color.WHITE, v -> openBackupSaveToDrive()));
+        layout.addView(separator());
+
+        layout.addView(tv("استرجاع النسخ", 16, text, true));
+        layout.addView(small("اختر مصدر النسخة. الاسترجاع يستبدل البيانات الحالية داخل التطبيق، لذلك احفظ نسخة حالية قبل المتابعة إذا كانت البيانات مهمة."));
+        layout.addView(action("من الهاتف", purple, Color.WHITE, v -> showLocalBackupsForRestore()));
+        layout.addView(action("من Drive", Color.rgb(168, 113, 24), Color.WHITE, v -> openBackupRestoreFromDrive()));
+        layout.addView(separator());
+        layout.addView(action("سجل الاسترجاع", card2, text, v -> showRestoreHistoryDialog()));
+
+        ScrollView scroll = new ScrollView(this);
+        scroll.addView(layout);
+        new AlertDialog.Builder(this)
+                .setTitle("النسخ والاسترجاع")
+                .setView(scroll)
+                .setPositiveButton("إغلاق", null)
+                .show();
+    }
+
+    private void createPhoneBackupNow() {
+        try {
+            String path = AppStore.writeAutoBackupNow(this, "نسخة يدوية إلى الهاتف");
+            toast("تم حفظ النسخة في الهاتف: " + path);
+        } catch (Exception e) {
+            toast("فشل النسخ إلى الهاتف: " + e.getMessage());
+        }
+    }
+
+    private void openBackupSaveToDrive() {
+        Intent intent = new Intent(Intent.ACTION_CREATE_DOCUMENT);
+        intent.addCategory(Intent.CATEGORY_OPENABLE);
+        intent.setType("application/json");
+        intent.putExtra(Intent.EXTRA_TITLE, AppStore.buildBackupFileName(this));
+        if (intent.resolveActivity(getPackageManager()) == null) {
+            toast("لا يوجد تطبيق ملفات أو Drive يدعم حفظ النسخة");
+            return;
+        }
+        startActivityForResult(Intent.createChooser(intent, "اختر Drive أو مكان حفظ النسخة"), REQ_BACKUP_SAVE);
+    }
+
+    private void openBackupRestoreFromDrive() {
+        Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT);
+        intent.addCategory(Intent.CATEGORY_OPENABLE);
+        intent.setType("*/*");
+        if (intent.resolveActivity(getPackageManager()) == null) {
+            toast("لا يوجد تطبيق ملفات أو Drive يدعم اختيار النسخة");
+            return;
+        }
+        startActivityForResult(Intent.createChooser(intent, "اختر ملف النسخة من Drive أو الملفات"), REQ_BACKUP_RESTORE);
+    }
+
+    private void showLocalBackupsForRestore() {
+        try {
+            File dir = AppStore.getAutoBackupDir(this);
+            File[] arr = dir.listFiles();
+            ArrayList<File> backups = new ArrayList<>();
+            if (arr != null) {
+                for (File f : arr) {
+                    if (f != null && f.isFile() && f.getName().toLowerCase(Locale.US).endsWith(".json")) backups.add(f);
+                }
+            }
+            if (backups.isEmpty()) {
+                toast("لا توجد نسخ محفوظة في الهاتف");
+                return;
+            }
+            java.util.Collections.sort(backups, (a, b) -> Long.compare(b.lastModified(), a.lastModified()));
+            String[] labels = new String[backups.size()];
+            SimpleDateFormat fmt = new SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.US);
+            for (int i = 0; i < backups.size(); i++) {
+                File f = backups.get(i);
+                long kb = Math.max(1L, f.length() / 1024L);
+                labels[i] = f.getName() + "\n" + fmt.format(new Date(f.lastModified())) + " | " + kb + " KB";
+            }
+            new AlertDialog.Builder(this)
+                    .setTitle("استرجاع من الهاتف")
+                    .setItems(labels, (d, which) -> restoreBackupFromFile(backups.get(which)))
+                    .setNegativeButton("إلغاء", null)
+                    .show();
+        } catch (Exception e) {
+            toast("تعذر عرض نسخ الهاتف: " + e.getMessage());
+        }
+    }
+
+    private void restoreBackupFromFile(File file) {
+        try {
+            BufferedReader reader = new BufferedReader(new InputStreamReader(new java.io.FileInputStream(file), "UTF-8"));
+            StringBuilder sb = new StringBuilder();
+            String line;
+            while ((line = reader.readLine()) != null) sb.append(line).append('\n');
+            reader.close();
+            confirmAndRestoreBackup(sb.toString(), "الهاتف: " + file.getName());
+        } catch (Exception e) {
+            toast("فشل قراءة نسخة الهاتف: " + e.getMessage());
+        }
+    }
+
+    private void confirmAndRestoreBackup(String backupText, String sourceLabel) {
+        new AlertDialog.Builder(this)
+                .setTitle("استعادة نسخة احتياطية")
+                .setMessage("المصدر: " + (sourceLabel == null ? "ملف نسخة" : sourceLabel) + "\n\nهل تريد استعادة هذه النسخة الاحتياطية؟\n\nسيتم استبدال البيانات الحالية داخل التطبيق ببيانات ملف النسخة: الكروت، الفئات، السجلات، المحافظ، الرسائل، اسم الشبكة والإعدادات. يفضل حفظ نسخة من البيانات الحالية قبل المتابعة.")
+                .setPositiveButton("موافق، استعادة", (d,w) -> {
+                    try {
+                        AppStore.restoreBackupJson(this, backupText);
+                        try { AppStore.writeAutoBackupNow(this, "بعد الاستعادة"); } catch(Exception ignored) {}
+                        toast("تمت استعادة النسخة الاحتياطية بنجاح وتسجيل وقت الاستعادة");
+                        buildLayout();
+                        showHome();
+                    } catch (Exception e) {
+                        toast("فشل الاستعادة: " + e.getMessage());
+                    }
+                })
+                .setNegativeButton("إلغاء", null)
+                .show();
+    }
+
     private void showRestoreHistoryDialog() {
         new AlertDialog.Builder(this)
                 .setTitle("سجل استعادة النسخ")
                 .setMessage(AppStore.restoreHistoryText(this))
                 .setPositiveButton("موافق", null)
                 .show();
-    }
-
-    private void showLocalBackupsDialog() {
-        try {
-            File dir = AppStore.getAutoBackupDir(this);
-            File[] files = dir.listFiles((file, name) -> name != null && name.toLowerCase(Locale.US).endsWith(".json"));
-            if (files == null || files.length == 0) {
-                toast("لا توجد نسخ محفوظة في الهاتف");
-                return;
-            }
-            Arrays.sort(files, (a, b) -> Long.compare(b.lastModified(), a.lastModified()));
-            String[] labels = new String[files.length];
-            for (int i = 0; i < files.length; i++) {
-                String stamp = new SimpleDateFormat("yyyy/MM/dd HH:mm", Locale.US).format(new Date(files[i].lastModified()));
-                labels[i] = files[i].getName() + "\n" + stamp;
-            }
-            new AlertDialog.Builder(this)
-                    .setTitle("استعادة من الهاتف")
-                    .setItems(labels, (d, which) -> confirmRestoreLocalBackup(files[which]))
-                    .setNegativeButton("إلغاء", null)
-                    .show();
-        } catch (Exception e) {
-            toast("تعذر عرض النسخ: " + e.getMessage());
-        }
-    }
-
-    private void confirmRestoreLocalBackup(File file) {
-        if (file == null || !file.exists()) {
-            toast("ملف النسخة غير موجود");
-            return;
-        }
-        new AlertDialog.Builder(this)
-                .setTitle("تأكيد الاستعادة")
-                .setMessage("سيتم استبدال البيانات الحالية بالنسخة المختارة:\n" + file.getName() + "\n\nهذه العملية قد تغيّر مخزون الكروت إلى حالة وقت النسخة. هل تريد المتابعة؟")
-                .setPositiveButton("موافق، استعادة", (d,w) -> restoreLocalBackupFile(file))
-                .setNegativeButton("إلغاء", null)
-                .show();
-    }
-
-    private void restoreLocalBackupFile(File file) {
-        try {
-            BufferedReader reader = new BufferedReader(new InputStreamReader(new FileInputStream(file), "UTF-8"));
-            StringBuilder sb = new StringBuilder();
-            String line;
-            while ((line = reader.readLine()) != null) sb.append(line).append('\n');
-            reader.close();
-            AppStore.restoreBackupJson(this, sb.toString());
-            try { AppStore.writeAutoBackupNow(this, "بعد الاستعادة من الهاتف"); } catch(Exception ignored) {}
-            toast("تمت الاستعادة من الهاتف بنجاح");
-            buildLayout();
-            showHome();
-        } catch (Exception e) {
-            toast("فشل الاستعادة: " + e.getMessage());
-        }
-    }
-
-    private void openDriveFolderPicker() {
-        try {
-            Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT_TREE);
-            intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_GRANT_WRITE_URI_PERMISSION | Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION | Intent.FLAG_GRANT_PREFIX_URI_PERMISSION);
-            startActivityForResult(intent, REQ_BACKUP_DRIVE_FOLDER);
-        } catch (Exception e) {
-            toast("تعذر فتح اختيار مجلد Drive");
-        }
-    }
-
-    private void saveDriveFolderUri(Uri uri) {
-        if (uri == null) return;
-        try {
-            final int flags = Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_GRANT_WRITE_URI_PERMISSION;
-            getContentResolver().takePersistableUriPermission(uri, flags);
-        } catch (Exception ignored) {}
-        AppStore.setDriveBackupTreeUri(this, uri.toString());
-        toast("تم تحديد مجلد النسخ إلى Drive");
-        writeDriveBackupNow("اختبار بعد تحديد المجلد");
-        showSettings();
-    }
-
-    private Uri createDriveBackupDocument() throws Exception {
-        String tree = AppStore.getDriveBackupTreeUri(this);
-        if (tree == null || tree.trim().isEmpty()) throw new Exception("حدد مجلد Drive أولاً");
-        Uri treeUri = Uri.parse(tree);
-        Uri parent = DocumentsContract.buildDocumentUriUsingTree(treeUri, DocumentsContract.getTreeDocumentId(treeUri));
-        Uri fileUri = DocumentsContract.createDocument(getContentResolver(), parent, "application/json", AppStore.buildBackupFileName(this));
-        if (fileUri == null) throw new Exception("تعذر إنشاء ملف النسخة في Drive");
-        return fileUri;
-    }
-
-    private void writeDriveBackupNow(String reason) {
-        try {
-            Uri uri = createDriveBackupDocument();
-            OutputStream out = getContentResolver().openOutputStream(uri);
-            OutputStreamWriter writer = new OutputStreamWriter(out, "UTF-8");
-            writer.write(AppStore.exportBackupJson(this).toString(2));
-            writer.flush();
-            writer.close();
-            if (out != null) out.close();
-            AppStore.markDriveBackupDone(this, reason == null ? "Drive" : reason);
-            toast("تم حفظ نسخة إلى Drive");
-        } catch (Exception e) {
-            toast("فشل النسخ إلى Drive: " + e.getMessage());
-        }
-    }
-
-    private void performDriveAutoBackupIfDue(String reason) {
-        if (!AppStore.isDriveAutoBackupEnabled(this)) return;
-        long last = AppStore.getLastDriveBackupMillis(this);
-        long nowMs = System.currentTimeMillis();
-        long day = 24L * 60L * 60L * 1000L;
-        if (last > 0 && nowMs - last < day) return;
-        writeDriveBackupNow(reason == null ? "نسخ تلقائي يومي" : "نسخ تلقائي يومي - " + reason);
     }
 
 
@@ -1945,26 +1953,15 @@ public class MainActivity extends Activity {
 
         LinearLayout appName = cardBox();
         appName.addView(tv("اسم الشبكة داخل التطبيق", 17, text, true));
-        appName.addView(small("الاسم الحالي: " + AppStore.getNetworkName(this) + "\nسيتم حفظ اسم الشبكة كما تكتبه بدون إضافة أي كلمة تلقائيًا."));
+        appName.addView(small("الاسم الحالي: " + AppStore.getNetworkName(this) + "\nإذا كتبت: فور يو، سيحفظه التطبيق تلقائيًا: فور يو اونلاين. اسم التطبيق تحت الأيقونة أصبح: ONLINE."));
         appName.addView(action("تعديل اسم الشبكة", purple, Color.WHITE, v -> showNetworkNameDialog()));
         content.addView(appName);
 
-        LinearLayout backups = cardBox();
-        backups.addView(tv("النسخ الاحتياطي والاستعادة", 17, text, true));
-        backups.addView(small("آخر نسخة للهاتف: " + AppStore.getLastAutoBackupAt(this)
-                + "\nآخر نسخة Drive: " + AppStore.getLastDriveBackupAt(this)
-                + "\nاسم النسخة يكون مثل: " + AppStore.buildBackupFileName(this)
-                + "\nتنبيه: الاستعادة تستبدل البيانات الحالية، لذلك احفظ نسخة قبل الاستعادة."));
-        backups.addView(separator());
-        backups.addView(action("💾 نسخ احتياطي إلى الهاتف", purple, Color.WHITE, v -> manualAutoBackupNow()));
-        backups.addView(action("☁️ حفظ نسخة إلى Drive / اختيار مكان", card2, text, v -> openBackupSave()));
-        backups.addView(action("📁 تحديد مجلد Drive للنسخ التلقائي كل 24 ساعة", card2, text, v -> openDriveFolderPicker()));
-        backups.addView(action("☁️ نسخ إلى Drive الآن", card2, text, v -> writeDriveBackupNow("نسخة يدوية إلى Drive")));
-        backups.addView(action("↩️ استعادة من الهاتف", Color.rgb(50, 90, 72), Color.WHITE, v -> showLocalBackupsDialog()));
-        backups.addView(action("↩️ استعادة من ملف / Drive", Color.rgb(50, 90, 72), Color.WHITE, v -> openBackupRestore()));
-        backups.addView(action("⚙️ إعدادات النسخ التلقائي", card2, text, v -> showAutoBackupSettings()));
-        backups.addView(action("🧾 سجل الاستعادة", card2, text, v -> showRestoreHistoryDialog()));
-        content.addView(backups);
+        LinearLayout backupRestore = cardBox();
+        backupRestore.addView(tv("النسخ والاسترجاع", 17, text, true));
+        backupRestore.addView(small("نافذة واحدة للنسخ الاحتياطي والاسترجاع: حفظ نسخة في الهاتف، حفظ نسخة إلى Drive عبر اختيار مكان الحفظ، واستعادة نسخة من الهاتف أو من Drive."));
+        backupRestore.addView(action("فتح النسخ والاسترجاع", purple, Color.WHITE, v -> showBackupRestoreDialog()));
+        content.addView(backupRestore);
 
         LinearLayout auto = cardBox();
         Switch sw = new Switch(this);
@@ -3642,18 +3639,11 @@ public class MainActivity extends Activity {
 
 
     private void openBackupSave() {
-        Intent intent = new Intent(Intent.ACTION_CREATE_DOCUMENT);
-        intent.addCategory(Intent.CATEGORY_OPENABLE);
-        intent.setType("application/json");
-        intent.putExtra(Intent.EXTRA_TITLE, AppStore.buildBackupFileName(this));
-        startActivityForResult(intent, REQ_BACKUP_SAVE);
+        openBackupSaveToDrive();
     }
 
     private void openBackupRestore() {
-        Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT);
-        intent.addCategory(Intent.CATEGORY_OPENABLE);
-        intent.setType("*/*");
-        startActivityForResult(intent, REQ_BACKUP_RESTORE);
+        openBackupRestoreFromDrive();
     }
 
     private void writeBackupToUri(Uri uri) {
@@ -3679,22 +3669,7 @@ public class MainActivity extends Activity {
             while ((line = reader.readLine()) != null) sb.append(line).append('\n');
             reader.close();
             final String backupText = sb.toString();
-            new AlertDialog.Builder(this)
-                    .setTitle("استعادة نسخة احتياطية")
-                    .setMessage("هل تريد استعادة هذه النسخة الاحتياطية؟\n\nسيتم استبدال البيانات الحالية داخل التطبيق ببيانات ملف النسخة: الكروت، الفئات، السجلات، المحافظ، الرسائل، اسم الشبكة والإعدادات. يفضل حفظ نسخة من البيانات الحالية قبل المتابعة.")
-                    .setPositiveButton("موافق، استعادة", (d,w) -> {
-                        try {
-                            AppStore.restoreBackupJson(this, backupText);
-                            try { AppStore.writeAutoBackupNow(this, "بعد الاستعادة"); } catch(Exception ignored) {}
-                            toast("تمت استعادة النسخة الاحتياطية بنجاح وتسجيل وقت الاستعادة");
-                            buildLayout();
-                            showHome();
-                        } catch (Exception e) {
-                            toast("فشل الاستعادة: " + e.getMessage());
-                        }
-                    })
-                    .setNegativeButton("إلغاء", null)
-                    .show();
+            confirmAndRestoreBackup(backupText, "ملف خارجي / Drive");
         } catch (Exception e) {
             toast("فشل قراءة ملف النسخة الاحتياطية: " + e.getMessage());
         }
@@ -3755,9 +3730,6 @@ public class MainActivity extends Activity {
         }
         if (requestCode == REQ_BACKUP_RESTORE && resultCode == RESULT_OK && data != null) {
             restoreBackupFromUri(data.getData());
-        }
-        if (requestCode == REQ_BACKUP_DRIVE_FOLDER && resultCode == RESULT_OK && data != null) {
-            saveDriveFolderUri(data.getData());
         }
         if (requestCode == REQ_ADMIN_PACK && resultCode == RESULT_OK && data != null) {
             importAdminPackFromUri(data.getData());
