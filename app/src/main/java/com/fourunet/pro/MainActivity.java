@@ -1231,7 +1231,7 @@ public class MainActivity extends Activity {
         String st = log.status == null ? "" : log.status;
         String phone = log.customerPhone == null ? "" : log.customerPhone.trim();
         String name = log.customerName == null ? "" : log.customerName.trim();
-        return st.contains("معلق") && phone.isEmpty() && !name.isEmpty() && log.amount > 0;
+        return (st.contains("معلق") || st.contains("إيداع صريح") || st.contains("يحتاج مراجعة")) && phone.isEmpty() && !name.isEmpty() && log.amount > 0;
     }
 
     private void showApproveTrustedNameDialog(OperationLog log) {
@@ -1244,22 +1244,16 @@ public class MainActivity extends Activity {
         String sender = log.sender == null ? "" : log.sender.trim();
         String nameValue = log.customerName == null ? "" : log.customerName.trim();
 
-        TextView help = small("تم التعرف على إيداع صحيح، لكن الرسالة لا تحتوي رقم زبون صحيح 9 أرقام يبدأ بـ 7. راجع الاسم، اكتب رقم الزبون، ثم احفظه كمحفظة موثوقة. يمكنك حفظ الاسم فقط أو حفظه وإرسال الكرت الآن.");
+        TextView help = small("تم التعرف على إيداع صحيح، لكن الرسالة لا تحتوي رقم زبون صحيح 9 أرقام يبدأ بـ 7. راجع الاسم، اكتب رقم الزبون، ثم احفظه داخل نفس المحفظة التي وصل منها الإيداع فقط. الإشعار سيبقى قائمًا حتى تضغط زر تمت المراجعة.");
         EditText wallet = new EditText(this); wallet.setHint("اسم المحفظة"); wallet.setGravity(Gravity.RIGHT); wallet.setInputType(InputType.TYPE_CLASS_TEXT); wallet.setText(provider);
         EditText keywords = new EditText(this); keywords.setHint("كلمات التعرف"); keywords.setGravity(Gravity.RIGHT); keywords.setInputType(InputType.TYPE_CLASS_TEXT); keywords.setText(defaultKeywordsForProvider(provider, sender));
         EditText name = new EditText(this); name.setHint("الاسم كما ظهر في رسالة المحفظة"); name.setGravity(Gravity.RIGHT); name.setInputType(InputType.TYPE_CLASS_TEXT); name.setText(nameValue);
         EditText phone = new EditText(this); phone.setHint("رقم الزبون: 7xxxxxxxx"); phone.setGravity(Gravity.RIGHT); phone.setInputType(InputType.TYPE_CLASS_PHONE);
-        CheckBox addAllWallets = new CheckBox(this);
-        addAllWallets.setText("إضافة نفس الاسم والرقم إلى جميع المحافظ الموجودة والافتراضية");
-        addAllWallets.setTextColor(text);
-        addAllWallets.setChecked(true);
-
         layout.addView(help);
         layout.addView(wallet);
         layout.addView(keywords);
         layout.addView(name);
         layout.addView(phone);
-        layout.addView(addAllWallets);
 
         AlertDialog dialog = new AlertDialog.Builder(this)
                 .setTitle("اعتماد الاسم الموثوق")
@@ -1269,8 +1263,8 @@ public class MainActivity extends Activity {
                 .setNegativeButton("إلغاء", null)
                 .create();
         dialog.setOnShowListener(d -> {
-            dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(v -> approveTrustedNameFromLog(dialog, log, wallet, keywords, name, phone, addAllWallets.isChecked(), true));
-            dialog.getButton(AlertDialog.BUTTON_NEUTRAL).setOnClickListener(v -> approveTrustedNameFromLog(dialog, log, wallet, keywords, name, phone, addAllWallets.isChecked(), false));
+            dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(v -> approveTrustedNameFromLog(dialog, log, wallet, keywords, name, phone, true));
+            dialog.getButton(AlertDialog.BUTTON_NEUTRAL).setOnClickListener(v -> approveTrustedNameFromLog(dialog, log, wallet, keywords, name, phone, false));
         });
         dialog.show();
     }
@@ -1286,7 +1280,7 @@ public class MainActivity extends Activity {
         return p;
     }
 
-    private void approveTrustedNameFromLog(AlertDialog dialog, OperationLog log, EditText wallet, EditText keywords, EditText name, EditText phone, boolean addAllWallets, boolean sendNow) {
+    private void approveTrustedNameFromLog(AlertDialog dialog, OperationLog log, EditText wallet, EditText keywords, EditText name, EditText phone, boolean sendNow) {
         String walletName = wallet.getText().toString().trim();
         String keywordText = keywords.getText().toString().trim();
         String fullName = name.getText().toString().trim();
@@ -1300,11 +1294,11 @@ public class MainActivity extends Activity {
             return;
         }
 
-        if (addAllWallets) AppStore.addWalletContactToAllWallets(this, walletName, keywordText, fullName, cleanPhone);
-        else AppStore.addWalletContact(this, walletName, keywordText, fullName, cleanPhone);
+        AppStore.addWalletContact(this, walletName, keywordText, fullName, cleanPhone);
         if (!sendNow) {
-            AppStore.updateLogDetails(this, log.id, fullName, "", "تمت إضافة الاسم", "تمت إضافة الاسم إلى المحافظ الموثوقة برقم: " + cleanPhone + ". لم يتم حجز كرت ولم يتم إرسال رسالة. يمكنك حذف الإشعار بعد المراجعة.", "");
-            toast("تم حفظ الاسم والرقم في المحافظ الموثوقة");
+            AppStore.updateLogDetails(this, log.id, fullName, "", "معلق: تمت إضافة الاسم بانتظار المراجعة", "تمت إضافة الاسم والرقم إلى نفس المحفظة فقط: " + walletName + " برقم: " + cleanPhone + ". لم يتم حجز كرت ولم يتم إرسال رسالة. اضغط تمت المراجعة بعد إكمال المعالجة لإيقاف الإشعار.", "");
+            NotifyHelper.notifyExplicitDepositReview(this, log.id, log.amount, walletName, fullName, "تمت إضافة الاسم بانتظار المراجعة");
+            toast("تم حفظ الاسم والرقم في نفس المحفظة، والإشعار باقٍ حتى المراجعة");
             dialog.dismiss();
             showLogs();
             return;
@@ -1312,8 +1306,8 @@ public class MainActivity extends Activity {
 
         CardItem cardItem = AppStore.takeAvailableCard(this, log.amount, cleanPhone);
         if (cardItem == null) {
-            AppStore.updateLogDetails(this, log.id, fullName, cleanPhone, "معلق: نفدت الكمية", "تمت إضافة الاسم إلى المحافظ الموثوقة، لكن لا توجد كروت متاحة لفئة " + log.amount + " ريال. لم يتم إرسال رسالة كرت.", "");
-            NotifyHelper.notifyPendingAction(this, log.id, log.amount, "", "نفدت فئة " + log.amount);
+            AppStore.updateLogDetails(this, log.id, fullName, cleanPhone, "إيداع صريح غير منفذ: نفدت الكمية", "تمت إضافة الاسم إلى نفس المحفظة فقط، لكن لا توجد كروت متاحة لفئة " + log.amount + " ريال. لم يتم إرسال رسالة كرت.", "");
+            NotifyHelper.notifyExplicitDepositReview(this, log.id, log.amount, walletName, fullName, "نفدت فئة " + log.amount);
             toast("تم حفظ الاسم، لكن الكمية نافدة");
             dialog.dismiss();
             showLogs();
@@ -3053,8 +3047,16 @@ public class MainActivity extends Activity {
             box.addView(tv(contact.walletName + " - " + contact.fullName, 18, text, true));
             box.addView(small("كلمات التعرف: " + (contact.senderKeywords == null || contact.senderKeywords.trim().isEmpty() ? contact.walletName : contact.senderKeywords)
                     + "\nالاسم الثلاثي: " + contact.tripleName
-                    + "\nرقم استلام الكرت: " + contact.phone));
-            box.addView(action("حذف", Color.rgb(82,30,42), Color.WHITE, v -> confirmDeleteTrustedContact(contact)));
+                    + "\nرقم استلام الكرت: " + contact.phone
+                    + "\nالحالة: " + (contact.active ? "مفعّل" : "معطّل")));
+            LinearLayout tools = new LinearLayout(this);
+            tools.setOrientation(LinearLayout.HORIZONTAL);
+            tools.setGravity(Gravity.CENTER);
+            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0, dp(50), 1);
+            lp.setMargins(dp(3), dp(8), dp(3), dp(4));
+            tools.addView(action("تعديل", purple, Color.WHITE, v -> showTrustedDialog(contact)), lp);
+            tools.addView(action("حذف", Color.rgb(82,30,42), Color.WHITE, v -> confirmDeleteTrustedContact(contact)), lp);
+            box.addView(tools);
             content.addView(box);
         }
 
@@ -3074,6 +3076,10 @@ public class MainActivity extends Activity {
     }
 
     private void showTrustedDialog() {
+        showTrustedDialog(null);
+    }
+
+    private void showTrustedDialog(TrustedContact old) {
         LinearLayout layout = new LinearLayout(this);
         layout.setOrientation(LinearLayout.VERTICAL);
         layout.setPadding(dp(8), dp(8), dp(8), dp(8));
@@ -3086,19 +3092,25 @@ public class MainActivity extends Activity {
         CheckBox addAllWallets = new CheckBox(this);
         addAllWallets.setText("إضافة نفس الاسم والرقم إلى جميع المحافظ الموجودة والافتراضية");
         addAllWallets.setTextColor(text);
-        addAllWallets.setChecked(true);
+        addAllWallets.setChecked(false);
 
-        wallet.setText("ONE Cash");
-        keywords.setText("one cash, onecash, ون كاش");
+        if (old != null) {
+            wallet.setText(old.walletName);
+            keywords.setText(old.senderKeywords);
+            name.setText(old.fullName);
+            phone.setText(old.phone);
+        } else {
+            wallet.setText("ONE Cash");
+            keywords.setText("one cash, onecash, ون كاش");
+        }
 
         layout.addView(help);
         layout.addView(wallet);
         layout.addView(keywords);
         layout.addView(name);
         layout.addView(phone);
-        layout.addView(addAllWallets);
         AlertDialog dialog = new AlertDialog.Builder(this)
-                .setTitle("إضافة محفظة / اسم موثوق")
+                .setTitle(old == null ? "إضافة محفظة / اسم موثوق" : "تعديل محفظة / اسم موثوق")
                 .setView(layout)
                 .setPositiveButton("حفظ", null)
                 .setNegativeButton("إلغاء", null)
@@ -3113,14 +3125,19 @@ public class MainActivity extends Activity {
                 toast(err);
                 return;
             }
-            boolean ok = addAllWallets.isChecked()
-                    ? AppStore.addWalletContactToAllWallets(this, walletText, keywordText, nameText, phoneText)
-                    : AppStore.addWalletContact(this, walletText, keywordText, nameText, phoneText);
+            boolean ok;
+            if (old != null) {
+                ok = AppStore.updateTrustedContact(this, old.id, walletText, keywordText, nameText, phoneText, true);
+            } else {
+                ok = addAllWallets.isChecked()
+                        ? AppStore.addWalletContactToAllWallets(this, walletText, keywordText, nameText, phoneText)
+                        : AppStore.addWalletContact(this, walletText, keywordText, nameText, phoneText);
+            }
             if (!ok) {
                 toast("لم يتم الحفظ. تأكد من الاسم الثلاثي ورقم يبدأ بـ 7 ومكون من 9 أرقام");
                 return;
             }
-            toast("تم حفظ المحفظة / الاسم الموثوق");
+            toast(old == null ? "تم حفظ المحفظة / الاسم الموثوق" : "تم تعديل المحفظة / الاسم الموثوق");
             dialog.dismiss();
             showTrustedContacts();
         });

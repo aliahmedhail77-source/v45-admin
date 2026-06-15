@@ -77,7 +77,8 @@ class SmsProcessor {
         // بهذا يتم تجاهل رسائل المنظمات، العروض، تعبئة الرصيد، الرسائل الخاصة، وأي رسالة مزورة من مرسل غير موجود في المسموح.
         if (PaymentParser.isNonPaymentNoise(body)) return false;
         if (AppStore.findTrustedCreditSender(context, sender) != null && PaymentParser.parseTrustedCreditRequest(body) != null) return true;
-        return PaymentParser.parse(context, sender, body) != null;
+        if (PaymentParser.parse(context, sender, body) != null) return true;
+        return PaymentParser.looksLikePayment(body);
     }
 
     static void processIncomingSms(Context context, String sender, String body) {
@@ -112,8 +113,24 @@ class SmsProcessor {
         // Try to parse as a payment message (supports known wallets + custom wallets + fallback)
         ParsedPayment payment = PaymentParser.parse(context, sender, body);
 
-        // تجاهل أي رسالة لا تتحول إلى عملية دفع مسموحة. لا نسجل رسائل خاصة/منظمات/تعبئة رصيد/رسائل مزورة في السجل.
-        if (payment == null) return;
+        // أي إيصال/إيداع واضح لم يتم التعرف عليه كعملية قابلة للتنفيذ يدخل إلى المراجعة.
+        if (payment == null) {
+            if (PaymentParser.looksLikePayment(body)) {
+                if (AppStore.isExactPaymentTextProcessed(context, sender, body)) {
+                    AppStore.markProcessed(context, eventId);
+                    return;
+                }
+                AppStore.markExactPaymentTextProcessed(context, sender, body);
+                AppStore.markProcessed(context, eventId);
+                int amount = PaymentParser.extractAmountForReview(body);
+                String walletName = PaymentParser.walletDisplayName(sender, body);
+                String name = PaymentParser.extractNameForReview(body);
+                String pendingLogId = addExplicitDepositReviewLog(context, walletName, sender, name, "", amount,
+                        "لم يتم تنفيذ الإيداع لأن الرسالة لم تطابق قوالب المحافظ المعروفة أو لم تحتوي بيانات كافية للتنفيذ. أضف الاسم/الرقم للمحفظة نفسها ثم اضغط تمت المراجعة بعد المعالجة.", body);
+                NotifyHelper.notifyExplicitDepositReview(context, pendingLogId, amount, walletName, name, "رسالة إيداع تحتاج مراجعة");
+            }
+            return;
+        }
 
         // قفل التكرار الحرفي V44: إذا تساوى نص رسالة الدفع كاملًا 100% لا يتم إرسال كرت ولا تدخل للسجل مرة أخرى.
         // أما إذا اختلف رقم العملية أو الرصيد أو أي حرف في النص فتُعامل كعملية جديدة.
@@ -130,20 +147,25 @@ class SmsProcessor {
 
         if (!activated) {
             AppStore.markProcessed(context, eventId);
-            addLog(context, payment.provider, sender, payment.customerName, payment.customerPhone, payment.amount,
-                    "وارد", "تم تسجيل عملية سداد، لكن التطبيق غير مفعل؛ لن يتم إرسال كرت", "");
+            String pendingLogId = addExplicitDepositReviewLog(context, payment.provider, sender, payment.customerName, payment.customerPhone, payment.amount,
+                    "تم تسجيل عملية إيداع صريحة، لكن التطبيق غير مفعل؛ لن يتم إرسال كرت حتى تتم المراجعة.", body);
+            NotifyHelper.notifyExplicitDepositReview(context, pendingLogId, payment.amount, payment.provider, payment.customerName, "التطبيق غير مفعل");
             return;
         }
 
         if (!trusted) {
             AppStore.markProcessed(context, eventId);
+            String pendingLogId = addExplicitDepositReviewLog(context, payment.provider, sender, payment.customerName, payment.customerPhone, payment.amount,
+                    "تم تسجيل عملية إيداع صريحة، لكن مصدر الرسالة غير موثوق؛ لن يتم إرسال كرت حتى تتم المراجعة.", body);
+            NotifyHelper.notifyExplicitDepositReview(context, pendingLogId, payment.amount, payment.provider, payment.customerName, "مصدر الرسالة غير موثوق");
             return;
         }
 
         if (!autoSend) {
             AppStore.markProcessed(context, eventId);
-            addLog(context, payment.provider, sender, payment.customerName, payment.customerPhone, payment.amount,
-                    "وارد", "تم تسجيل عملية سداد، لكن الإرسال التلقائي متوقف؛ لن يتم إرسال كرت", "");
+            String pendingLogId = addExplicitDepositReviewLog(context, payment.provider, sender, payment.customerName, payment.customerPhone, payment.amount,
+                    "تم تسجيل عملية إيداع صريحة، لكن الإرسال التلقائي متوقف؛ لن يتم إرسال كرت حتى تتم المراجعة.", body);
+            NotifyHelper.notifyExplicitDepositReview(context, pendingLogId, payment.amount, payment.provider, payment.customerName, "الإرسال التلقائي متوقف");
             return;
         }
 
@@ -167,18 +189,16 @@ class SmsProcessor {
             String note = name.isEmpty()
                     ? "تم التعرف على عملية إيداع صحيحة لكن لا يوجد رقم زبون صحيح مكون من 9 أرقام ويبدأ بـ 7. راجع الرسالة ثم احذفها أو أضف الاسم إلى المحافظ الموثوقة إذا كنت تعرف رقم العميل."
                     : "تم التعرف على عملية إيداع صحيحة باسم: " + name + "، لكن لا يوجد رقم زبون صحيح مكون من 9 أرقام ويبدأ بـ 7. من السجل يمكنك الضغط على زر إضافة الاسم للمحافظ الموثوقة أو حذف الإشعار.";
-            String pendingLogId = addLog(context, payment.provider, sender, name, "", payment.amount, "معلق: يحتاج إضافة اسم", note, "");
-            NotifyHelper.notifySendFailed(context, payment.amount, "", "لا يوجد رقم استلام صحيح");
-            NotifyHelper.notifyPendingAction(context, pendingLogId, payment.amount, "", "عملية إيداع بلا رقم صحيح");
+            String pendingLogId = addLog(context, payment.provider, sender, name, "", payment.amount, "إيداع صريح غير منفذ: يحتاج إضافة اسم", note + "\nنص الرسالة الأصلي:\n" + body, "");
+            NotifyHelper.notifyExplicitDepositReview(context, pendingLogId, payment.amount, payment.provider, name, "لا يوجد رقم استلام صحيح");
             return;
         }
 
         CardItem card = AppStore.takeAvailableCard(context, payment.amount, receiver);
         if (card == null) {
             String pendingLogId = addLog(context, payment.provider, sender, payment.customerName, receiver, payment.amount,
-                    "معلق: نفدت الكمية", "تم تسجيل عملية سداد صحيحة لكن لا توجد كروت متاحة لهذه الفئة. لم يتم سحب كرت ولم يتم إرسال رسالة كرت.", "");
-            NotifyHelper.notifySendFailed(context, payment.amount, "", "نفدت فئة " + payment.amount);
-            NotifyHelper.notifyPendingAction(context, pendingLogId, payment.amount, "", "نفدت فئة " + payment.amount);
+                    "إيداع صريح غير منفذ: نفدت الكمية", "تم تسجيل عملية إيداع صريحة لكن لا توجد كروت متاحة لهذه الفئة. لم يتم سحب كرت ولم يتم إرسال رسالة كرت.\nنص الرسالة الأصلي:\n" + body, "");
+            NotifyHelper.notifyExplicitDepositReview(context, pendingLogId, payment.amount, payment.provider, payment.customerName, "نفدت فئة " + payment.amount);
             AppStore.performAutoBackupIfDue(context, "عملية تلقائية - نفاد فئة");
             return;
         }
@@ -199,6 +219,23 @@ class SmsProcessor {
         AppStore.performAutoBackupIfDue(context, "عملية تلقائية");
     }
 
+
+    private static String addExplicitDepositReviewLog(Context context, String provider, String sender, String customerName, String customerPhone, int amount, String note, String originalBody) {
+        String name = customerName == null ? "" : customerName.trim();
+        String phone = customerPhone == null ? "" : cleanPhone(customerPhone);
+        String wallet = provider == null || provider.trim().isEmpty() ? PaymentParser.walletDisplayName(sender, originalBody) : provider.trim();
+        StringBuilder msg = new StringBuilder();
+        msg.append("إيداع صريح غير منفذ يحتاج مراجعة من الإدارة.");
+        if (note != null && !note.trim().isEmpty()) msg.append("\n").append(note.trim());
+        if (name.isEmpty()) {
+            String extracted = PaymentParser.extractNameForReview(originalBody);
+            if (extracted != null && !extracted.trim().isEmpty()) name = extracted.trim();
+        }
+        if (originalBody != null && !originalBody.trim().isEmpty() && msg.indexOf("نص الرسالة الأصلي") < 0) {
+            msg.append("\nنص الرسالة الأصلي:\n").append(originalBody.trim());
+        }
+        return addLog(context, wallet, sender, name, phone, amount, "إيداع صريح غير منفذ: يحتاج مراجعة", msg.toString(), "");
+    }
 
     private static void processTrustedCreditRequest(Context context, String eventId, String sender, TrustedCreditAgent agent, ParsedCreditRequest req) {
         AppStore.markProcessed(context, eventId);

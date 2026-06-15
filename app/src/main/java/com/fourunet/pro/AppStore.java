@@ -1678,6 +1678,32 @@ class AppStore {
         saveTrustedContacts(c, next);
     }
 
+
+    static boolean updateTrustedContact(Context c, String id, String walletName, String senderKeywords, String fullName, String phone, boolean active) {
+        String wallet = walletName == null || walletName.trim().isEmpty() ? "محفظة" : walletName.trim();
+        String keywords = senderKeywords == null ? "" : senderKeywords.trim();
+        String cleanName = fullName == null ? "" : fullName.trim();
+        String triple = NameUtils.tripleName(cleanName);
+        String normalizedPhone = normalizeLocalPhone(phone);
+        if (id == null || id.trim().isEmpty() || triple.isEmpty() || !isValidLocalMobile(normalizedPhone)) return false;
+        ArrayList<TrustedContact> list = loadTrustedContacts(c);
+        boolean changed = false;
+        for (TrustedContact contact : list) {
+            if (id.equals(contact.id)) {
+                contact.walletName = wallet;
+                contact.senderKeywords = keywords;
+                contact.fullName = cleanName;
+                contact.tripleName = triple;
+                contact.phone = normalizedPhone;
+                contact.active = active;
+                changed = true;
+                break;
+            }
+        }
+        if (changed) saveTrustedContacts(c, list);
+        return changed;
+    }
+
     static TrustedContact findTrustedByName(Context c, String rawName) {
         String triple = NameUtils.tripleName(rawName);
         if (triple.isEmpty()) return null;
@@ -1751,6 +1777,7 @@ class AppStore {
         return st.contains("معلق")
                 || st.contains("يحتاج إضافة")
                 || st.contains("دفع صريح")
+                || st.contains("إيداع صريح")
                 || st.contains("فشل")
                 || st.contains("لا يوجد رقم")
                 || st.contains("مرفوض")
@@ -1763,6 +1790,33 @@ class AppStore {
             if (isPendingCriticalLog(log)) return log;
         }
         return null;
+    }
+
+
+    static OperationLog firstPendingCriticalLogForReminder(Context c) {
+        long nowMs = System.currentTimeMillis();
+        for (OperationLog log : loadLogs(c)) {
+            if (!isPendingCriticalLog(log)) continue;
+            long age = nowMs - parseLogTimeMs(log.createdAt);
+            if (age >= 0 && age <= 30L * 60L * 1000L) return log;
+        }
+        return null;
+    }
+
+    static boolean isExplicitDepositReviewLog(OperationLog log) {
+        if (log == null) return false;
+        String st = log.status == null ? "" : log.status;
+        String msg = log.message == null ? "" : log.message;
+        return st.contains("إيداع صريح") || st.contains("ايداع صريح") || msg.contains("إيداع صريح") || msg.contains("ايداع صريح");
+    }
+
+    private static long parseLogTimeMs(String value) {
+        if (value == null || value.trim().isEmpty()) return System.currentTimeMillis();
+        try {
+            return new SimpleDateFormat("yyyy/MM/dd HH:mm:ss", Locale.US).parse(value.trim()).getTime();
+        } catch (Exception ignored) {
+            return System.currentTimeMillis();
+        }
     }
 
     static boolean hasPendingCriticalLogs(Context c) {

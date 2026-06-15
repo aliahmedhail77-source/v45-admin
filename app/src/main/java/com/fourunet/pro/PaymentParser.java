@@ -40,6 +40,24 @@ class PaymentParser {
         return hasDepositVerb && hasCurrency;
     }
 
+
+    static int extractAmountForReview(String body) {
+        return extractAmount(body);
+    }
+
+    static String extractNameForReview(String body) {
+        return extractNameAfterFrom(body);
+    }
+
+    static String walletDisplayName(String sender, String body) {
+        String hay = ((sender == null ? "" : sender) + " " + (body == null ? "" : body)).toLowerCase(Locale.ROOT);
+        if (hay.contains("jawali") || (sender != null && sender.contains("جوالي"))) return "جوالي";
+        if (hay.contains("jaib") || (sender != null && sender.contains("جيب"))) return "جيب";
+        if (hay.contains("one cash") || hay.contains("onecash") || (sender != null && sender.contains("ون كاش"))) return "ONE Cash";
+        if (sender != null && !sender.trim().isEmpty()) return sender.trim();
+        return "محفظة";
+    }
+
     static boolean isNonPaymentNoise(String body) {
         if (body == null) return true;
         String b = body.toLowerCase(Locale.ROOT);

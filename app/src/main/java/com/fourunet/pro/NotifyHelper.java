@@ -7,13 +7,18 @@ import android.app.NotificationManager;
 import android.app.PendingIntent;
 import android.content.Context;
 import android.content.Intent;
+import android.media.AudioAttributes;
+import android.media.RingtoneManager;
+import android.net.Uri;
 import android.os.Build;
 
 class NotifyHelper {
     private static final String CHANNEL_ID = "card_sales";
     private static final String CHANNEL_NAME = "إشعارات بيع الكروت";
-    private static final String ALERT_CHANNEL_ID = "card_sales_pending_alerts_v3";
+    private static final String ALERT_CHANNEL_ID = "card_sales_pending_alerts_v4";
     private static final String ALERT_CHANNEL_NAME = "تنبيهات العمليات التي تحتاج مراجعة";
+    private static final String DEPOSIT_ALERT_CHANNEL_ID = "wallet_explicit_deposit_alerts_v1";
+    private static final String DEPOSIT_ALERT_CHANNEL_NAME = "تنبيهات الإيداع الصريح غير المنفذ";
     private static final int PENDING_REMINDER_NOTIFICATION_ID = 909002;
 
     static void notifyCardSold(Context context, int amount, String code, String phone) {
@@ -54,9 +59,20 @@ class NotifyHelper {
         schedulePendingReviewAlert(context);
     }
 
+    static void notifyExplicitDepositReview(Context context, String logId, int amount, String walletName, String customerName, String reason) {
+        String title = "🔴 إيداع صريح غير منفذ";
+        String body = "المحفظة: " + (walletName == null || walletName.trim().isEmpty() ? "محفظة" : walletName.trim())
+                + (amount > 0 ? "\nالمبلغ: " + amount + " ريال" : "")
+                + (customerName == null || customerName.trim().isEmpty() ? "" : "\nالاسم: " + customerName.trim())
+                + "\nالسبب: " + (reason == null || reason.trim().isEmpty() ? "تحتاج مراجعة" : reason.trim())
+                + "\nاضغط لفتح العملية، ثم اضغط تمت المراجعة لإيقاف التنبيه.";
+        showDepositReview(context, title, body, logId, notificationIdForLog(logId));
+        schedulePendingReviewAlert(context);
+    }
+
     static void notifyPendingReminder(Context context) {
         if (context == null) return;
-        OperationLog first = AppStore.firstPendingCriticalLog(context);
+        OperationLog first = AppStore.firstPendingCriticalLogForReminder(context);
         if (first == null) {
             cancelPendingReviewAlert(context);
             cancelReminderNotification(context);
@@ -64,14 +80,20 @@ class NotifyHelper {
         }
         String body = "توجد عملية واحدة أو أكثر تحتاج مراجعة.\n"
                 + "العملية الأقرب: " + first.amount + " ريال - " + (first.customerPhone == null || first.customerPhone.isEmpty() ? "بدون رقم" : first.customerPhone)
+                + (first.customerName == null || first.customerName.trim().isEmpty() ? "" : "\nالاسم: " + first.customerName.trim())
                 + "\nاضغط هنا لفتح العملية المميزة بالأحمر.";
-        showReview(context, "🚨 عمليات تحتاج مراجعة", body, first.id, PENDING_REMINDER_NOTIFICATION_ID);
+        if (AppStore.isExplicitDepositReviewLog(first)) {
+            showDepositReview(context, "🔴 إيداع صريح بانتظار المراجعة", body, first.id, PENDING_REMINDER_NOTIFICATION_ID);
+        } else {
+            showReview(context, "🚨 عمليات تحتاج مراجعة", body, first.id, PENDING_REMINDER_NOTIFICATION_ID);
+        }
         schedulePendingReviewAlert(context);
     }
 
     static void schedulePendingReviewAlert(Context context) {
         try {
             if (context == null) return;
+            if (AppStore.firstPendingCriticalLogForReminder(context) == null) return;
             AlarmManager am = (AlarmManager) context.getSystemService(Context.ALARM_SERVICE);
             if (am == null) return;
             Intent intent = new Intent(context, PendingAlertReceiver.class);
@@ -122,24 +144,34 @@ class NotifyHelper {
     }
 
     private static void show(Context context, String title, String body) {
-        show(context, title, body, false);
-    }
-
-    private static void show(Context context, String title, String body, boolean urgent) {
-        showInternal(context, title, body, urgent, null, (int) (System.currentTimeMillis() % Integer.MAX_VALUE), !urgent, urgent);
+        showInternal(context, title, body, false, false, null, (int) (System.currentTimeMillis() % Integer.MAX_VALUE), true, false);
     }
 
     private static void showReview(Context context, String title, String body, String logId, int notificationId) {
-        showInternal(context, title, body, true, logId, notificationId, false, true);
+        showInternal(context, title, body, true, false, logId, notificationId, true, false);
     }
 
-    private static void showInternal(Context context, String title, String body, boolean urgent, String logId, int notificationId, boolean autoCancel, boolean ongoing) {
+    private static void showDepositReview(Context context, String title, String body, String logId, int notificationId) {
+        showInternal(context, title, body, true, true, logId, notificationId, true, false);
+    }
+
+    private static void showInternal(Context context, String title, String body, boolean urgent, boolean depositAlert, String logId, int notificationId, boolean autoCancel, boolean ongoing) {
         try {
             NotificationManager nm = (NotificationManager) context.getSystemService(Context.NOTIFICATION_SERVICE);
             if (nm == null) return;
+            Uri alarmSound = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_ALARM);
+            if (alarmSound == null) alarmSound = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION);
+            String channelId = depositAlert ? DEPOSIT_ALERT_CHANNEL_ID : (urgent ? ALERT_CHANNEL_ID : CHANNEL_ID);
             if (Build.VERSION.SDK_INT >= 26) {
-                NotificationChannel ch = new NotificationChannel(urgent ? ALERT_CHANNEL_ID : CHANNEL_ID, urgent ? ALERT_CHANNEL_NAME : CHANNEL_NAME, NotificationManager.IMPORTANCE_HIGH);
+                NotificationChannel ch = new NotificationChannel(channelId, depositAlert ? DEPOSIT_ALERT_CHANNEL_NAME : (urgent ? ALERT_CHANNEL_NAME : CHANNEL_NAME), NotificationManager.IMPORTANCE_HIGH);
                 ch.enableVibration(true);
+                if (depositAlert) {
+                    AudioAttributes attrs = new AudioAttributes.Builder()
+                            .setUsage(AudioAttributes.USAGE_ALARM)
+                            .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
+                            .build();
+                    ch.setSound(alarmSound, attrs);
+                }
                 nm.createNotificationChannel(ch);
             }
 
@@ -155,7 +187,7 @@ class NotifyHelper {
             PendingIntent pi = PendingIntent.getActivity(context, requestCode, open, flags);
 
             Notification.Builder builder = Build.VERSION.SDK_INT >= 26
-                    ? new Notification.Builder(context, urgent ? ALERT_CHANNEL_ID : CHANNEL_ID)
+                    ? new Notification.Builder(context, channelId)
                     : new Notification.Builder(context);
             builder.setSmallIcon(R.drawable.ic_notification)
                     .setContentTitle(title)
@@ -165,8 +197,9 @@ class NotifyHelper {
                     .setOngoing(ongoing)
                     .setContentIntent(pi)
                     .setPriority(Notification.PRIORITY_HIGH)
-                    .setDefaults(Notification.DEFAULT_SOUND | Notification.DEFAULT_VIBRATE);
-            if (Build.VERSION.SDK_INT >= 21) builder.setColor(urgent ? 0xffff4055 : 0xff6d4bb3);
+                    .setDefaults(depositAlert ? Notification.DEFAULT_VIBRATE : (Notification.DEFAULT_SOUND | Notification.DEFAULT_VIBRATE));
+            if (depositAlert && Build.VERSION.SDK_INT < 26) builder.setSound(alarmSound);
+            if (Build.VERSION.SDK_INT >= 21) builder.setColor(depositAlert ? 0xffff0033 : (urgent ? 0xffff4055 : 0xff6d4bb3));
 
             nm.notify(notificationId <= 0 ? (int) (System.currentTimeMillis() % Integer.MAX_VALUE) : notificationId, builder.build());
         } catch (Exception ignored) {}
