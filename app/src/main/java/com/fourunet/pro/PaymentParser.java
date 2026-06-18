@@ -4,6 +4,9 @@ import android.content.Context;
 
 import java.util.regex.Matcher;
 import java.util.Locale;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.HashSet;
 import java.util.regex.Pattern;
 
 class PaymentParser {
@@ -101,22 +104,105 @@ class PaymentParser {
 
 
     static ParsedCreditRequest parseTrustedCreditRequest(String body) {
+        return parseTrustedCreditRequest(null, body);
+    }
+
+    static ParsedCreditRequest parseTrustedCreditRequest(Context context, String body) {
         if (body == null) return null;
-        Pattern pattern = Pattern.compile("تم\\s*(?:اضافة|إضافة|اضافه|إضافه)\\s+(\\d+(?:[\\.,]\\d+)?)\\s*(?:ريال|ر\\.?ي)?\\s*(?:من|الى|إلى)?\\s*[-:：]?\\s*(\\+?\\d{7,13})", Pattern.CASE_INSENSITIVE | Pattern.DOTALL);
-        Matcher m = pattern.matcher(body);
-        if (m.find()) {
-            int amount = toIntAmount(m.group(1));
-            String phone = normalizeLocalPhone(m.group(2));
-            if (amount > 0 && hasValidLocalMobile(phone)) return new ParsedCreditRequest(amount, phone);
+        String normalized = normalizeDigitsInText(body);
+        ArrayList<String> phones = extractLocalPhones(normalized);
+        HashSet<Integer> validAmounts = new HashSet<>();
+        if (context != null) {
+            for (CategoryItem item : AppStore.loadCategories(context)) {
+                if (item != null && item.active && item.amount > 0) validAmounts.add(item.amount);
+            }
         }
-        Pattern flexible = Pattern.compile("(?:اضافة|إضافة|اضافه|إضافه)\\s+(\\d+(?:[\\.,]\\d+)?).*?(7\\d{8}|\\d{9,12})", Pattern.CASE_INSENSITIVE | Pattern.DOTALL);
-        Matcher mf = flexible.matcher(body);
-        if (mf.find()) {
-            int amount = toIntAmount(mf.group(1));
-            String phone = normalizeLocalPhone(mf.group(2));
-            if (amount > 0 && hasValidLocalMobile(phone)) return new ParsedCreditRequest(amount, phone);
+        if (validAmounts.isEmpty()) {
+            int[] defaults = new int[]{100,200,250,300,500,1000,3000,5000,10000};
+            for (int a : defaults) validAmounts.add(a);
         }
-        return null;
+
+        String withoutPhones = normalized;
+        for (String p : phones) {
+            withoutPhones = withoutPhones.replace("00967" + p, " ");
+            withoutPhones = withoutPhones.replace("967" + p, " ");
+            withoutPhones = withoutPhones.replace("0" + p, " ");
+            withoutPhones = withoutPhones.replace(p, " ");
+        }
+        ArrayList<Integer> amounts = new ArrayList<>();
+        ArrayList<Integer> unknownNumbers = new ArrayList<>();
+        Matcher num = Pattern.compile("\d+(?:[\.,]\d+)?").matcher(withoutPhones);
+        while (num.find()) {
+            int value = toIntAmount(num.group());
+            if (value <= 0) continue;
+            if (validAmounts.contains(value)) amounts.add(value);
+            else if (value >= 10) unknownNumbers.add(value);
+        }
+
+        boolean hasDigits = Pattern.compile("\d").matcher(normalized).find();
+        if (!hasDigits) return null;
+
+        String reason = "";
+        if (phones.size() == 0 && amounts.size() == 0) return null;
+        if (phones.size() == 0) reason = "لا يوجد رقم عميل صحيح مكون من 9 أرقام ويبدأ بـ 7.";
+        else if (phones.size() > 1) reason = "تم العثور على أكثر من رقم عميل في الطلب؛ يجب إرسال رقم عميل واحد فقط.";
+        else if (amounts.size() == 0) reason = "لا توجد فئة كرت مطابقة للباقات المعتمدة في الرسالة.";
+        else if (!unknownNumbers.isEmpty()) reason = "توجد أرقام أو فئات غير معتمدة داخل الرسالة: " + joinInts(unknownNumbers);
+
+        int[] arr = new int[amounts.size()];
+        for (int i = 0; i < amounts.size(); i++) arr[i] = amounts.get(i);
+        String phone = phones.size() == 1 ? phones.get(0) : "";
+        String fingerprint = buildTrustedCreditFingerprint(phone, arr);
+        return new ParsedCreditRequest(arr, phone, reason, fingerprint);
+    }
+
+    private static String normalizeDigitsInText(String text) {
+        if (text == null) return "";
+        String ar = "٠١٢٣٤٥٦٧٨٩";
+        String fa = "۰۱۲۳۴۵۶۷۸۹";
+        StringBuilder out = new StringBuilder();
+        for (int i = 0; i < text.length(); i++) {
+            char ch = text.charAt(i);
+            int idx = ar.indexOf(ch);
+            if (idx >= 0) { out.append((char)('0' + idx)); continue; }
+            idx = fa.indexOf(ch);
+            if (idx >= 0) { out.append((char)('0' + idx)); continue; }
+            out.append(ch);
+        }
+        return out.toString();
+    }
+
+    private static ArrayList<String> extractLocalPhones(String text) {
+        ArrayList<String> phones = new ArrayList<>();
+        HashSet<String> seen = new HashSet<>();
+        Matcher m = Pattern.compile("(?:00967|967|0)?(7\d{8})(?!\d)").matcher(text == null ? "" : text);
+        while (m.find()) {
+            String p = normalizeLocalPhone(m.group(1));
+            if (hasValidLocalMobile(p) && !seen.contains(p)) {
+                seen.add(p);
+                phones.add(p);
+            }
+        }
+        return phones;
+    }
+
+    private static String buildTrustedCreditFingerprint(String phone, int[] amounts) {
+        ArrayList<Integer> list = new ArrayList<>();
+        if (amounts != null) {
+            for (int a : amounts) list.add(Math.max(0, a));
+        }
+        Collections.sort(list);
+        return (phone == null ? "" : phone) + "|" + joinInts(list);
+    }
+
+    private static String joinInts(ArrayList<Integer> values) {
+        if (values == null || values.isEmpty()) return "";
+        StringBuilder sb = new StringBuilder();
+        for (int i = 0; i < values.size(); i++) {
+            if (i > 0) sb.append(",");
+            sb.append(values.get(i));
+        }
+        return sb.toString();
     }
 
     static ParsedPayment parse(Context context, String sender, String body) {

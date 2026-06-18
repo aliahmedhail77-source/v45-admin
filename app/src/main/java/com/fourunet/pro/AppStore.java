@@ -32,6 +32,7 @@ class AppStore {
     private static final String KEY_LOGS = "logs";
     private static final String KEY_PROCESSED = "processed";
     private static final String KEY_EXACT_PAYMENT_TEXTS = "exact_payment_texts_v44";
+    private static final String KEY_TRUSTED_REQUEST_LOCKS = "trusted_request_locks_v48";
     private static final String KEY_IMPORTED_BATCHES = "imported_batches";
     private static final String KEY_RESTORE_HISTORY = "restore_history";
     private static final String KEY_AUTO_BACKUP_ENABLED = "auto_backup_enabled";
@@ -1225,6 +1226,33 @@ class AppStore {
         }
     }
 
+    static ArrayList<CardItem> takeAvailableCardsAllOrNone(Context c, int[] amounts, String buyerPhone) {
+        synchronized (AppStore.class) {
+            ArrayList<CardItem> selected = new ArrayList<>();
+            if (amounts == null || amounts.length == 0) return selected;
+            ArrayList<CardItem> cards = loadCards(c);
+            for (int amount : amounts) {
+                CardItem found = null;
+                for (CardItem item : cards) {
+                    if (item.amount == amount && !item.sold && !isRewardStock(item) && !selected.contains(item)) {
+                        found = item;
+                        break;
+                    }
+                }
+                if (found == null) return new ArrayList<>();
+                selected.add(found);
+            }
+            String when = now();
+            for (CardItem item : selected) {
+                item.sold = true;
+                item.buyerPhone = buyerPhone;
+                item.soldAt = when;
+            }
+            saveCards(c, cards);
+            return selected;
+        }
+    }
+
 
     static HashSet<String> loadImportedBatches(Context c) {
         return new HashSet<>(prefs(c).getStringSet(KEY_IMPORTED_BATCHES, new HashSet<String>()));
@@ -1594,6 +1622,40 @@ class AppStore {
             set = compact;
         }
         prefs(c).edit().putStringSet(KEY_EXACT_PAYMENT_TEXTS, set).apply();
+    }
+
+    static long findRecentTrustedRequest(Context c, String fingerprint, long windowMs) {
+        if (fingerprint == null || fingerprint.trim().isEmpty()) return 0L;
+        long nowMs = System.currentTimeMillis();
+        try {
+            JSONArray arr = new JSONArray(prefs(c).getString(KEY_TRUSTED_REQUEST_LOCKS, "[]"));
+            for (int i = 0; i < arr.length(); i++) {
+                JSONObject o = arr.getJSONObject(i);
+                String fp = o.optString("fp", "");
+                long at = o.optLong("at", 0L);
+                if (fingerprint.equals(fp) && at > 0L && nowMs - at >= 0L && nowMs - at < windowMs) return at;
+            }
+        } catch (Exception ignored) {}
+        return 0L;
+    }
+
+    static void rememberTrustedRequest(Context c, String fingerprint) {
+        if (fingerprint == null || fingerprint.trim().isEmpty()) return;
+        long nowMs = System.currentTimeMillis();
+        try {
+            JSONArray old = new JSONArray(prefs(c).getString(KEY_TRUSTED_REQUEST_LOCKS, "[]"));
+            JSONArray arr = new JSONArray();
+            for (int i = 0; i < old.length(); i++) {
+                JSONObject o = old.getJSONObject(i);
+                long at = o.optLong("at", 0L);
+                if (at > 0L && nowMs - at < 30L * 60L * 1000L) arr.put(o);
+            }
+            JSONObject n = new JSONObject();
+            n.put("fp", fingerprint);
+            n.put("at", nowMs);
+            arr.put(n);
+            prefs(c).edit().putString(KEY_TRUSTED_REQUEST_LOCKS, arr.toString()).apply();
+        } catch (Exception ignored) {}
     }
 
     static ArrayList<TrustedContact> loadTrustedContacts(Context c) {

@@ -220,9 +220,45 @@ class TrustedCreditAgent {
 class ParsedCreditRequest {
     int amount;
     String customerPhone;
+    int[] amounts;
+    String rejectReason;
+    String fingerprint;
 
     ParsedCreditRequest(int amount, String customerPhone) {
-        this.amount = Math.max(0, amount);
+        this(new int[]{Math.max(0, amount)}, customerPhone, "", "");
+    }
+
+    ParsedCreditRequest(int[] amounts, String customerPhone, String rejectReason, String fingerprint) {
+        this.amounts = amounts == null ? new int[0] : amounts;
         this.customerPhone = customerPhone == null ? "" : customerPhone.trim();
+        this.rejectReason = rejectReason == null ? "" : rejectReason.trim();
+        this.fingerprint = fingerprint == null ? "" : fingerprint.trim();
+        this.amount = totalAmount();
+    }
+
+    boolean isValid() {
+        return rejectReason == null || rejectReason.trim().isEmpty();
+    }
+
+    int totalAmount() {
+        int total = 0;
+        if (amounts != null) {
+            for (int a : amounts) total += Math.max(0, a);
+        }
+        return total;
+    }
+
+    int countCards() {
+        return amounts == null ? 0 : amounts.length;
+    }
+
+    String amountsText() {
+        if (amounts == null || amounts.length == 0) return "";
+        StringBuilder sb = new StringBuilder();
+        for (int i = 0; i < amounts.length; i++) {
+            if (i > 0) sb.append(" + ");
+            sb.append(amounts[i]);
+        }
+        return sb.toString();
     }
 }

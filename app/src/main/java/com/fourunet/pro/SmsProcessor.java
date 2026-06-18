@@ -76,7 +76,7 @@ class SmsProcessor {
         // لا نضيف إلى الطابور إلا الرسائل التي نستطيع قراءتها كعملية مسموحة فعلاً.
         // بهذا يتم تجاهل رسائل المنظمات، العروض، تعبئة الرصيد، الرسائل الخاصة، وأي رسالة مزورة من مرسل غير موجود في المسموح.
         if (PaymentParser.isNonPaymentNoise(body)) return false;
-        if (AppStore.findTrustedCreditSender(context, sender) != null && PaymentParser.parseTrustedCreditRequest(body) != null) return true;
+        if (AppStore.findTrustedCreditSender(context, sender) != null && PaymentParser.parseTrustedCreditRequest(context, body) != null) return true;
         if (PaymentParser.parse(context, sender, body) != null) return true;
         return PaymentParser.looksLikePayment(body);
     }
@@ -99,13 +99,8 @@ class SmsProcessor {
 
         // Trusted credit agents: authorized POS/staff can send: تم اضافة 100 من-733938509
         TrustedCreditAgent creditAgent = AppStore.findTrustedCreditSender(context, sender);
-        ParsedCreditRequest creditRequest = creditAgent == null ? null : PaymentParser.parseTrustedCreditRequest(body);
+        ParsedCreditRequest creditRequest = creditAgent == null ? null : PaymentParser.parseTrustedCreditRequest(context, body);
         if (creditAgent != null && creditRequest != null) {
-            if (AppStore.isExactPaymentTextProcessed(context, sender, body)) {
-                AppStore.markProcessed(context, eventId);
-                return;
-            }
-            AppStore.markExactPaymentTextProcessed(context, sender, body);
             processTrustedCreditRequest(context, eventId, sender, creditAgent, creditRequest);
             return;
         }
@@ -243,56 +238,109 @@ class SmsProcessor {
         String agentPhone = cleanPhone(agent.senderPhone);
         String agentName = agent.name == null || agent.name.trim().isEmpty() ? agentPhone : agent.name.trim();
         String provider = "رقم موثوق";
+        int totalAmount = req.totalAmount();
+
+        if (req == null || !req.isValid()) {
+            String reason = req == null ? "تعذر تحليل الطلب." : req.rejectReason;
+            String logId = addLog(context, provider, sender, agentName, customerPhone, totalAmount,
+                    "مراجعة: طلب ملتبس", "لم يتم تنفيذ طلب الرقم الموثوق لأن الرسالة غير واضحة أو فيها التباس.\nالسبب: " + reason, "");
+            NotifyHelper.notifyPendingAction(context, logId, totalAmount, "", "طلب رقم موثوق يحتاج مراجعة");
+            return;
+        }
 
         if (!AppStore.isLicenseUsable(context)) {
-            addLog(context, provider, sender, agentName, customerPhone, req.amount, "وارد", "طلب من رقم موثوق، لكن التطبيق غير مفعل؛ لن يتم إرسال كرت", "");
+            addLog(context, provider, sender, agentName, customerPhone, totalAmount, "وارد", "طلب من رقم موثوق، لكن التطبيق غير مفعل؛ لن يتم إرسال كرت", "");
             return;
         }
         if (!AppStore.isAutoSendEnabled(context)) {
-            addLog(context, provider, sender, agentName, customerPhone, req.amount, "وارد", "طلب من رقم موثوق، لكن الإرسال التلقائي متوقف؛ لن يتم إرسال كرت", "");
+            addLog(context, provider, sender, agentName, customerPhone, totalAmount, "وارد", "طلب من رقم موثوق، لكن الإرسال التلقائي متوقف؛ لن يتم إرسال كرت", "");
             return;
         }
         if (!isValidLocalMobile(customerPhone)) {
-            addLog(context, provider, sender, agentName, "", req.amount, "مرفوض", "طلب رقم موثوق بدون رقم زبون صحيح. الرقم يجب أن يكون 9 أرقام ويبدأ بـ 7.", "");
+            String logId = addLog(context, provider, sender, agentName, "", totalAmount, "مرفوض", "طلب رقم موثوق بدون رقم زبون صحيح. الرقم يجب أن يكون 9 أرقام ويبدأ بـ 7.", "");
+            if (!agentPhone.isEmpty()) {
+                sendSmsWithTracking(context, agentPhone, "رقم العميل غير صحيح. يجب أن يكون 9 أرقام ويبدأ بـ 7.", logId, totalAmount, "", true,
+                        "تم إرسال تنبيه الرقم الخاطئ للرقم الموثوق",
+                        "تعذر إرسال تنبيه الرقم الخاطئ للرقم الموثوق");
+            }
             return;
         }
-        if (!AppStore.canUseTrustedCredit(agent, req.amount)) {
-            String msg = AppStore.buildTrustedCreditLimitMessage(agent);
-            String logId = addLog(context, provider, sender, agentName, customerPhone, req.amount, "تجاوز السقف", "لم يتم إرسال كرت. " + msg, "");
+
+        long recent = AppStore.findRecentTrustedRequest(context, agent.id + "|" + req.fingerprint, 5L * 60L * 1000L);
+        if (recent > 0L) {
+            String msg = "لا يمكن تكرار نفس الطلب خلال 5 دقائق. يرجى الانتظار أو تغيير محتوى الطلب إذا كان طلباً جديداً.";
+            String logId = addLog(context, provider, sender, agentName, customerPhone, totalAmount, "مكرر خلال 5 دقائق",
+                    "تم رفض الطلب لأنه يطابق طلباً سابقاً لنفس رقم العميل ونفس الفئات خلال أقل من 5 دقائق.\nالفئات: " + req.amountsText(), "");
             if (!agentPhone.isEmpty()) {
-                sendSmsWithTracking(context, agentPhone, msg, logId, req.amount, "", true,
+                sendSmsWithTracking(context, agentPhone, msg, logId, totalAmount, "", true,
+                        "تم إرسال تنبيه التكرار للرقم الموثوق",
+                        "تعذر إرسال تنبيه التكرار للرقم الموثوق");
+            }
+            return;
+        }
+
+        if (!AppStore.canUseTrustedCredit(agent, totalAmount)) {
+            String msg = AppStore.buildTrustedCreditLimitMessage(agent);
+            String logId = addLog(context, provider, sender, agentName, customerPhone, totalAmount, "تجاوز السقف", "لم يتم إرسال كرت. " + msg, "");
+            if (!agentPhone.isEmpty()) {
+                sendSmsWithTracking(context, agentPhone, msg, logId, totalAmount, "", true,
                         "تم إرسال تنبيه السقف للرقم الموثوق",
                         "تعذر إرسال تنبيه السقف للرقم الموثوق");
             }
             return;
         }
 
-        CardItem card = AppStore.takeAvailableCard(context, req.amount, customerPhone);
-        if (card == null) {
-            String pendingLogId = addLog(context, provider, sender, agentName, customerPhone, req.amount, "معلق: نفدت الكمية",
-                    "طلب رقم موثوق صحيح لكن لا توجد كروت متاحة لهذه الفئة. لم يتم خصم السقف وسيبقى الطلب للمراجعة.", "");
-            NotifyHelper.notifySendFailed(context, req.amount, "", "نفدت فئة " + req.amount);
-            NotifyHelper.notifyPendingAction(context, pendingLogId, req.amount, "", "طلب رقم موثوق معلّق بسبب نفاد فئة " + req.amount);
+        ArrayList<CardItem> cards = AppStore.takeAvailableCardsAllOrNone(context, req.amounts, customerPhone);
+        if (cards == null || cards.size() != req.countCards()) {
+            String pendingLogId = addLog(context, provider, sender, agentName, customerPhone, totalAmount, "معلق: نفدت الكمية",
+                    "طلب رقم موثوق صحيح لكن لا توجد كروت كافية لتنفيذ الطلب كاملاً. لم يتم خصم السقف وسيبقى الطلب للمراجعة.\nالفئات المطلوبة: " + req.amountsText(), "");
+            NotifyHelper.notifySendFailed(context, totalAmount, "", "نفدت إحدى الفئات المطلوبة");
+            NotifyHelper.notifyPendingAction(context, pendingLogId, totalAmount, "", "طلب رقم موثوق معلّق بسبب نقص الكروت");
             return;
         }
 
-        int usedAfter = agent.usedAmount + req.amount;
-        String reply = AppStore.buildSuccessMessage(context, req.amount, card.code);
+        AppStore.rememberTrustedRequest(context, agent.id + "|" + req.fingerprint);
+
+        int usedAfter = agent.usedAmount + totalAmount;
+        int remainingAfter = Math.max(0, agent.creditLimit - usedAfter);
+        StringBuilder customerMsg = new StringBuilder();
+        StringBuilder cardCodes = new StringBuilder();
         boolean effectiveRewards = AppStore.isRewardsEnabled(context) && agent.rewardsEnabled;
-        RewardResult reward = null;
-        if (effectiveRewards) {
-            reward = AppStore.applyRewardsForPaidSale(context, customerPhone, agentName, req.amount, card.code);
-            if (reward != null && reward.customerMessagePart != null && !reward.customerMessagePart.isEmpty()) reply += reward.customerMessagePart;
+        StringBuilder rewardNotes = new StringBuilder();
+        for (int i = 0; i < cards.size(); i++) {
+            CardItem card = cards.get(i);
+            if (i > 0) customerMsg.append("\n----------------\n");
+            customerMsg.append(AppStore.buildSuccessMessage(context, card.amount, card.code));
+            if (cardCodes.length() > 0) cardCodes.append(" | ");
+            cardCodes.append(card.amount).append(":").append(card.code);
+            if (effectiveRewards) {
+                RewardResult reward = AppStore.applyRewardsForPaidSale(context, customerPhone, agentName, card.amount, card.code);
+                if (reward != null && reward.customerMessagePart != null && !reward.customerMessagePart.isEmpty()) customerMsg.append(reward.customerMessagePart);
+                if (reward != null && reward.internalNote != null && !reward.internalNote.isEmpty()) rewardNotes.append("\n").append(card.amount).append(" -> ").append(reward.internalNote);
+            }
         }
-        String note = "تم تنفيذ طلب رقم موثوق: " + agentName + " | السقف: " + agent.creditLimit + " | سيخصم من السقف بعد نجاح إرسال SMS | المستخدم المتوقع بعد النجاح: " + usedAfter;
-        if (reward != null && reward.internalNote != null && !reward.internalNote.isEmpty()) note += "\n" + reward.internalNote;
+
+        String note = "تم تنفيذ طلب رقم موثوق: " + agentName
+                + "\nالفئات: " + req.amountsText()
+                + "\nعدد الكروت: " + req.countCards()
+                + "\nإجمالي الطلب: " + totalAmount
+                + "\nالسقف: " + agent.creditLimit
+                + "\nسيخصم من السقف بعد نجاح إرسال SMS"
+                + "\nالمستخدم المتوقع بعد النجاح: " + usedAfter;
+        if (rewardNotes.length() > 0) note += rewardNotes.toString();
         if (!effectiveRewards) note += "\nالمكافأة معطلة لهذا الرقم الموثوق؛ تم تنفيذ البيع بدون احتساب نقاط جديدة.";
-        String logId = addLog(context, provider, sender, agentName, customerPhone, req.amount, "جاري إرسال SMS", note, card.code);
-        sendSmsWithTracking(context, customerPhone, reply, logId, req.amount, card.code, false,
-                "تم إرسال الكرت لزبون الرقم الموثوق وتم خصم العملية من السقف",
+        String logId = addLog(context, provider, sender, agentName, customerPhone, totalAmount, "جاري إرسال SMS", note, cardCodes.toString());
+
+        String agentSuccess = "تم تنفيذ الطلب بنجاح.\nالعميل: " + customerPhone
+                + "\nالكروت: " + req.amountsText()
+                + "\nعدد الكروت: " + req.countCards()
+                + "\nإجمالي الطلب: " + totalAmount
+                + "\nالسقف المتبقي: " + remainingAfter;
+        sendSmsWithTracking(context, customerPhone, customerMsg.toString(), logId, totalAmount, cardCodes.toString(), false,
+                "تم إرسال الكرت/الكروت للزبون وتم خصم العملية من السقف",
                 "فشل إرسال SMS لزبون الرقم الموثوق؛ لم يتم خصم السقف. استخدم إعادة إرسال SMS أو واتساب",
-                agent.id, req.amount);
-        AppStore.performAutoBackupIfDue(context, "طلب رقم موثوق");
+                agent.id, totalAmount, agentPhone, agentSuccess);
+        AppStore.performAutoBackupIfDue(context, "طلب رقم موثوق ذكي");
     }
 
 
@@ -357,10 +405,14 @@ class SmsProcessor {
     }
 
     static boolean sendSmsWithTracking(Context context, String phone, String text, String logId, int amount, String cardCode, boolean noStock, String successMsg, String failMsg) {
-        return sendSmsWithTracking(context, phone, text, logId, amount, cardCode, noStock, successMsg, failMsg, "", 0);
+        return sendSmsWithTracking(context, phone, text, logId, amount, cardCode, noStock, successMsg, failMsg, "", 0, "", "");
     }
 
     static boolean sendSmsWithTracking(Context context, String phone, String text, String logId, int amount, String cardCode, boolean noStock, String successMsg, String failMsg, String trustedCreditAgentId, int trustedCreditAmount) {
+        return sendSmsWithTracking(context, phone, text, logId, amount, cardCode, noStock, successMsg, failMsg, trustedCreditAgentId, trustedCreditAmount, "", "");
+    }
+
+    static boolean sendSmsWithTracking(Context context, String phone, String text, String logId, int amount, String cardCode, boolean noStock, String successMsg, String failMsg, String trustedCreditAgentId, int trustedCreditAmount, String trustedNotifyPhone, String trustedNotifyText) {
         try {
             String clean = cleanPhone(phone);
             if (!isValidLocalMobile(clean)) return false;
@@ -381,6 +433,8 @@ class SmsProcessor {
                 intent.putExtra("failMsg", failMsg == null ? "فشل إرسال SMS" : failMsg);
                 intent.putExtra("trustedCreditAgentId", trustedCreditAgentId == null ? "" : trustedCreditAgentId);
                 intent.putExtra("trustedCreditAmount", trustedCreditAmount);
+                intent.putExtra("trustedNotifyPhone", trustedNotifyPhone == null ? "" : cleanPhone(trustedNotifyPhone));
+                intent.putExtra("trustedNotifyText", trustedNotifyText == null ? "" : trustedNotifyText);
                 int flags = PendingIntent.FLAG_UPDATE_CURRENT;
                 if (android.os.Build.VERSION.SDK_INT >= 23) flags |= PendingIntent.FLAG_IMMUTABLE;
                 sentIntents.add(PendingIntent.getBroadcast(context, (logId + i).hashCode(), intent, flags));

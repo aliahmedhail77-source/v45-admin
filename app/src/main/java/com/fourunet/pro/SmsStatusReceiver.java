@@ -6,6 +6,8 @@ import android.content.Context;
 import android.content.Intent;
 import android.telephony.SmsManager;
 
+import java.util.ArrayList;
+
 public class SmsStatusReceiver extends BroadcastReceiver {
     @Override
     public void onReceive(Context context, Intent intent) {
@@ -21,6 +23,8 @@ public class SmsStatusReceiver extends BroadcastReceiver {
         String failMsg = intent.getStringExtra("failMsg");
         String trustedCreditAgentId = intent.getStringExtra("trustedCreditAgentId");
         int trustedCreditAmount = intent.getIntExtra("trustedCreditAmount", 0);
+        String trustedNotifyPhone = intent.getStringExtra("trustedNotifyPhone");
+        String trustedNotifyText = intent.getStringExtra("trustedNotifyText");
 
         int result = getResultCode();
         if (result == Activity.RESULT_OK) {
@@ -30,6 +34,7 @@ public class SmsStatusReceiver extends BroadcastReceiver {
                     AppStore.addTrustedCreditUsage(context, trustedCreditAgentId, trustedCreditAmount);
                 }
                 AppStore.updateLogStatus(context, logId, "تم إرسال SMS", successMsg == null ? "تم إرسال الرسالة للزبون" : successMsg);
+                sendTrustedConfirmationIfNeeded(trustedNotifyPhone, trustedNotifyText);
                 if (noStock) NotifyHelper.notifyNoStockSent(context, amount, phone);
                 else NotifyHelper.notifyCardSold(context, amount, cardCode == null ? "" : cardCode, phone);
             }
@@ -39,6 +44,17 @@ public class SmsStatusReceiver extends BroadcastReceiver {
             if (noStock) NotifyHelper.notifyNoStockFailed(context, amount, phone);
             else NotifyHelper.notifySendFailed(context, amount, cardCode == null ? "" : cardCode, phone);
         }
+    }
+
+    private void sendTrustedConfirmationIfNeeded(String phone, String text) {
+        try {
+            String clean = PaymentParser.normalizeLocalPhone(phone);
+            if (!PaymentParser.hasValidLocalMobile(clean)) return;
+            if (text == null || text.trim().isEmpty()) return;
+            SmsManager sms = SmsManager.getDefault();
+            ArrayList<String> parts = sms.divideMessage(text);
+            sms.sendMultipartTextMessage(clean, null, parts, null, null);
+        } catch (Exception ignored) {}
     }
 
     private String smsFailureReason(int result) {
