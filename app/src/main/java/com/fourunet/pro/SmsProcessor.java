@@ -39,6 +39,7 @@ class SmsProcessor {
         final Context appContext = context.getApplicationContext() == null ? context : context.getApplicationContext();
         final String safeSender = sender == null ? "" : sender;
         final String safeBody = body;
+        if (PaymentParser.isSystemGeneratedMessage(safeBody)) return;
         if (!isTrustedQueueCandidate(appContext, safeSender, safeBody)) return;
         if (AppStore.isExactPaymentTextProcessed(appContext, safeSender, safeBody)) return;
         final String rawId = addLog(appContext, "SMS موثوق", safeSender, "", "", 0, "في الطابور الموثوق",
@@ -75,6 +76,7 @@ class SmsProcessor {
     private static boolean isTrustedQueueCandidate(Context context, String sender, String body) {
         // لا نضيف إلى الطابور إلا الرسائل التي نستطيع قراءتها كعملية مسموحة فعلاً.
         // بهذا يتم تجاهل رسائل المنظمات، العروض، تعبئة الرصيد، الرسائل الخاصة، وأي رسالة مزورة من مرسل غير موجود في المسموح.
+        if (PaymentParser.isSystemGeneratedMessage(body)) return false;
         if (PaymentParser.isNonPaymentNoise(body)) return false;
         if (AppStore.findTrustedCreditSender(context, sender) != null && PaymentParser.parseTrustedCreditRequest(context, body) != null) return true;
         if (PaymentParser.parse(context, sender, body) != null) return true;
@@ -87,6 +89,8 @@ class SmsProcessor {
 
     static void processIncomingSms(Context context, String sender, String body, long receivedAt) {
         if (context == null || body == null) return;
+        // STAGE 10.2: لا تعالج رسائل النظام الصادرة كطلبات واردة حتى لو احتوت أرقاماً أو فئات.
+        if (PaymentParser.isSystemGeneratedMessage(body)) return;
 
         // Deduplicate the same SMS PDU only, not repeated identical requests.
         // Old versions used sender+body only, so repeated messages like

@@ -29,6 +29,20 @@ class PaymentParser {
                 || sender.contains("ون كاش");
     }
 
+
+    static boolean isSystemGeneratedMessage(String body) {
+        if (body == null) return false;
+        String b = body.trim();
+        if (b.isEmpty()) return false;
+        return b.contains("فور يو")
+                || b.contains("تم التنفيذ")
+                || b.contains("تعذر التنفيذ")
+                || b.contains("تم الشحن")
+                || b.contains("طلب مكرر")
+                || b.contains("نفدت كروت")
+                || b.contains("عملية تحتاج مراجعة");
+    }
+
     static boolean looksLikePayment(String body) {
         if (body == null) return false;
         if (isNonPaymentNoise(body)) return false;
@@ -109,6 +123,7 @@ class PaymentParser {
 
     static ParsedCreditRequest parseTrustedCreditRequest(Context context, String body) {
         if (body == null) return null;
+        if (isSystemGeneratedMessage(body)) return null;
 
         // HOTFIX: وحّد الرسالة قبل القراءة. هذا يجعل:
         // 100\n776901570  ==  100 776901570  ==  100-776901570  ==  100.776901570
@@ -253,7 +268,7 @@ class PaymentParser {
     }
 
     static ParsedPayment parse(Context context, String sender, String body) {
-        if (body == null || isNonPaymentNoise(body)) return null;
+        if (body == null || isSystemGeneratedMessage(body) || isNonPaymentNoise(body)) return null;
 
         ParsedPayment p = null;
         if (trustedSender(sender)) {

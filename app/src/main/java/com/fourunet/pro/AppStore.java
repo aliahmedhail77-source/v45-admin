@@ -129,29 +129,31 @@ class AppStore {
             "82d8059525a7599e08405e04a4b1d410e2687ab59aa83d03784a7b8ed8d5e470"
     };
 
+    static final String SYSTEM_SIGNATURE = "فور يو";
+
     static final String DEFAULT_SUCCESS_TEMPLATE = "تم الشحن\n"
             + "الفئة: {amount}\n"
             + "الكرت: {card}\n"
-            + "{network}";
+            + SYSTEM_SIGNATURE;
 
     static final String DEFAULT_DIRECT_SALE_TEMPLATE = "تم الشحن\n"
             + "الفئة: {amount}\n"
             + "الكرت: {card}\n"
-            + "{network}";
+            + SYSTEM_SIGNATURE;
 
     static final String DEFAULT_NO_STOCK_TEMPLATE = "نفدت فئة {amount} ريال. راجع الإدارة: {adminPhone}";
 
     static final String DEFAULT_POS_SUCCESS_TEMPLATE = "تم التنفيذ\n"
             + "العميل: {customer_phone}\n"
             + "الفئات: {categories}\n"
-            + "الإجمالي: {total_amount}\n"
-            + "المتبقي: {remaining_limit}";
-    static final String DEFAULT_POS_DUPLICATE_TEMPLATE = "طلب مكرر خلال {window_minutes} دقائق. انتظر أو غيّر الطلب.";
-    static final String DEFAULT_POS_INVALID_PHONE_TEMPLATE = "رقم العميل غير صحيح. يجب أن يكون 9 أرقام ويبدأ بـ 7.";
-    static final String DEFAULT_POS_LIMIT_TEMPLATE = "تعذر التنفيذ: تجاوز السقف. السقف:{credit_limit} المستخدم:{used_amount} الطلب:{total_amount}";
-    static final String DEFAULT_POS_NO_STOCK_TEMPLATE = "تعذر التنفيذ: لا توجد كروت كافية للفئات {categories}.";
-    static final String DEFAULT_POS_INVALID_CATEGORY_TEMPLATE = "تعذر التنفيذ: فئة غير معتمدة. {reason}";
-    static final String DEFAULT_POS_AMBIGUOUS_TEMPLATE = "تعذر التنفيذ: الطلب غير واضح وتم تحويله للمراجعة. {reason}";
+            + "المتبقي: {remaining_limit}\n"
+            + SYSTEM_SIGNATURE;
+    static final String DEFAULT_POS_DUPLICATE_TEMPLATE = "طلب مكرر خلال {window_minutes} دقائق. انتظر أو غيّر الطلب.\n" + SYSTEM_SIGNATURE;
+    static final String DEFAULT_POS_INVALID_PHONE_TEMPLATE = "رقم العميل غير صحيح. يجب أن يكون 9 أرقام ويبدأ بـ 7.\n" + SYSTEM_SIGNATURE;
+    static final String DEFAULT_POS_LIMIT_TEMPLATE = "تعذر التنفيذ: تجاوز السقف. السقف:{credit_limit} المستخدم:{used_amount} الطلب:{total_amount}\n" + SYSTEM_SIGNATURE;
+    static final String DEFAULT_POS_NO_STOCK_TEMPLATE = "تعذر التنفيذ: لا توجد كروت كافية للفئات {categories}.\n" + SYSTEM_SIGNATURE;
+    static final String DEFAULT_POS_INVALID_CATEGORY_TEMPLATE = "تعذر التنفيذ: فئة غير معتمدة. {reason}\n" + SYSTEM_SIGNATURE;
+    static final String DEFAULT_POS_AMBIGUOUS_TEMPLATE = "تعذر التنفيذ: الطلب غير واضح وتم تحويله للمراجعة. {reason}\n" + SYSTEM_SIGNATURE;
 
     static final int[] DEFAULT_AMOUNTS = new int[]{50, 100, 150, 200, 250, 300, 500};
     static final int DEFAULT_REWARD_PERCENT = 8;
@@ -875,15 +877,34 @@ class AppStore {
     }
 
     static String buildSuccessMessage(Context c, int amount, String cardCode) {
-        return applyTemplate(c, getSuccessTemplate(c), amount, cardCode);
+        return ensureSystemSignature(applyTemplate(c, getSuccessTemplate(c), amount, cardCode));
     }
 
     static String buildDirectSaleMessage(Context c, int amount, String cardCode) {
-        return applyTemplate(c, getDirectSaleTemplate(c), amount, cardCode);
+        return ensureSystemSignature(applyTemplate(c, getDirectSaleTemplate(c), amount, cardCode));
     }
 
     static String buildNoStockMessage(Context c, int amount) {
-        return applyTemplate(c, getNoStockTemplate(c), amount, "");
+        return ensureSystemSignature(applyTemplate(c, getNoStockTemplate(c), amount, ""));
+    }
+
+    static boolean hasSystemSignature(String message) {
+        if (message == null) return false;
+        String t = message.trim();
+        return t.contains(SYSTEM_SIGNATURE)
+                || t.contains("تم التنفيذ")
+                || t.contains("تعذر التنفيذ")
+                || t.contains("تم الشحن")
+                || t.contains("طلب مكرر")
+                || t.contains("نفدت كروت")
+                || t.contains("عملية تحتاج مراجعة");
+    }
+
+    static String ensureSystemSignature(String message) {
+        String m = message == null ? "" : message.trim();
+        if (m.isEmpty()) return SYSTEM_SIGNATURE;
+        if (m.contains(SYSTEM_SIGNATURE)) return m;
+        return m + "\n" + SYSTEM_SIGNATURE;
     }
 
     private static String cleanLongTemplate(String value, String fallback) {
@@ -919,31 +940,31 @@ class AppStore {
     }
 
     static String buildPosSuccessMessage(Context c, TrustedCreditAgent a, ParsedCreditRequest req, int remainingLimit) {
-        return applyPosTemplate(c, getPosSuccessTemplate(c), a, req, remainingLimit, "");
+        return ensureSystemSignature(applyPosTemplate(c, getPosSuccessTemplate(c), a, req, remainingLimit, ""));
     }
 
     static String buildPosDuplicateMessage(Context c, TrustedCreditAgent a, ParsedCreditRequest req) {
-        return applyPosTemplate(c, getPosDuplicateTemplate(c), a, req, a == null ? 0 : a.remaining(), "");
+        return ensureSystemSignature(applyPosTemplate(c, getPosDuplicateTemplate(c), a, req, a == null ? 0 : a.remaining(), ""));
     }
 
     static String buildPosInvalidPhoneMessage(Context c, TrustedCreditAgent a, ParsedCreditRequest req, String reason) {
-        return applyPosTemplate(c, getPosInvalidPhoneTemplate(c), a, req, a == null ? 0 : a.remaining(), reason);
+        return ensureSystemSignature(applyPosTemplate(c, getPosInvalidPhoneTemplate(c), a, req, a == null ? 0 : a.remaining(), reason));
     }
 
     static String buildPosLimitMessage(Context c, TrustedCreditAgent a, ParsedCreditRequest req) {
-        return applyPosTemplate(c, getPosLimitTemplate(c), a, req, a == null ? 0 : a.remaining(), "");
+        return ensureSystemSignature(applyPosTemplate(c, getPosLimitTemplate(c), a, req, a == null ? 0 : a.remaining(), ""));
     }
 
     static String buildPosNoStockMessage(Context c, TrustedCreditAgent a, ParsedCreditRequest req) {
-        return applyPosTemplate(c, getPosNoStockTemplate(c), a, req, a == null ? 0 : a.remaining(), "");
+        return ensureSystemSignature(applyPosTemplate(c, getPosNoStockTemplate(c), a, req, a == null ? 0 : a.remaining(), ""));
     }
 
     static String buildPosInvalidCategoryMessage(Context c, TrustedCreditAgent a, ParsedCreditRequest req, String reason) {
-        return applyPosTemplate(c, getPosInvalidCategoryTemplate(c), a, req, a == null ? 0 : a.remaining(), reason);
+        return ensureSystemSignature(applyPosTemplate(c, getPosInvalidCategoryTemplate(c), a, req, a == null ? 0 : a.remaining(), reason));
     }
 
     static String buildPosAmbiguousMessage(Context c, TrustedCreditAgent a, ParsedCreditRequest req, String reason) {
-        return applyPosTemplate(c, getPosAmbiguousTemplate(c), a, req, a == null ? 0 : a.remaining(), reason);
+        return ensureSystemSignature(applyPosTemplate(c, getPosAmbiguousTemplate(c), a, req, a == null ? 0 : a.remaining(), reason));
     }
 
     static String applyPosTemplate(Context c, String template, TrustedCreditAgent a, ParsedCreditRequest req, int remainingLimit, String reason) {
