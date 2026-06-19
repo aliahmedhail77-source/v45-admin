@@ -131,7 +131,7 @@ class PaymentParser {
         }
         ArrayList<Integer> amounts = new ArrayList<>();
         ArrayList<Integer> unknownNumbers = new ArrayList<>();
-        Matcher num = Pattern.compile("\d+(?:[\.,]\d+)?").matcher(withoutPhones);
+        Matcher num = Pattern.compile("\\d+(?:[\\.,]\\d+)?").matcher(withoutPhones);
         while (num.find()) {
             int value = toIntAmount(num.group());
             if (value <= 0) continue;
@@ -139,7 +139,7 @@ class PaymentParser {
             else if (value >= 10) unknownNumbers.add(value);
         }
 
-        boolean hasDigits = Pattern.compile("\d").matcher(normalized).find();
+        boolean hasDigits = Pattern.compile("\\d").matcher(normalized).find();
         if (!hasDigits) return null;
 
         String reason = "";
@@ -175,7 +175,7 @@ class PaymentParser {
     private static ArrayList<String> extractLocalPhones(String text) {
         ArrayList<String> phones = new ArrayList<>();
         HashSet<String> seen = new HashSet<>();
-        Matcher m = Pattern.compile("(?:00967|967|0)?(7\d{8})(?!\d)").matcher(text == null ? "" : text);
+        Matcher m = Pattern.compile("(?:00967|967|0)?(7\\d{8})(?!\\d)").matcher(text == null ? "" : text);
         while (m.find()) {
             String p = normalizeLocalPhone(m.group(1));
             if (hasValidLocalMobile(p) && !seen.contains(p)) {
