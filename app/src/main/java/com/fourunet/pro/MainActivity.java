@@ -2598,6 +2598,7 @@ public class MainActivity extends Activity {
 
         content.addView(templateBox(true));
         content.addView(directSaleTemplateBox());
+        content.addView(posMessageTemplatesBox());
         content.addView(rewardMessageTemplatesBox());
         content.addView(templateBox(false));
 
@@ -2652,6 +2653,82 @@ public class MainActivity extends Activity {
         actionsRow.addView(action("استعادة الافتراضي", Color.rgb(82,30,42), Color.WHITE, v -> confirmResetDirectSaleTemplate()), new LinearLayout.LayoutParams(0, -2, 1));
         box.addView(actionsRow);
         return box;
+    }
+
+    private LinearLayout posMessageTemplatesBox() {
+        LinearLayout box = cardBox();
+        box.addView(tv("رسائل نقاط البيع والأرقام الموثوقة", 18, text, true));
+        box.addView(small("هذه الرسائل تصل إلى صاحب الرقم الموثوق عند نجاح الطلب أو رفضه بسبب التكرار أو السقف أو الرقم الخاطئ أو نقص الكروت."));
+        box.addView(separator());
+        box.addView(small("معاينة رسالة النجاح:"));
+        box.addView(messagePreviewText(AppStore.applyPosTemplate(this, AppStore.getPosSuccessTemplate(this), demoTrustedAgent(), demoTrustedRequest(), 700, "")));
+        LinearLayout actionsRow = new LinearLayout(this);
+        actionsRow.setOrientation(LinearLayout.HORIZONTAL);
+        actionsRow.addView(action("تعديل رسائل نقاط البيع", purple, Color.WHITE, v -> showPosMessageTemplatesDialog()), new LinearLayout.LayoutParams(0, -2, 1));
+        actionsRow.addView(action("استعادة الافتراضي", Color.rgb(82,30,42), Color.WHITE, v -> {
+            AppStore.resetPosMessageTemplates(this);
+            toast("تمت استعادة رسائل نقاط البيع");
+            showMessageTemplates();
+        }), new LinearLayout.LayoutParams(0, -2, 1));
+        box.addView(actionsRow);
+        return box;
+    }
+
+    private TrustedCreditAgent demoTrustedAgent() {
+        return new TrustedCreditAgent("demo", "نقطة بيع تجريبية", "777000111", 1000, 300, true, true, System.currentTimeMillis());
+    }
+
+    private ParsedCreditRequest demoTrustedRequest() {
+        return new ParsedCreditRequest(new int[]{100, 200}, "735794758", "", "demo");
+    }
+
+    private EditText templateEdit(String hint, String value) {
+        EditText input = new EditText(this);
+        input.setHint(hint);
+        input.setMinLines(4);
+        input.setGravity(Gravity.TOP | Gravity.RIGHT);
+        input.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_MULTI_LINE);
+        input.setText(value);
+        return input;
+    }
+
+    private void showPosMessageTemplatesDialog() {
+        LinearLayout layout = new LinearLayout(this);
+        layout.setOrientation(LinearLayout.VERTICAL);
+        layout.setPadding(dp(8), dp(8), dp(8), dp(8));
+        TextView help = small("المتغيرات: {trusted_name} {trusted_phone} {customer_phone} {categories} {cards_count} {total_amount} {remaining_limit} {credit_limit} {used_amount} {reason} {window_minutes} {network} {adminPhone}");
+        EditText success = templateEdit("رسالة نجاح الطلب", AppStore.getPosSuccessTemplate(this));
+        EditText duplicate = templateEdit("رسالة الطلب المكرر", AppStore.getPosDuplicateTemplate(this));
+        EditText invalidPhone = templateEdit("رسالة رقم العميل الخاطئ", AppStore.getPosInvalidPhoneTemplate(this));
+        EditText limit = templateEdit("رسالة تجاوز السقف", AppStore.getPosLimitTemplate(this));
+        EditText noStock = templateEdit("رسالة نقص الكروت", AppStore.getPosNoStockTemplate(this));
+        EditText invalidCategory = templateEdit("رسالة فئة غير معتمدة", AppStore.getPosInvalidCategoryTemplate(this));
+        EditText ambiguous = templateEdit("رسالة الطلب الملتبس", AppStore.getPosAmbiguousTemplate(this));
+        TextView preview = messagePreviewText(AppStore.applyPosTemplate(this, success.getText().toString(), demoTrustedAgent(), demoTrustedRequest(), 700, "مثال سبب الرفض"));
+        Button previewBtn = action("تحديث معاينة النجاح", card2, text, v -> preview.setText(AppStore.applyPosTemplate(this, success.getText().toString(), demoTrustedAgent(), demoTrustedRequest(), 700, "مثال سبب الرفض")));
+        layout.addView(help);
+        layout.addView(small("1) نجاح الطلب")); layout.addView(success);
+        layout.addView(small("2) تكرار الطلب خلال 5 دقائق")); layout.addView(duplicate);
+        layout.addView(small("3) رقم العميل غير صحيح")); layout.addView(invalidPhone);
+        layout.addView(small("4) تجاوز سقف نقطة البيع")); layout.addView(limit);
+        layout.addView(small("5) نقص الكروت")); layout.addView(noStock);
+        layout.addView(small("6) فئة غير معتمدة")); layout.addView(invalidCategory);
+        layout.addView(small("7) طلب ملتبس يحتاج مراجعة")); layout.addView(ambiguous);
+        layout.addView(previewBtn);
+        layout.addView(small("معاينة رسالة النجاح:"));
+        layout.addView(preview);
+        new AlertDialog.Builder(this)
+                .setTitle("قوالب رسائل نقاط البيع")
+                .setView(layout)
+                .setPositiveButton("حفظ", (d,w) -> {
+                    AppStore.setPosMessageTemplates(this,
+                            success.getText().toString(), duplicate.getText().toString(), invalidPhone.getText().toString(),
+                            limit.getText().toString(), noStock.getText().toString(), invalidCategory.getText().toString(), ambiguous.getText().toString());
+                    toast("تم حفظ رسائل نقاط البيع");
+                    showMessageTemplates();
+                })
+                .setNegativeButton("إلغاء", null)
+                .show();
     }
 
     private LinearLayout rewardMessageTemplatesBox() {

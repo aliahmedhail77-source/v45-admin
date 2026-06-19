@@ -48,6 +48,13 @@ class AppStore {
     private static final String KEY_SUCCESS_TEMPLATE = "success_message_template";
     private static final String KEY_DIRECT_SALE_TEMPLATE = "direct_sale_message_template";
     private static final String KEY_NO_STOCK_TEMPLATE = "no_stock_message_template";
+    private static final String KEY_POS_SUCCESS_TEMPLATE = "pos_success_message_template_v49";
+    private static final String KEY_POS_DUPLICATE_TEMPLATE = "pos_duplicate_message_template_v49";
+    private static final String KEY_POS_INVALID_PHONE_TEMPLATE = "pos_invalid_phone_message_template_v49";
+    private static final String KEY_POS_LIMIT_TEMPLATE = "pos_limit_message_template_v49";
+    private static final String KEY_POS_NO_STOCK_TEMPLATE = "pos_no_stock_message_template_v49";
+    private static final String KEY_POS_INVALID_CATEGORY_TEMPLATE = "pos_invalid_category_message_template_v49";
+    private static final String KEY_POS_AMBIGUOUS_TEMPLATE = "pos_ambiguous_message_template_v49";
     private static final String KEY_NETWORK_NAME = "network_name";
     private static final String KEY_ADMIN_PHONE = "admin_phone";
     private static final String KEY_MIKROTIK_HOST = "mikrotik_host";
@@ -134,6 +141,32 @@ class AppStore {
 
     static final String DEFAULT_NO_STOCK_TEMPLATE = "تنبيه: تم استلام {amount}ريال لكن لا توجد كروت متاحة لفئة {amount}ريال.\n"
             + "رقم إدارة الشبكة: {adminPhone}";
+
+    static final String DEFAULT_POS_SUCCESS_TEMPLATE = "تم تنفيذ الطلب بنجاح.\n"
+            + "العميل: {customer_phone}\n"
+            + "الكروت: {categories}\n"
+            + "عدد الكروت: {cards_count}\n"
+            + "إجمالي الطلب: {total_amount}\n"
+            + "السقف المتبقي: {remaining_limit}";
+    static final String DEFAULT_POS_DUPLICATE_TEMPLATE = "لا يمكن تكرار نفس الطلب خلال {window_minutes} دقائق.\n"
+            + "يرجى الانتظار أو تغيير محتوى الطلب إذا كان طلباً جديداً.";
+    static final String DEFAULT_POS_INVALID_PHONE_TEMPLATE = "رقم العميل غير صحيح.\n"
+            + "يجب أن يكون الرقم مكوناً من 9 أرقام ويبدأ بالرقم 7.";
+    static final String DEFAULT_POS_LIMIT_TEMPLATE = "تعذر تنفيذ الطلب.\n"
+            + "السبب: الطلب يتجاوز سقف نقطة البيع المسموح.\n"
+            + "السقف: {credit_limit}\n"
+            + "المستخدم: {used_amount}\n"
+            + "إجمالي الطلب: {total_amount}";
+    static final String DEFAULT_POS_NO_STOCK_TEMPLATE = "تعذر تنفيذ الطلب كاملاً.\n"
+            + "السبب: لا توجد كروت متوفرة لإحدى الفئات المطلوبة.\n"
+            + "الفئات المطلوبة: {categories}\n"
+            + "لم يتم إرسال أي كرت.";
+    static final String DEFAULT_POS_INVALID_CATEGORY_TEMPLATE = "تعذر تنفيذ الطلب.\n"
+            + "السبب: توجد فئة غير معتمدة في الرسالة.\n"
+            + "{reason}";
+    static final String DEFAULT_POS_AMBIGUOUS_TEMPLATE = "تعذر تنفيذ الطلب تلقائياً.\n"
+            + "السبب: الرسالة تحتوي على التباس وتحتاج مراجعة من الإدارة.\n"
+            + "{reason}";
 
     static final int[] DEFAULT_AMOUNTS = new int[]{50, 100, 150, 200, 250, 300, 500};
     static final int DEFAULT_REWARD_PERCENT = 8;
@@ -866,6 +899,92 @@ class AppStore {
 
     static String buildNoStockMessage(Context c, int amount) {
         return applyTemplate(c, getNoStockTemplate(c), amount, "");
+    }
+
+    private static String cleanLongTemplate(String value, String fallback) {
+        String v = value == null ? "" : value.trim();
+        if (v.isEmpty()) return fallback;
+        if (v.length() > 900) v = v.substring(0, 900);
+        return v;
+    }
+
+    static String getPosSuccessTemplate(Context c) { return prefs(c).getString(KEY_POS_SUCCESS_TEMPLATE, DEFAULT_POS_SUCCESS_TEMPLATE); }
+    static String getPosDuplicateTemplate(Context c) { return prefs(c).getString(KEY_POS_DUPLICATE_TEMPLATE, DEFAULT_POS_DUPLICATE_TEMPLATE); }
+    static String getPosInvalidPhoneTemplate(Context c) { return prefs(c).getString(KEY_POS_INVALID_PHONE_TEMPLATE, DEFAULT_POS_INVALID_PHONE_TEMPLATE); }
+    static String getPosLimitTemplate(Context c) { return prefs(c).getString(KEY_POS_LIMIT_TEMPLATE, DEFAULT_POS_LIMIT_TEMPLATE); }
+    static String getPosNoStockTemplate(Context c) { return prefs(c).getString(KEY_POS_NO_STOCK_TEMPLATE, DEFAULT_POS_NO_STOCK_TEMPLATE); }
+    static String getPosInvalidCategoryTemplate(Context c) { return prefs(c).getString(KEY_POS_INVALID_CATEGORY_TEMPLATE, DEFAULT_POS_INVALID_CATEGORY_TEMPLATE); }
+    static String getPosAmbiguousTemplate(Context c) { return prefs(c).getString(KEY_POS_AMBIGUOUS_TEMPLATE, DEFAULT_POS_AMBIGUOUS_TEMPLATE); }
+
+    static void setPosMessageTemplates(Context c, String success, String duplicate, String invalidPhone, String limit, String noStock, String invalidCategory, String ambiguous) {
+        prefs(c).edit()
+                .putString(KEY_POS_SUCCESS_TEMPLATE, cleanLongTemplate(success, DEFAULT_POS_SUCCESS_TEMPLATE))
+                .putString(KEY_POS_DUPLICATE_TEMPLATE, cleanLongTemplate(duplicate, DEFAULT_POS_DUPLICATE_TEMPLATE))
+                .putString(KEY_POS_INVALID_PHONE_TEMPLATE, cleanLongTemplate(invalidPhone, DEFAULT_POS_INVALID_PHONE_TEMPLATE))
+                .putString(KEY_POS_LIMIT_TEMPLATE, cleanLongTemplate(limit, DEFAULT_POS_LIMIT_TEMPLATE))
+                .putString(KEY_POS_NO_STOCK_TEMPLATE, cleanLongTemplate(noStock, DEFAULT_POS_NO_STOCK_TEMPLATE))
+                .putString(KEY_POS_INVALID_CATEGORY_TEMPLATE, cleanLongTemplate(invalidCategory, DEFAULT_POS_INVALID_CATEGORY_TEMPLATE))
+                .putString(KEY_POS_AMBIGUOUS_TEMPLATE, cleanLongTemplate(ambiguous, DEFAULT_POS_AMBIGUOUS_TEMPLATE))
+                .apply();
+    }
+
+    static void resetPosMessageTemplates(Context c) {
+        setPosMessageTemplates(c, DEFAULT_POS_SUCCESS_TEMPLATE, DEFAULT_POS_DUPLICATE_TEMPLATE, DEFAULT_POS_INVALID_PHONE_TEMPLATE,
+                DEFAULT_POS_LIMIT_TEMPLATE, DEFAULT_POS_NO_STOCK_TEMPLATE, DEFAULT_POS_INVALID_CATEGORY_TEMPLATE, DEFAULT_POS_AMBIGUOUS_TEMPLATE);
+    }
+
+    static String buildPosSuccessMessage(Context c, TrustedCreditAgent a, ParsedCreditRequest req, int remainingLimit) {
+        return applyPosTemplate(c, getPosSuccessTemplate(c), a, req, remainingLimit, "");
+    }
+
+    static String buildPosDuplicateMessage(Context c, TrustedCreditAgent a, ParsedCreditRequest req) {
+        return applyPosTemplate(c, getPosDuplicateTemplate(c), a, req, a == null ? 0 : a.remaining(), "");
+    }
+
+    static String buildPosInvalidPhoneMessage(Context c, TrustedCreditAgent a, ParsedCreditRequest req, String reason) {
+        return applyPosTemplate(c, getPosInvalidPhoneTemplate(c), a, req, a == null ? 0 : a.remaining(), reason);
+    }
+
+    static String buildPosLimitMessage(Context c, TrustedCreditAgent a, ParsedCreditRequest req) {
+        return applyPosTemplate(c, getPosLimitTemplate(c), a, req, a == null ? 0 : a.remaining(), "");
+    }
+
+    static String buildPosNoStockMessage(Context c, TrustedCreditAgent a, ParsedCreditRequest req) {
+        return applyPosTemplate(c, getPosNoStockTemplate(c), a, req, a == null ? 0 : a.remaining(), "");
+    }
+
+    static String buildPosInvalidCategoryMessage(Context c, TrustedCreditAgent a, ParsedCreditRequest req, String reason) {
+        return applyPosTemplate(c, getPosInvalidCategoryTemplate(c), a, req, a == null ? 0 : a.remaining(), reason);
+    }
+
+    static String buildPosAmbiguousMessage(Context c, TrustedCreditAgent a, ParsedCreditRequest req, String reason) {
+        return applyPosTemplate(c, getPosAmbiguousTemplate(c), a, req, a == null ? 0 : a.remaining(), reason);
+    }
+
+    static String applyPosTemplate(Context c, String template, TrustedCreditAgent a, ParsedCreditRequest req, int remainingLimit, String reason) {
+        String out = template == null ? "" : template;
+        String trustedName = a == null ? "" : (a.name == null ? "" : a.name);
+        String trustedPhone = a == null ? "" : (a.senderPhone == null ? "" : a.senderPhone);
+        int creditLimit = a == null ? 0 : a.creditLimit;
+        int usedAmount = a == null ? 0 : a.usedAmount;
+        String customer = req == null ? "" : req.customerPhone;
+        String cats = req == null ? "" : req.amountsText();
+        String total = req == null ? "0" : String.valueOf(req.totalAmount());
+        String count = req == null ? "0" : String.valueOf(req.countCards());
+        out = out.replace("{trusted_name}", trustedName);
+        out = out.replace("{trusted_phone}", trustedPhone);
+        out = out.replace("{customer_phone}", customer == null ? "" : customer);
+        out = out.replace("{categories}", cats == null ? "" : cats);
+        out = out.replace("{cards_count}", count);
+        out = out.replace("{total_amount}", total);
+        out = out.replace("{remaining_limit}", String.valueOf(Math.max(0, remainingLimit)));
+        out = out.replace("{credit_limit}", String.valueOf(Math.max(0, creditLimit)));
+        out = out.replace("{used_amount}", String.valueOf(Math.max(0, usedAmount)));
+        out = out.replace("{reason}", reason == null ? "" : reason);
+        out = out.replace("{window_minutes}", "5");
+        out = out.replace("{network}", getNetworkName(c));
+        out = out.replace("{adminPhone}", getAdminPhone(c));
+        return out;
     }
 
     static String applyTemplate(String template, int amount, String cardCode) {
@@ -2125,6 +2244,13 @@ class AppStore {
         settings.put(KEY_REWARD_PENDING_TEMPLATE, getRewardPendingTemplate(c));
         settings.put(KEY_REWARD_EXPIRY_ENABLED, isRewardExpiryEnabled(c));
         settings.put(KEY_REWARD_EXPIRY_DAYS, getRewardExpiryDays(c));
+        settings.put(KEY_POS_SUCCESS_TEMPLATE, getPosSuccessTemplate(c));
+        settings.put(KEY_POS_DUPLICATE_TEMPLATE, getPosDuplicateTemplate(c));
+        settings.put(KEY_POS_INVALID_PHONE_TEMPLATE, getPosInvalidPhoneTemplate(c));
+        settings.put(KEY_POS_LIMIT_TEMPLATE, getPosLimitTemplate(c));
+        settings.put(KEY_POS_NO_STOCK_TEMPLATE, getPosNoStockTemplate(c));
+        settings.put(KEY_POS_INVALID_CATEGORY_TEMPLATE, getPosInvalidCategoryTemplate(c));
+        settings.put(KEY_POS_AMBIGUOUS_TEMPLATE, getPosAmbiguousTemplate(c));
         settings.put(KEY_UPDATE_MANIFEST_URL, getUpdateManifestUrl(c));
         root.put("settings", settings);
 
@@ -2532,6 +2658,13 @@ class AppStore {
             if (settings.has(KEY_AUTO_SEND)) editor.putBoolean(KEY_AUTO_SEND, settings.optBoolean(KEY_AUTO_SEND, true));
             if (settings.has(KEY_SUCCESS_TEMPLATE)) editor.putString(KEY_SUCCESS_TEMPLATE, settings.optString(KEY_SUCCESS_TEMPLATE, DEFAULT_SUCCESS_TEMPLATE));
             if (settings.has(KEY_NO_STOCK_TEMPLATE)) editor.putString(KEY_NO_STOCK_TEMPLATE, settings.optString(KEY_NO_STOCK_TEMPLATE, DEFAULT_NO_STOCK_TEMPLATE));
+            if (settings.has(KEY_POS_SUCCESS_TEMPLATE)) editor.putString(KEY_POS_SUCCESS_TEMPLATE, settings.optString(KEY_POS_SUCCESS_TEMPLATE, DEFAULT_POS_SUCCESS_TEMPLATE));
+            if (settings.has(KEY_POS_DUPLICATE_TEMPLATE)) editor.putString(KEY_POS_DUPLICATE_TEMPLATE, settings.optString(KEY_POS_DUPLICATE_TEMPLATE, DEFAULT_POS_DUPLICATE_TEMPLATE));
+            if (settings.has(KEY_POS_INVALID_PHONE_TEMPLATE)) editor.putString(KEY_POS_INVALID_PHONE_TEMPLATE, settings.optString(KEY_POS_INVALID_PHONE_TEMPLATE, DEFAULT_POS_INVALID_PHONE_TEMPLATE));
+            if (settings.has(KEY_POS_LIMIT_TEMPLATE)) editor.putString(KEY_POS_LIMIT_TEMPLATE, settings.optString(KEY_POS_LIMIT_TEMPLATE, DEFAULT_POS_LIMIT_TEMPLATE));
+            if (settings.has(KEY_POS_NO_STOCK_TEMPLATE)) editor.putString(KEY_POS_NO_STOCK_TEMPLATE, settings.optString(KEY_POS_NO_STOCK_TEMPLATE, DEFAULT_POS_NO_STOCK_TEMPLATE));
+            if (settings.has(KEY_POS_INVALID_CATEGORY_TEMPLATE)) editor.putString(KEY_POS_INVALID_CATEGORY_TEMPLATE, settings.optString(KEY_POS_INVALID_CATEGORY_TEMPLATE, DEFAULT_POS_INVALID_CATEGORY_TEMPLATE));
+            if (settings.has(KEY_POS_AMBIGUOUS_TEMPLATE)) editor.putString(KEY_POS_AMBIGUOUS_TEMPLATE, settings.optString(KEY_POS_AMBIGUOUS_TEMPLATE, DEFAULT_POS_AMBIGUOUS_TEMPLATE));
             if (settings.has(KEY_AUTO_BACKUP_ENABLED)) editor.putBoolean(KEY_AUTO_BACKUP_ENABLED, settings.optBoolean(KEY_AUTO_BACKUP_ENABLED, true));
             if (settings.has(KEY_AUTO_BACKUP_INTERVAL_HOURS)) editor.putInt(KEY_AUTO_BACKUP_INTERVAL_HOURS, settings.optInt(KEY_AUTO_BACKUP_INTERVAL_HOURS, 12));
             if (settings.has(KEY_LAST_AUTO_BACKUP_AT)) editor.putString(KEY_LAST_AUTO_BACKUP_AT, settings.optString(KEY_LAST_AUTO_BACKUP_AT, ""));

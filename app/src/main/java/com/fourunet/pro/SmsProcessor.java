@@ -245,6 +245,14 @@ class SmsProcessor {
             String logId = addLog(context, provider, sender, agentName, customerPhone, totalAmount,
                     "مراجعة: طلب ملتبس", "لم يتم تنفيذ طلب الرقم الموثوق لأن الرسالة غير واضحة أو فيها التباس.\nالسبب: " + reason, "");
             NotifyHelper.notifyPendingAction(context, logId, totalAmount, "", "طلب رقم موثوق يحتاج مراجعة");
+            if (!agentPhone.isEmpty()) {
+                String msg = (reason != null && reason.contains("غير معتمدة"))
+                        ? AppStore.buildPosInvalidCategoryMessage(context, agent, req, reason)
+                        : AppStore.buildPosAmbiguousMessage(context, agent, req, reason);
+                sendSmsWithTracking(context, agentPhone, msg, logId, totalAmount, "", true,
+                        "تم إرسال تنبيه الطلب الملتبس للرقم الموثوق",
+                        "تعذر إرسال تنبيه الطلب الملتبس للرقم الموثوق");
+            }
             return;
         }
 
@@ -259,7 +267,8 @@ class SmsProcessor {
         if (!isValidLocalMobile(customerPhone)) {
             String logId = addLog(context, provider, sender, agentName, "", totalAmount, "مرفوض", "طلب رقم موثوق بدون رقم زبون صحيح. الرقم يجب أن يكون 9 أرقام ويبدأ بـ 7.", "");
             if (!agentPhone.isEmpty()) {
-                sendSmsWithTracking(context, agentPhone, "رقم العميل غير صحيح. يجب أن يكون 9 أرقام ويبدأ بـ 7.", logId, totalAmount, "", true,
+                String msg = AppStore.buildPosInvalidPhoneMessage(context, agent, req, "رقم العميل غير صحيح أو غير مكتمل");
+                sendSmsWithTracking(context, agentPhone, msg, logId, totalAmount, "", true,
                         "تم إرسال تنبيه الرقم الخاطئ للرقم الموثوق",
                         "تعذر إرسال تنبيه الرقم الخاطئ للرقم الموثوق");
             }
@@ -268,7 +277,7 @@ class SmsProcessor {
 
         long recent = AppStore.findRecentTrustedRequest(context, agent.id + "|" + req.fingerprint, 5L * 60L * 1000L);
         if (recent > 0L) {
-            String msg = "لا يمكن تكرار نفس الطلب خلال 5 دقائق. يرجى الانتظار أو تغيير محتوى الطلب إذا كان طلباً جديداً.";
+            String msg = AppStore.buildPosDuplicateMessage(context, agent, req);
             String logId = addLog(context, provider, sender, agentName, customerPhone, totalAmount, "مكرر خلال 5 دقائق",
                     "تم رفض الطلب لأنه يطابق طلباً سابقاً لنفس رقم العميل ونفس الفئات خلال أقل من 5 دقائق.\nالفئات: " + req.amountsText(), "");
             if (!agentPhone.isEmpty()) {
@@ -280,7 +289,7 @@ class SmsProcessor {
         }
 
         if (!AppStore.canUseTrustedCredit(agent, totalAmount)) {
-            String msg = AppStore.buildTrustedCreditLimitMessage(agent);
+            String msg = AppStore.buildPosLimitMessage(context, agent, req);
             String logId = addLog(context, provider, sender, agentName, customerPhone, totalAmount, "تجاوز السقف", "لم يتم إرسال كرت. " + msg, "");
             if (!agentPhone.isEmpty()) {
                 sendSmsWithTracking(context, agentPhone, msg, logId, totalAmount, "", true,
@@ -296,6 +305,12 @@ class SmsProcessor {
                     "طلب رقم موثوق صحيح لكن لا توجد كروت كافية لتنفيذ الطلب كاملاً. لم يتم خصم السقف وسيبقى الطلب للمراجعة.\nالفئات المطلوبة: " + req.amountsText(), "");
             NotifyHelper.notifySendFailed(context, totalAmount, "", "نفدت إحدى الفئات المطلوبة");
             NotifyHelper.notifyPendingAction(context, pendingLogId, totalAmount, "", "طلب رقم موثوق معلّق بسبب نقص الكروت");
+            if (!agentPhone.isEmpty()) {
+                String msg = AppStore.buildPosNoStockMessage(context, agent, req);
+                sendSmsWithTracking(context, agentPhone, msg, pendingLogId, totalAmount, "", true,
+                        "تم إرسال تنبيه نقص الكروت للرقم الموثوق",
+                        "تعذر إرسال تنبيه نقص الكروت للرقم الموثوق");
+            }
             return;
         }
 
@@ -331,11 +346,7 @@ class SmsProcessor {
         if (!effectiveRewards) note += "\nالمكافأة معطلة لهذا الرقم الموثوق؛ تم تنفيذ البيع بدون احتساب نقاط جديدة.";
         String logId = addLog(context, provider, sender, agentName, customerPhone, totalAmount, "جاري إرسال SMS", note, cardCodes.toString());
 
-        String agentSuccess = "تم تنفيذ الطلب بنجاح.\nالعميل: " + customerPhone
-                + "\nالكروت: " + req.amountsText()
-                + "\nعدد الكروت: " + req.countCards()
-                + "\nإجمالي الطلب: " + totalAmount
-                + "\nالسقف المتبقي: " + remainingAfter;
+        String agentSuccess = AppStore.buildPosSuccessMessage(context, agent, req, remainingAfter);
         sendSmsWithTracking(context, customerPhone, customerMsg.toString(), logId, totalAmount, cardCodes.toString(), false,
                 "تم إرسال الكرت/الكروت للزبون وتم خصم العملية من السقف",
                 "فشل إرسال SMS لزبون الرقم الموثوق؛ لم يتم خصم السقف. استخدم إعادة إرسال SMS أو واتساب",
