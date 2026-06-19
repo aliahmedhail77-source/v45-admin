@@ -109,7 +109,13 @@ class PaymentParser {
 
     static ParsedCreditRequest parseTrustedCreditRequest(Context context, String body) {
         if (body == null) return null;
-        String normalized = normalizeDigitsInText(body);
+
+        // HOTFIX: وحّد الرسالة قبل القراءة. هذا يجعل:
+        // 100\n776901570  ==  100 776901570  ==  100-776901570  ==  100.776901570
+        // ثم نستخرج رقم العميل أولاً ونحذفه قبل استخراج الفئات حتى لا تُقرأ أرقام الجوال كفئات.
+        String normalized = normalizeTrustedRequestText(normalizeDigitsInText(body));
+        if (normalized.trim().isEmpty()) return null;
+
         ArrayList<String> phones = extractLocalPhones(normalized);
         HashSet<Integer> validAmounts = new HashSet<>();
         if (context != null) {
@@ -118,17 +124,13 @@ class PaymentParser {
             }
         }
         if (validAmounts.isEmpty()) {
-            int[] defaults = new int[]{100,200,250,300,500,1000,3000,5000,10000};
+            int[] defaults = new int[]{50,100,150,200,250,300,500,1000,3000,5000,10000};
             for (int a : defaults) validAmounts.add(a);
         }
 
-        String withoutPhones = normalized;
-        for (String p : phones) {
-            withoutPhones = withoutPhones.replace("00967" + p, " ");
-            withoutPhones = withoutPhones.replace("967" + p, " ");
-            withoutPhones = withoutPhones.replace("0" + p, " ");
-            withoutPhones = withoutPhones.replace(p, " ");
-        }
+        String withoutPhones = removeDetectedPhones(normalized, phones);
+        withoutPhones = normalizeSeparatorsForNumbers(withoutPhones);
+
         ArrayList<Integer> amounts = new ArrayList<>();
         ArrayList<Integer> unknownNumbers = new ArrayList<>();
         Matcher num = Pattern.compile("\\d+(?:[\\.,]\\d+)?").matcher(withoutPhones);
@@ -154,6 +156,51 @@ class PaymentParser {
         String phone = phones.size() == 1 ? phones.get(0) : "";
         String fingerprint = buildTrustedCreditFingerprint(phone, arr);
         return new ParsedCreditRequest(arr, phone, reason, fingerprint);
+    }
+
+    private static String normalizeTrustedRequestText(String text) {
+        if (text == null) return "";
+        String s = text.replace('\u200f', ' ').replace('\u200e', ' ');
+        s = s.replace('\r', ' ').replace('\n', ' ').replace('\t', ' ');
+        s = s.replace('ـ', ' ');
+        s = s.replace("إلى", " الى ").replace("الى", " الى ");
+        s = s.replace("إلي", " الى ").replace("الي", " الى ");
+        return s.replaceAll("\\s+", " ").trim();
+    }
+
+    private static String normalizeSeparatorsForNumbers(String text) {
+        if (text == null) return "";
+        // لا نحذف الأرقام؛ فقط نحول الفواصل والرموز التي يستخدمها نقاط البيع بين الفئة والرقم إلى مسافات.
+        return text.replace('\n', ' ')
+                .replace('\r', ' ')
+                .replace('\t', ' ')
+                .replace('-', ' ')
+                .replace('–', ' ')
+                .replace('—', ' ')
+                .replace('_', ' ')
+                .replace('/', ' ')
+                .replace('\\', ' ')
+                .replace(':', ' ')
+                .replace(';', ' ')
+                .replace('|', ' ')
+                .replace(',', ' ')
+                .replace('،', ' ')
+                .replace('.', ' ')
+                .replaceAll("\\s+", " ").trim();
+    }
+
+    private static String removeDetectedPhones(String text, ArrayList<String> phones) {
+        String out = text == null ? "" : text;
+        if (phones == null) return out;
+        for (String p : phones) {
+            if (p == null || p.trim().isEmpty()) continue;
+            String phone = p.trim();
+            out = out.replace("00967" + phone, " ");
+            out = out.replace("967" + phone, " ");
+            out = out.replace("0" + phone, " ");
+            out = out.replace(phone, " ");
+        }
+        return out;
     }
 
     private static String normalizeDigitsInText(String text) {

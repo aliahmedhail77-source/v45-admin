@@ -2685,11 +2685,28 @@ public class MainActivity extends Activity {
     private EditText templateEdit(String hint, String value) {
         EditText input = new EditText(this);
         input.setHint(hint);
-        input.setMinLines(4);
+        input.setMinLines(3);
+        input.setMaxLines(7);
         input.setGravity(Gravity.TOP | Gravity.RIGHT);
-        input.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_MULTI_LINE);
+        input.setSingleLine(false);
+        input.setVerticalScrollBarEnabled(true);
+        input.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_MULTI_LINE | InputType.TYPE_TEXT_FLAG_CAP_SENTENCES);
         input.setText(value);
         return input;
+    }
+
+    private ScrollView scrollableDialogView(LinearLayout layout) {
+        ScrollView scroll = new ScrollView(this);
+        scroll.setFillViewport(false);
+        scroll.setPadding(0, 0, 0, dp(8));
+        layout.setPadding(dp(8), dp(8), dp(8), dp(96));
+        scroll.addView(layout, new ScrollView.LayoutParams(-1, -2));
+        return scroll;
+    }
+
+    private void makeDialogKeyboardFriendly(AlertDialog dialog) {
+        if (dialog == null || dialog.getWindow() == null) return;
+        dialog.getWindow().setSoftInputMode(android.view.WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE | android.view.WindowManager.LayoutParams.SOFT_INPUT_STATE_VISIBLE);
     }
 
     private void showPosMessageTemplatesDialog() {
@@ -2717,9 +2734,9 @@ public class MainActivity extends Activity {
         layout.addView(previewBtn);
         layout.addView(small("معاينة رسالة النجاح:"));
         layout.addView(preview);
-        new AlertDialog.Builder(this)
+        AlertDialog dialog = new AlertDialog.Builder(this)
                 .setTitle("قوالب رسائل نقاط البيع")
-                .setView(layout)
+                .setView(scrollableDialogView(layout))
                 .setPositiveButton("حفظ", (d,w) -> {
                     AppStore.setPosMessageTemplates(this,
                             success.getText().toString(), duplicate.getText().toString(), invalidPhone.getText().toString(),
@@ -2729,6 +2746,7 @@ public class MainActivity extends Activity {
                 })
                 .setNegativeButton("إلغاء", null)
                 .show();
+        makeDialogKeyboardFriendly(dialog);
     }
 
     private LinearLayout rewardMessageTemplatesBox() {
@@ -2776,9 +2794,9 @@ public class MainActivity extends Activity {
         layout.addView(sent);
         layout.addView(pending);
         layout.addView(small("مثال مختصر: نقاط:+8 رصيد:40 باقي:60"));
-        new AlertDialog.Builder(this)
+        AlertDialog dialog = new AlertDialog.Builder(this)
                 .setTitle("تعديل رسائل النقاط")
-                .setView(layout)
+                .setView(scrollableDialogView(layout))
                 .setPositiveButton("حفظ", (d,w) -> {
                     String a = points.getText().toString().trim();
                     String b = sent.getText().toString().trim();
@@ -2793,6 +2811,7 @@ public class MainActivity extends Activity {
                 })
                 .setNegativeButton("إلغاء", null)
                 .show();
+        makeDialogKeyboardFriendly(dialog);
     }
 
     private void confirmResetDirectSaleTemplate() {
@@ -2816,9 +2835,12 @@ public class MainActivity extends Activity {
         TextView help = small("عدّل رسالة البيع المباشر فقط. هذه لا تؤثر على رسائل التحويل التلقائي.");
         TextView vars = small("المتغيرات المتاحة: {amount}  {card}  {network}  {adminPhone}");
         EditText input = new EditText(this);
-        input.setMinLines(8);
+        input.setMinLines(4);
+        input.setMaxLines(8);
         input.setGravity(Gravity.TOP | Gravity.RIGHT);
-        input.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_MULTI_LINE);
+        input.setSingleLine(false);
+        input.setVerticalScrollBarEnabled(true);
+        input.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_MULTI_LINE | InputType.TYPE_TEXT_FLAG_CAP_SENTENCES);
         input.setText(AppStore.getDirectSaleTemplate(this));
 
         TextView preview = messagePreviewText(AppStore.applyTemplate(this, input.getText().toString(), 100, "1547013174"));
@@ -2837,9 +2859,9 @@ public class MainActivity extends Activity {
         layout.addView(small("المعاينة:"));
         layout.addView(preview);
 
-        new AlertDialog.Builder(this)
+        AlertDialog dialog = new AlertDialog.Builder(this)
                 .setTitle("تعديل رسالة البيع المباشر")
-                .setView(layout)
+                .setView(scrollableDialogView(layout))
                 .setPositiveButton("حفظ", (d,w) -> {
                     AppStore.setDirectSaleTemplate(this, input.getText().toString());
                     toast("تم حفظ نص البيع المباشر");
@@ -2847,6 +2869,7 @@ public class MainActivity extends Activity {
                 })
                 .setNegativeButton("إلغاء", null)
                 .show();
+        makeDialogKeyboardFriendly(dialog);
     }
 
     private void confirmResetTemplate(boolean successMessage) {
@@ -2929,9 +2952,12 @@ public class MainActivity extends Activity {
         TextView vars = small("المتغيرات المتاحة: {amount}  {card}  {network}  {adminPhone}");
 
         EditText input = new EditText(this);
-        input.setMinLines(9);
+        input.setMinLines(4);
+        input.setMaxLines(8);
         input.setGravity(Gravity.TOP | Gravity.RIGHT);
-        input.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_MULTI_LINE);
+        input.setSingleLine(false);
+        input.setVerticalScrollBarEnabled(true);
+        input.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_MULTI_LINE | InputType.TYPE_TEXT_FLAG_CAP_SENTENCES);
         input.setText(successMessage ? AppStore.getSuccessTemplate(this) : AppStore.getNoStockTemplate(this));
 
         TextView previewTitle = small("المعاينة:");
@@ -2960,9 +2986,9 @@ public class MainActivity extends Activity {
         layout.addView(previewTitle);
         layout.addView(preview);
 
-        new AlertDialog.Builder(this)
+        AlertDialog dialog = new AlertDialog.Builder(this)
                 .setTitle(successMessage ? "تعديل رسالة إرسال الكرت" : "تعديل رسالة نفاد الفئة")
-                .setView(layout)
+                .setView(scrollableDialogView(layout))
                 .setPositiveButton("حفظ", (d,w) -> {
                     String value = input.getText().toString();
                     if (successMessage) AppStore.setSuccessTemplate(this, value);
@@ -2972,6 +2998,7 @@ public class MainActivity extends Activity {
                 })
                 .setNegativeButton("إلغاء", null)
                 .show();
+        makeDialogKeyboardFriendly(dialog);
     }
 
 

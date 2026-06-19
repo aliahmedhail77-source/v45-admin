@@ -48,13 +48,13 @@ class AppStore {
     private static final String KEY_SUCCESS_TEMPLATE = "success_message_template";
     private static final String KEY_DIRECT_SALE_TEMPLATE = "direct_sale_message_template";
     private static final String KEY_NO_STOCK_TEMPLATE = "no_stock_message_template";
-    private static final String KEY_POS_SUCCESS_TEMPLATE = "pos_success_message_template_v49";
-    private static final String KEY_POS_DUPLICATE_TEMPLATE = "pos_duplicate_message_template_v49";
-    private static final String KEY_POS_INVALID_PHONE_TEMPLATE = "pos_invalid_phone_message_template_v49";
-    private static final String KEY_POS_LIMIT_TEMPLATE = "pos_limit_message_template_v49";
-    private static final String KEY_POS_NO_STOCK_TEMPLATE = "pos_no_stock_message_template_v49";
-    private static final String KEY_POS_INVALID_CATEGORY_TEMPLATE = "pos_invalid_category_message_template_v49";
-    private static final String KEY_POS_AMBIGUOUS_TEMPLATE = "pos_ambiguous_message_template_v49";
+    private static final String KEY_POS_SUCCESS_TEMPLATE = "pos_success_message_template_v50";
+    private static final String KEY_POS_DUPLICATE_TEMPLATE = "pos_duplicate_message_template_v50";
+    private static final String KEY_POS_INVALID_PHONE_TEMPLATE = "pos_invalid_phone_message_template_v50";
+    private static final String KEY_POS_LIMIT_TEMPLATE = "pos_limit_message_template_v50";
+    private static final String KEY_POS_NO_STOCK_TEMPLATE = "pos_no_stock_message_template_v50";
+    private static final String KEY_POS_INVALID_CATEGORY_TEMPLATE = "pos_invalid_category_message_template_v50";
+    private static final String KEY_POS_AMBIGUOUS_TEMPLATE = "pos_ambiguous_message_template_v50";
     private static final String KEY_NETWORK_NAME = "network_name";
     private static final String KEY_ADMIN_PHONE = "admin_phone";
     private static final String KEY_MIKROTIK_HOST = "mikrotik_host";
@@ -129,44 +129,29 @@ class AppStore {
             "82d8059525a7599e08405e04a4b1d410e2687ab59aa83d03784a7b8ed8d5e470"
     };
 
-    static final String DEFAULT_SUCCESS_TEMPLATE = "تم استلام {amount}ريال\n"
-            + "رقم الكرت: {card}\n"
-            + "لشبكة: {network}\n"
-            + "فئة {amount}ريال";
+    static final String DEFAULT_SUCCESS_TEMPLATE = "تم الشحن\n"
+            + "الفئة: {amount}\n"
+            + "الكرت: {card}\n"
+            + "{network}";
 
-    static final String DEFAULT_DIRECT_SALE_TEMPLATE = "تم شراء كرت من الإدارة مباشرة\n"
-            + "رقم الكرت: {card}\n"
-            + "الشبكة: {network}\n"
-            + "الفئة: {amount} ريال";
+    static final String DEFAULT_DIRECT_SALE_TEMPLATE = "تم الشحن\n"
+            + "الفئة: {amount}\n"
+            + "الكرت: {card}\n"
+            + "{network}";
 
-    static final String DEFAULT_NO_STOCK_TEMPLATE = "تنبيه: تم استلام {amount}ريال لكن لا توجد كروت متاحة لفئة {amount}ريال.\n"
-            + "رقم إدارة الشبكة: {adminPhone}";
+    static final String DEFAULT_NO_STOCK_TEMPLATE = "نفدت فئة {amount} ريال. راجع الإدارة: {adminPhone}";
 
-    static final String DEFAULT_POS_SUCCESS_TEMPLATE = "تم تنفيذ الطلب بنجاح.\n"
+    static final String DEFAULT_POS_SUCCESS_TEMPLATE = "تم التنفيذ\n"
             + "العميل: {customer_phone}\n"
-            + "الكروت: {categories}\n"
-            + "عدد الكروت: {cards_count}\n"
-            + "إجمالي الطلب: {total_amount}\n"
-            + "السقف المتبقي: {remaining_limit}";
-    static final String DEFAULT_POS_DUPLICATE_TEMPLATE = "لا يمكن تكرار نفس الطلب خلال {window_minutes} دقائق.\n"
-            + "يرجى الانتظار أو تغيير محتوى الطلب إذا كان طلباً جديداً.";
-    static final String DEFAULT_POS_INVALID_PHONE_TEMPLATE = "رقم العميل غير صحيح.\n"
-            + "يجب أن يكون الرقم مكوناً من 9 أرقام ويبدأ بالرقم 7.";
-    static final String DEFAULT_POS_LIMIT_TEMPLATE = "تعذر تنفيذ الطلب.\n"
-            + "السبب: الطلب يتجاوز سقف نقطة البيع المسموح.\n"
-            + "السقف: {credit_limit}\n"
-            + "المستخدم: {used_amount}\n"
-            + "إجمالي الطلب: {total_amount}";
-    static final String DEFAULT_POS_NO_STOCK_TEMPLATE = "تعذر تنفيذ الطلب كاملاً.\n"
-            + "السبب: لا توجد كروت متوفرة لإحدى الفئات المطلوبة.\n"
-            + "الفئات المطلوبة: {categories}\n"
-            + "لم يتم إرسال أي كرت.";
-    static final String DEFAULT_POS_INVALID_CATEGORY_TEMPLATE = "تعذر تنفيذ الطلب.\n"
-            + "السبب: توجد فئة غير معتمدة في الرسالة.\n"
-            + "{reason}";
-    static final String DEFAULT_POS_AMBIGUOUS_TEMPLATE = "تعذر تنفيذ الطلب تلقائياً.\n"
-            + "السبب: الرسالة تحتوي على التباس وتحتاج مراجعة من الإدارة.\n"
-            + "{reason}";
+            + "الفئات: {categories}\n"
+            + "الإجمالي: {total_amount}\n"
+            + "المتبقي: {remaining_limit}";
+    static final String DEFAULT_POS_DUPLICATE_TEMPLATE = "طلب مكرر خلال {window_minutes} دقائق. انتظر أو غيّر الطلب.";
+    static final String DEFAULT_POS_INVALID_PHONE_TEMPLATE = "رقم العميل غير صحيح. يجب أن يكون 9 أرقام ويبدأ بـ 7.";
+    static final String DEFAULT_POS_LIMIT_TEMPLATE = "تعذر التنفيذ: تجاوز السقف. السقف:{credit_limit} المستخدم:{used_amount} الطلب:{total_amount}";
+    static final String DEFAULT_POS_NO_STOCK_TEMPLATE = "تعذر التنفيذ: لا توجد كروت كافية للفئات {categories}.";
+    static final String DEFAULT_POS_INVALID_CATEGORY_TEMPLATE = "تعذر التنفيذ: فئة غير معتمدة. {reason}";
+    static final String DEFAULT_POS_AMBIGUOUS_TEMPLATE = "تعذر التنفيذ: الطلب غير واضح وتم تحويله للمراجعة. {reason}";
 
     static final int[] DEFAULT_AMOUNTS = new int[]{50, 100, 150, 200, 250, 300, 500};
     static final int DEFAULT_REWARD_PERCENT = 8;
@@ -1775,6 +1760,16 @@ class AppStore {
             arr.put(n);
             prefs(c).edit().putString(KEY_TRUSTED_REQUEST_LOCKS, arr.toString()).apply();
         } catch (Exception ignored) {}
+    }
+
+
+    static boolean reserveTrustedRequest(Context c, String fingerprint, long windowMs) {
+        if (fingerprint == null || fingerprint.trim().isEmpty()) return false;
+        synchronized (AppStore.class) {
+            if (findRecentTrustedRequest(c, fingerprint, windowMs) > 0L) return false;
+            rememberTrustedRequest(c, fingerprint);
+            return true;
+        }
     }
 
     static ArrayList<TrustedContact> loadTrustedContacts(Context c) {

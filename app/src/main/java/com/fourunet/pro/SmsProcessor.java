@@ -97,11 +97,21 @@ class SmsProcessor {
         String eventId = sha256((sender == null ? "" : sender) + "|" + receivedAt + "|" + body);
         if (AppStore.isProcessed(context, eventId)) return;
 
-        // Trusted credit agents: authorized POS/staff can send: تم اضافة 100 من-733938509
+        // Trusted credit agents / POS numbers use one path only.
+        // HOTFIX: يمنع دخول نفس رسالة نقطة البيع في مسار المحافظ أو أي مسار قديم، حتى لا تُنفذ مرتين.
         TrustedCreditAgent creditAgent = AppStore.findTrustedCreditSender(context, sender);
-        ParsedCreditRequest creditRequest = creditAgent == null ? null : PaymentParser.parseTrustedCreditRequest(context, body);
-        if (creditAgent != null && creditRequest != null) {
-            processTrustedCreditRequest(context, eventId, sender, creditAgent, creditRequest);
+        if (creditAgent != null) {
+            ParsedCreditRequest creditRequest = PaymentParser.parseTrustedCreditRequest(context, body);
+            if (creditRequest != null) {
+                processTrustedCreditRequest(context, eventId, sender, creditAgent, creditRequest);
+            } else {
+                AppStore.markProcessed(context, eventId);
+                if (body.matches(".*\\d.*")) {
+                    String logId = addLog(context, "رقم موثوق", sender, creditAgent.name, "", 0,
+                            "مراجعة: طلب غير مفهوم", "رسالة من رقم موثوق لم يتم فهمها ولم تُحوّل لأي مسار آخر.\nالنص:\n" + body, "");
+                    NotifyHelper.notifyPendingAction(context, logId, 0, "", "طلب رقم موثوق غير مفهوم");
+                }
+            }
             return;
         }
 
@@ -275,8 +285,8 @@ class SmsProcessor {
             return;
         }
 
-        long recent = AppStore.findRecentTrustedRequest(context, agent.id + "|" + req.fingerprint, 5L * 60L * 1000L);
-        if (recent > 0L) {
+        String requestLockKey = agent.id + "|" + req.fingerprint;
+        if (!AppStore.reserveTrustedRequest(context, requestLockKey, 5L * 60L * 1000L)) {
             String msg = AppStore.buildPosDuplicateMessage(context, agent, req);
             String logId = addLog(context, provider, sender, agentName, customerPhone, totalAmount, "مكرر خلال 5 دقائق",
                     "تم رفض الطلب لأنه يطابق طلباً سابقاً لنفس رقم العميل ونفس الفئات خلال أقل من 5 دقائق.\nالفئات: " + req.amountsText(), "");
@@ -313,8 +323,6 @@ class SmsProcessor {
             }
             return;
         }
-
-        AppStore.rememberTrustedRequest(context, agent.id + "|" + req.fingerprint);
 
         int usedAfter = agent.usedAmount + totalAmount;
         int remainingAfter = Math.max(0, agent.creditLimit - usedAfter);
