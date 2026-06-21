@@ -43,6 +43,45 @@ class PaymentParser {
                 || b.contains("عملية تحتاج مراجعة");
     }
 
+    static boolean isIgnoredNotificationMessage(String body) {
+        if (body == null) return true;
+        String raw = body.trim();
+        if (raw.isEmpty()) return true;
+        String normalized = normalizeDigitsInText(raw);
+        String lower = normalized.toLowerCase(Locale.ROOT);
+
+        // لا نعتبر إيصالات المحافظ ضوضاء حتى لو احتوت كلمة "رصيدك" مثل رسائل ONE Cash.
+        if (hasRealDepositVerb(lower)) return false;
+
+        String[] ignored = new String[]{
+                "missed call", "you have a missed call", "مكالمة فائتة", "لم يتم الرد", "اتصل بك",
+                "voicemail", "voice mail", "رصيدك", "اشعار", "إشعار"
+        };
+        for (String token : ignored) {
+            if (lower.contains(token.toLowerCase(Locale.ROOT))) return true;
+        }
+        return isDateTimeOnlyMessage(normalized);
+    }
+
+    private static boolean hasRealDepositVerb(String text) {
+        if (text == null) return false;
+        String b = text.toLowerCase(Locale.ROOT);
+        return b.contains("استلمت") || b.contains("استلام") || b.contains("تم استلام")
+                || b.contains("تحويل") || b.contains("تم تحويل") || b.contains("اضيف") || b.contains("أضيف")
+                || b.contains("تم اضافة") || b.contains("تم إضافة") || b.contains("ايداع") || b.contains("إيداع")
+                || b.contains("مبلغ");
+    }
+
+    private static boolean isDateTimeOnlyMessage(String body) {
+        if (body == null) return false;
+        String s = body.trim();
+        if (s.isEmpty()) return false;
+        boolean hasDateOrTime = Pattern.compile("(?:\\d{1,4}[-/]\\d{1,2}[-/]\\d{1,4}|\\d{1,2}:\\d{2})").matcher(s).find();
+        boolean hasLetters = Pattern.compile("[A-Za-z\\p{InArabic}]").matcher(s).find();
+        boolean hasDigits = Pattern.compile("\\d").matcher(s).find();
+        return hasDigits && hasDateOrTime && !hasLetters;
+    }
+
     static boolean looksLikePayment(String body) {
         if (body == null) return false;
         if (isNonPaymentNoise(body)) return false;
@@ -77,11 +116,9 @@ class PaymentParser {
 
     static boolean isNonPaymentNoise(String body) {
         if (body == null) return true;
-        String b = body.toLowerCase(Locale.ROOT);
-        boolean hasRealDepositVerb = b.contains("استلمت") || b.contains("استلام") || b.contains("تم استلام")
-                || b.contains("تحويل") || b.contains("تم تحويل") || b.contains("اضيف") || b.contains("أضيف")
-                || b.contains("تم اضافة") || b.contains("تم إضافة") || b.contains("ايداع") || b.contains("إيداع");
-        if (hasRealDepositVerb) return false;
+        String b = normalizeDigitsInText(body).toLowerCase(Locale.ROOT);
+        if (hasRealDepositVerb(b)) return false;
+        if (isIgnoredNotificationMessage(body)) return true;
         String[] noise = new String[]{
                 "تعبئة رصيد", "تم تعبئة", "تمت تعبئة", "رصيدك الحالي", "رصيدك هو", "رصيدك:",
                 "باقة", "باقتك", "دقائق", "ميجابايت", "gb", "mb", "انترنت", "إنترنت",
@@ -123,7 +160,7 @@ class PaymentParser {
 
     static ParsedCreditRequest parseTrustedCreditRequest(Context context, String body) {
         if (body == null) return null;
-        if (isSystemGeneratedMessage(body)) return null;
+        if (isSystemGeneratedMessage(body) || isIgnoredNotificationMessage(body)) return null;
 
         // HOTFIX: وحّد الرسالة قبل القراءة. هذا يجعل:
         // 100\n776901570  ==  100 776901570  ==  100-776901570  ==  100.776901570
@@ -268,7 +305,7 @@ class PaymentParser {
     }
 
     static ParsedPayment parse(Context context, String sender, String body) {
-        if (body == null || isSystemGeneratedMessage(body) || isNonPaymentNoise(body)) return null;
+        if (body == null || isSystemGeneratedMessage(body) || isIgnoredNotificationMessage(body) || isNonPaymentNoise(body)) return null;
 
         ParsedPayment p = null;
         if (trustedSender(sender)) {
@@ -290,7 +327,7 @@ class PaymentParser {
     }
 
     static ParsedPayment parse(String sender, String body) {
-        if (!trustedSender(sender) || body == null || isNonPaymentNoise(body)) return null;
+        if (!trustedSender(sender) || body == null || isSystemGeneratedMessage(body) || isIgnoredNotificationMessage(body) || isNonPaymentNoise(body)) return null;
 
         ParsedPayment p = parseJawali(body);
         if (p != null) return p;

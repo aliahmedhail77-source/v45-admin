@@ -895,6 +895,12 @@ public class MainActivity extends Activity {
         add.addView(action("إضافة فئة", purple, Color.WHITE, v -> showCategoryDialog(null)));
         content.addView(add);
 
+        LinearLayout cleanup = cardBox();
+        cleanup.addView(tv("تنظيف الكروت المباعة القديمة", 17, text, true));
+        cleanup.addView(small("يحذف الكروت المباعة التي مر على بيعها أكثر من 10 أيام فقط. لا يحذف سجلات البيع المالية، ويضيف عملية في السجل للتدقيق."));
+        cleanup.addView(action("تنظيف المباعة +10 أيام", Color.rgb(82,30,42), Color.WHITE, v -> confirmCleanupOldSoldCards()));
+        content.addView(cleanup);
+
         for (CategoryItem c : AppStore.loadCategories(this)) {
             LinearLayout box = cardBox();
             box.addView(tv(c.name + " - " + c.amount + " ريال", 18, text, true));
@@ -1030,6 +1036,20 @@ public class MainActivity extends Activity {
                     int removed = AppStore.deleteCardsByAmount(this, c.amount);
                     toast("تم حذف " + removed + " كرت من الفئة");
                     showCardsForCategory(c);
+                })
+                .setNegativeButton("إلغاء", null)
+                .show();
+    }
+
+    private void confirmCleanupOldSoldCards() {
+        int count = AppStore.countSoldCardsOlderThanDays(this, 10);
+        new AlertDialog.Builder(this)
+                .setTitle("تنظيف الكروت المباعة القديمة")
+                .setMessage("سيتم حذف الكروت المباعة التي مر على بيعها أكثر من 10 أيام فقط.\n\nالعدد المؤهل الآن: " + count + " كرت.\n\nلن يتم حذف سجلات البيع المالية، وسيتم تسجيل عملية التنظيف في السجل.\n\nهل تريد المتابعة؟")
+                .setPositiveButton("نعم، تنظيف", (d,w) -> {
+                    int removed = AppStore.cleanupSoldCardsOlderThanDays(this, 10);
+                    toast("تم تنظيف " + removed + " كرت مباع قديم");
+                    showCategories();
                 })
                 .setNegativeButton("إلغاء", null)
                 .show();
