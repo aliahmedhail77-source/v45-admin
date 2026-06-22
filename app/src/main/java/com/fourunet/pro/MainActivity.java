@@ -897,8 +897,9 @@ public class MainActivity extends Activity {
 
         LinearLayout cleanup = cardBox();
         cleanup.addView(tv("تنظيف الكروت المباعة القديمة", 17, text, true));
-        cleanup.addView(small("يحذف الكروت المباعة التي مر على بيعها أكثر من 10 أيام فقط. لا يحذف سجلات البيع المالية، ويضيف عملية في السجل للتدقيق."));
+        cleanup.addView(small("يحذف أرقام الكروت المباعة فقط، ولا يحذف سجلات البيع المالية. يمكنك التنظيف التلقائي بعد 10 أيام أو اختيار تاريخ محدد بنفسك."));
         cleanup.addView(action("تنظيف المباعة +10 أيام", Color.rgb(82,30,42), Color.WHITE, v -> confirmCleanupOldSoldCards()));
+        cleanup.addView(action("حذف المباعة حسب تاريخ أختاره", Color.rgb(120,60,35), Color.WHITE, v -> showCleanupSoldCardsByDateDialog()));
         content.addView(cleanup);
 
         for (CategoryItem c : AppStore.loadCategories(this)) {
@@ -1050,6 +1051,44 @@ public class MainActivity extends Activity {
                     int removed = AppStore.cleanupSoldCardsOlderThanDays(this, 10);
                     toast("تم تنظيف " + removed + " كرت مباع قديم");
                     showCategories();
+                })
+                .setNegativeButton("إلغاء", null)
+                .show();
+    }
+
+    private void showCleanupSoldCardsByDateDialog() {
+        LinearLayout layout = new LinearLayout(this);
+        layout.setOrientation(LinearLayout.VERTICAL);
+        layout.setPadding(dp(8), dp(8), dp(8), dp(8));
+        TextView info = small("اختر التاريخ النهائي. سيتم حذف أرقام الكروت المباعة حتى هذا التاريخ فقط، مع إبقاء سجلات البيع المالية والتقارير. الصيغ المقبولة: 2026-06-01 أو 2026/06/01.");
+        EditText date = new EditText(this);
+        date.setHint("مثال: 2026-06-01");
+        date.setGravity(Gravity.RIGHT);
+        date.setInputType(InputType.TYPE_CLASS_TEXT);
+        date.setText(new SimpleDateFormat("yyyy-MM-dd", Locale.US).format(new Date()));
+        layout.addView(info);
+        layout.addView(date);
+        new AlertDialog.Builder(this)
+                .setTitle("حذف المباعة حسب التاريخ")
+                .setView(layout)
+                .setPositiveButton("متابعة", (d,w) -> {
+                    String chosenDate = date.getText().toString().trim();
+                    int count = AppStore.countSoldCardsUntilDate(this, chosenDate);
+                    if (count < 0) { toast("صيغة التاريخ غير صحيحة"); return; }
+                    new AlertDialog.Builder(this)
+                            .setTitle("تأكيد نهائي")
+                            .setMessage("سيتم حذف أرقام الكروت المباعة حتى تاريخ: " + chosenDate
+                                    + "\n\nالعدد المؤهل الآن: " + count + " كرت."
+                                    + "\n\nلن يتم حذف سجلات البيع المالية، وسيتم تسجيل العملية في السجل. لا يمكن التراجع إلا من نسخة احتياطية."
+                                    + "\n\nهل تريد المتابعة؟")
+                            .setPositiveButton("نعم، حذف", (dd,ww) -> {
+                                int removed = AppStore.cleanupSoldCardsUntilDate(this, chosenDate);
+                                if (removed < 0) { toast("صيغة التاريخ غير صحيحة"); return; }
+                                toast("تم حذف " + removed + " كرت مباع حسب التاريخ");
+                                showCategories();
+                            })
+                            .setNegativeButton("إلغاء", null)
+                            .show();
                 })
                 .setNegativeButton("إلغاء", null)
                 .show();
@@ -4524,23 +4563,56 @@ public class MainActivity extends Activity {
 
 
     private void showTrustedCreditAgents() {
+        showTrustedCreditAgents("");
+    }
+
+    private void showTrustedCreditAgents(String filterText) {
         setTab("settings");
         clear();
         content.addView(title("الأرقام الموثوقة / نقاط البيع"));
 
         LinearLayout intro = cardBox();
         intro.addView(tv("إضافة رصيد عبر رقم موثوق", 17, text, true));
-        intro.addView(small("الأرقام الموثوقة هي نقاط البيع أو أي شخص تثق فيه. الصيغة المدعومة: تم اضافة 100 من-733938509. الرقم الأول هو قيمة الكرت، والرقم بعد من- هو رقم الزبون الذي سيستلم الكرت."));
+        intro.addView(small("الأرقام الموثوقة هي نقاط البيع أو أي شخص تثق فيه. لا تُقبل طلبات نقطة البيع إلا برقم موثوق وبصمة نقطة البيع المسجلة."));
         intro.addView(action("➕ إضافة رقم موثوق", purple, Color.WHITE, v -> showTrustedCreditAgentDialog(null)));
         content.addView(intro);
 
+        LinearLayout searchBox = cardBox();
+        searchBox.addView(tv("بحث عن نقطة بيع", 17, text, true));
+        EditText search = new EditText(this);
+        search.setHint("اكتب الاسم أو الرقم أو البصمة");
+        search.setGravity(Gravity.RIGHT);
+        search.setInputType(InputType.TYPE_CLASS_TEXT);
+        search.setText(filterText == null ? "" : filterText);
+        searchBox.addView(search);
+        LinearLayout searchRow = new LinearLayout(this); searchRow.setOrientation(LinearLayout.HORIZONTAL);
+        searchRow.addView(action("بحث", purple, Color.WHITE, v -> showTrustedCreditAgents(search.getText().toString().trim())), new LinearLayout.LayoutParams(0, -2, 1));
+        searchRow.addView(action("عرض الكل", card2, text, v -> showTrustedCreditAgents("")), new LinearLayout.LayoutParams(0, -2, 1));
+        searchBox.addView(searchRow);
+        content.addView(searchBox);
+
         ArrayList<TrustedCreditAgent> list = AppStore.loadTrustedCreditAgents(this);
+        String q = filterText == null ? "" : filterText.trim().toLowerCase(Locale.US);
+        ArrayList<TrustedCreditAgent> shown = new ArrayList<>();
+        for (TrustedCreditAgent item : list) {
+            if (item == null) continue;
+            String hay = ((item.name == null ? "" : item.name) + " "
+                    + (item.senderPhone == null ? "" : item.senderPhone) + " "
+                    + (item.posSignature == null ? "" : item.posSignature) + " "
+                    + (item.active ? "مفعل active" : "موقوف inactive") + " "
+                    + (item.signatureRequired ? "بصمة" : "بدون بصمة")).toLowerCase(Locale.US);
+            if (q.isEmpty() || hay.contains(q)) shown.add(item);
+        }
         if (list.isEmpty()) {
             LinearLayout empty = cardBox();
             empty.addView(small("لا توجد أرقام موثوقة بالسقف بعد. أضف رقم نقطة بيع مع سقف مثل 5000 ريال."));
             content.addView(empty);
+        } else if (shown.isEmpty()) {
+            LinearLayout empty = cardBox();
+            empty.addView(small("لا توجد نتائج مطابقة للبحث الحالي."));
+            content.addView(empty);
         }
-        for (TrustedCreditAgent a : list) {
+        for (TrustedCreditAgent a : shown) {
             LinearLayout box = cardBox();
             int remain = AppStore.remainingTrustedCredit(a);
             box.addView(tv((a.active ? "✅ " : "⛔ ") + a.name, 18, text, true));

@@ -132,11 +132,11 @@ class AppStore {
     static final String SYSTEM_SIGNATURE = "فور يو";
     static final String NETWORK_SIGNATURE = "شبكة فور يو";
 
-    static final String DEFAULT_SUCCESS_TEMPLATE = "كروتك فئة {amount}:\n"
+    static final String DEFAULT_SUCCESS_TEMPLATE = "كرتك فئة {amount}:\n"
             + "{card}\n"
             + SYSTEM_SIGNATURE;
 
-    static final String DEFAULT_DIRECT_SALE_TEMPLATE = "كروتك فئة {amount}:\n"
+    static final String DEFAULT_DIRECT_SALE_TEMPLATE = "كرتك فئة {amount}:\n"
             + "{card}\n"
             + SYSTEM_SIGNATURE;
 
@@ -876,11 +876,16 @@ class AppStore {
     }
 
     static String buildSuccessMessage(Context c, int amount, String cardCode) {
-        return ensureSystemSignature(applyTemplate(c, getSuccessTemplate(c), amount, cardCode));
+        return normalizeSingleCardPhrase(ensureSystemSignature(applyTemplate(c, getSuccessTemplate(c), amount, cardCode)));
     }
 
     static String buildDirectSaleMessage(Context c, int amount, String cardCode) {
-        return ensureSystemSignature(applyTemplate(c, getDirectSaleTemplate(c), amount, cardCode));
+        return normalizeSingleCardPhrase(ensureSystemSignature(applyTemplate(c, getDirectSaleTemplate(c), amount, cardCode)));
+    }
+
+    private static String normalizeSingleCardPhrase(String message) {
+        if (message == null) return "";
+        return message.replace("كروتك فئة", "كرتك فئة");
     }
 
     static String buildGroupedCardsMessage(Context c, ArrayList<CardItem> cards) {
@@ -890,6 +895,7 @@ class AppStore {
     static String buildGroupedCardsMessage(Context c, ArrayList<CardItem> cards, String extraMessagePart) {
         if (cards == null || cards.isEmpty()) return ensureSystemSignature("");
         java.util.TreeMap<Integer, ArrayList<String>> grouped = new java.util.TreeMap<>(java.util.Collections.reverseOrder());
+        int totalCodes = 0;
         for (CardItem card : cards) {
             if (card == null) continue;
             ArrayList<String> list = grouped.get(card.amount);
@@ -898,14 +904,18 @@ class AppStore {
                 grouped.put(card.amount, list);
             }
             String code = card.code == null ? "" : card.code.trim();
-            if (!code.isEmpty()) list.add(code);
+            if (!code.isEmpty()) {
+                list.add(code);
+                totalCodes++;
+            }
         }
         StringBuilder sb = new StringBuilder();
+        String heading = totalCodes == 1 ? "كرتك فئة " : "كروتك فئة ";
         for (Integer amount : grouped.keySet()) {
             ArrayList<String> codes = grouped.get(amount);
             if (codes == null || codes.isEmpty()) continue;
             if (sb.length() > 0) sb.append("\n\n");
-            sb.append("كروتك فئة ").append(amount).append(":\n");
+            sb.append(heading).append(amount).append(":\n");
             for (int i = 0; i < codes.size(); i++) {
                 if (i > 0) sb.append("\n-----\n");
                 sb.append(codes.get(i));
@@ -1323,6 +1333,44 @@ class AppStore {
         return count;
     }
 
+    static int countSoldCardsUntilDate(Context c, String dateText) {
+        long cutoff = parseUserDateEndMs(dateText);
+        if (cutoff <= 0) return -1;
+        int count = 0;
+        for (CardItem item : loadCards(c)) {
+            if (item != null && item.sold && !isRewardStock(item) && parseStoredDateMs(item.soldAt) > 0 && parseStoredDateMs(item.soldAt) <= cutoff) count++;
+        }
+        return count;
+    }
+
+    static int cleanupSoldCardsUntilDate(Context c, String dateText) {
+        synchronized (AppStore.class) {
+            long cutoff = parseUserDateEndMs(dateText);
+            if (cutoff <= 0) return -1;
+            ArrayList<CardItem> cards = loadCards(c);
+            ArrayList<CardItem> next = new ArrayList<>();
+            HashSet<String> removedCodes = new HashSet<>();
+            int removed = 0;
+            for (CardItem item : cards) {
+                long soldMs = item == null ? 0L : parseStoredDateMs(item.soldAt);
+                if (item != null && item.sold && !isRewardStock(item) && soldMs > 0 && soldMs <= cutoff) {
+                    removed++;
+                    if (item.code != null && !item.code.trim().isEmpty()) removedCodes.add(item.code.trim());
+                } else if (item != null) {
+                    next.add(item);
+                }
+            }
+            if (removed > 0) {
+                saveCards(c, next);
+                maskSoldCardCodesInLogs(c, removedCodes, "تم حجب رقم/أرقام كروت مباعة حتى تاريخ " + safeDateLabel(dateText) + " بتاريخ: " + now());
+                addLog(c, new OperationLog(UUID.randomUUID().toString(), "تنظيف الكروت المباعة", "system", "", "", 0,
+                        "تم التنظيف", "تم حذف " + removed + " كرتاً مبيعاً حتى تاريخ " + safeDateLabel(dateText) + ". لم يتم حذف سجلات البيع المالية، وتم حجب أرقام الكروت القديمة من السجلات قدر الإمكان.", "", now()));
+                performAutoBackupIfDue(c, "تنظيف الكروت المباعة حسب التاريخ");
+            }
+            return removed;
+        }
+    }
+
     static int cleanupSoldCardsOlderThanDays(Context c, int days) {
         synchronized (AppStore.class) {
             int keepDays = Math.max(1, days);
@@ -1352,9 +1400,14 @@ class AppStore {
     }
 
     private static void maskOldSoldCardCodesInLogs(Context c, HashSet<String> removedCodes, int keepDays) {
+        maskSoldCardCodesInLogs(c, removedCodes, "تم حجب رقم/أرقام كروت مباعة قديمة بعد مرور " + keepDays + " أيام بتاريخ: " + now());
+    }
+
+    private static void maskSoldCardCodesInLogs(Context c, HashSet<String> removedCodes, String note) {
         if (removedCodes == null || removedCodes.isEmpty()) return;
         ArrayList<OperationLog> logs = loadLogs(c);
         boolean changed = false;
+        String safeNote = note == null ? "تم حجب رقم/أرقام كروت مباعة قديمة بتاريخ: " + now() : note;
         for (OperationLog log : logs) {
             if (log == null) continue;
             boolean touched = false;
@@ -1368,13 +1421,31 @@ class AppStore {
             }
             if (touched) {
                 log.cardCode = cc;
-                String note = "تم حجب رقم/أرقام كروت مباعة قديمة بعد مرور " + keepDays + " أيام بتاريخ: " + now();
-                if (!msg.contains("تم حجب رقم/أرقام كروت مباعة قديمة")) msg = msg + (msg.trim().isEmpty() ? "" : "\n") + note;
+                if (!msg.contains("تم حجب رقم/أرقام كروت مباعة")) msg = msg + (msg.trim().isEmpty() ? "" : "\n") + safeNote;
                 log.message = msg;
                 changed = true;
             }
         }
         if (changed) saveLogs(c, logs);
+    }
+
+    private static long parseUserDateEndMs(String value) {
+        if (value == null || value.trim().isEmpty()) return 0L;
+        String v = value.trim();
+        String[] formats = new String[]{"yyyy-MM-dd", "yyyy/MM/dd", "dd-MM-yyyy", "dd/MM/yyyy"};
+        for (String f : formats) {
+            try {
+                SimpleDateFormat sdf = new SimpleDateFormat(f, Locale.US);
+                sdf.setLenient(false);
+                Date d = sdf.parse(v);
+                return d.getTime() + 24L * 60L * 60L * 1000L - 1L;
+            } catch (Exception ignored) {}
+        }
+        return 0L;
+    }
+
+    private static String safeDateLabel(String value) {
+        return value == null ? "" : value.trim().replace("\n", " ").replace("\r", " ");
     }
 
     private static long parseStoredDateMs(String value) {
