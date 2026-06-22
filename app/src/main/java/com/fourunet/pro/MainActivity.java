@@ -2695,7 +2695,7 @@ public class MainActivity extends Activity {
     }
 
     private TrustedCreditAgent demoTrustedAgent() {
-        return new TrustedCreditAgent("demo", "نقطة بيع تجريبية", "777000111", 1000, 300, true, true, System.currentTimeMillis());
+        return new TrustedCreditAgent("demo", "نقطة بيع تجريبية", "777000111", "تجريبي", 1000, 300, true, true, true, System.currentTimeMillis());
     }
 
     private ParsedCreditRequest demoTrustedRequest() {
@@ -4548,9 +4548,12 @@ public class MainActivity extends Activity {
                     + "\nالسقف: " + a.creditLimit + " ريال"
                     + "\nالمستخدم: " + a.usedAmount + " ريال"
                     + "\nالمتبقي: " + remain + " ريال"
+                    + "\nبصمة نقطة البيع: " + ((a.posSignature == null || a.posSignature.trim().isEmpty()) ? "غير مسجلة - لن تقبل الطلبات" : a.posSignature)
+                    + "\nطلب البصمة: " + (a.signatureRequired ? "إجباري" : "غير مفعل")
                     + "\nالمكافآت: " + (a.rewardsEnabled ? "مفعلة لهذا الرقم" : "معطلة لهذا الرقم")));
             LinearLayout row1 = new LinearLayout(this); row1.setOrientation(LinearLayout.HORIZONTAL);
             row1.addView(action("تعديل", purple, Color.WHITE, v -> showTrustedCreditAgentDialog(a)), new LinearLayout.LayoutParams(0, -2, 1));
+            row1.addView(action("تعبئة رصيد", Color.rgb(160, 120, 25), Color.WHITE, v -> showTrustedCreditTopUpDialog(a)), new LinearLayout.LayoutParams(0, -2, 1));
             row1.addView(action("تصفير السقف", Color.rgb(51, 90, 64), Color.WHITE, v -> confirmResetTrustedCreditAgent(a)), new LinearLayout.LayoutParams(0, -2, 1));
             box.addView(row1);
             box.addView(action("حذف الرقم", Color.rgb(82,30,42), Color.WHITE, v -> new AlertDialog.Builder(this)
@@ -4564,6 +4567,44 @@ public class MainActivity extends Activity {
         LinearLayout back = cardBox();
         back.addView(action("رجوع للإعدادات", card2, text, v -> showSettings()));
         content.addView(back);
+    }
+
+    private void showTrustedCreditTopUpDialog(TrustedCreditAgent a) {
+        if (a == null) return;
+        LinearLayout layout = new LinearLayout(this);
+        layout.setOrientation(LinearLayout.VERTICAL);
+        layout.setPadding(dp(8), dp(8), dp(8), dp(8));
+        layout.addView(small("سيتم إضافة المبلغ فوق السقف/الرصيد السابق لنقطة البيع، ولن يتم تصفير المستخدم السابق. ستصل رسالة إلى نقطة البيع بتوقيع شبكة فور يو."));
+        EditText amount = new EditText(this);
+        amount.setHint("مبلغ التعبئة مثل 5000");
+        amount.setGravity(Gravity.RIGHT);
+        amount.setInputType(InputType.TYPE_CLASS_NUMBER);
+        EditText note = new EditText(this);
+        note.setHint("ملاحظة اختيارية");
+        note.setGravity(Gravity.RIGHT);
+        note.setInputType(InputType.TYPE_CLASS_TEXT);
+        layout.addView(amount);
+        layout.addView(note);
+        new AlertDialog.Builder(this)
+                .setTitle("تعبئة رصيد: " + a.name)
+                .setView(layout)
+                .setPositiveButton("تعبئة وإرسال", (d, w) -> {
+                    int val = 0;
+                    try { val = Integer.parseInt(amount.getText().toString().trim()); } catch (Exception ignored) {}
+                    if (val <= 0) { toast("اكتب مبلغ تعبئة صحيح"); return; }
+                    String logId = AppStore.addTrustedCreditTopUp(this, a.id, val, note.getText().toString().trim());
+                    TrustedCreditAgent updated = AppStore.findTrustedCreditAgentById(this, a.id);
+                    if (updated != null) {
+                        String msg = AppStore.buildTrustedCreditTopUpMessage(this, updated, val);
+                        SmsProcessor.sendSmsWithTracking(this, updated.senderPhone, msg, logId, val, "", false,
+                                "تم إرسال رسالة تعبئة الرصيد لنقطة البيع",
+                                "تمت التعبئة لكن فشل إرسال SMS لنقطة البيع");
+                    }
+                    toast("تمت تعبئة رصيد نقطة البيع");
+                    showTrustedCreditAgents();
+                })
+                .setNegativeButton("إلغاء", null)
+                .show();
     }
 
     private void confirmResetTrustedCreditAgent(TrustedCreditAgent a) {
@@ -4593,14 +4634,18 @@ public class MainActivity extends Activity {
         TextView help = small("الرقم الموثوق هو رقم نقطة البيع أو أي شخص تثق فيه ويرسل لك SMS. مثال رسالته: تم اضافة 100 من-733938509. تستطيع تفعيل أو تعطيل المكافآت لكل رقم بشكل مستقل.");
         EditText name = new EditText(this); name.setHint("اسم نقطة البيع / الشخص الموثوق"); name.setGravity(Gravity.RIGHT); name.setInputType(InputType.TYPE_CLASS_TEXT);
         EditText phone = new EditText(this); phone.setHint("رقم المرسل الموثوق"); phone.setGravity(Gravity.RIGHT); phone.setInputType(InputType.TYPE_CLASS_PHONE);
+        EditText signature = new EditText(this); signature.setHint("بصمة نقطة البيع مثل: الشرعبي"); signature.setGravity(Gravity.RIGHT); signature.setInputType(InputType.TYPE_CLASS_TEXT);
         EditText limit = new EditText(this); limit.setHint("السقف بالريال مثل 5000"); limit.setGravity(Gravity.RIGHT); limit.setInputType(InputType.TYPE_CLASS_NUMBER);
         CheckBox active = new CheckBox(this); active.setText("مفعل"); active.setTextColor(text); active.setGravity(Gravity.RIGHT); active.setChecked(true);
+        CheckBox requireSignature = new CheckBox(this); requireSignature.setText("طلب البصمة إجباري"); requireSignature.setTextColor(text); requireSignature.setGravity(Gravity.RIGHT); requireSignature.setChecked(true);
         CheckBox rewards = new CheckBox(this); rewards.setText("تفعيل المكافآت لهذا الرقم"); rewards.setTextColor(text); rewards.setGravity(Gravity.RIGHT); rewards.setChecked(true);
         if (old != null) {
             name.setText(old.name);
             phone.setText(old.senderPhone);
+            signature.setText(old.posSignature);
             limit.setText(String.valueOf(old.creditLimit));
             active.setChecked(old.active);
+            requireSignature.setChecked(old.signatureRequired);
             rewards.setChecked(old.rewardsEnabled);
         } else {
             limit.setText("5000");
@@ -4608,8 +4653,10 @@ public class MainActivity extends Activity {
         layout.addView(help);
         layout.addView(name);
         layout.addView(phone);
+        layout.addView(signature);
         layout.addView(limit);
         layout.addView(active);
+        layout.addView(requireSignature);
         layout.addView(rewards);
         if (!AppStore.isRewardsEnabled(this)) {
             layout.addView(small("ملاحظة: نظام المكافآت العام متوقف حالياً. هذا الخيار سيُحفظ للرقم، لكنه لن يعمل فعلياً حتى يتم تشغيل المكافآت من إعدادات المكافآت العامة."));
@@ -4620,10 +4667,12 @@ public class MainActivity extends Activity {
                 .setPositiveButton("حفظ", (d,w) -> {
                     String ph = phone.getText().toString().trim();
                     if (ph.isEmpty()) { toast("رقم نقطة البيع مطلوب"); return; }
+                    String sig = signature.getText().toString().trim();
+                    if (requireSignature.isChecked() && AppStore.isBadPosSignature(sig)) { toast("البصمة مطلوبة ويجب ألا تكون رقماً فقط أو أقل من 3 أحرف أو فور يو"); return; }
                     int lim = 5000;
                     try { lim = Integer.parseInt(limit.getText().toString().trim()); } catch(Exception ignored) {}
-                    AppStore.addOrUpdateTrustedCreditAgent(this, name.getText().toString().trim(), ph, lim, active.isChecked(), rewards.isChecked());
-                    toast("تم حفظ الرقم الموثوق" + (rewards.isChecked() ? " مع تفعيل المكافآت" : " بدون مكافآت"));
+                    AppStore.addOrUpdateTrustedCreditAgent(this, name.getText().toString().trim(), ph, sig, lim, active.isChecked(), rewards.isChecked(), requireSignature.isChecked());
+                    toast("تم حفظ الرقم الموثوق" + (requireSignature.isChecked() ? " مع بصمة إجبارية" : " بدون بصمة إجبارية"));
                     showTrustedCreditAgents();
                 })
                 .setNegativeButton("إلغاء", null)

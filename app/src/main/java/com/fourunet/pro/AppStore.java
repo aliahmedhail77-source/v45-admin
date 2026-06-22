@@ -130,6 +130,7 @@ class AppStore {
     };
 
     static final String SYSTEM_SIGNATURE = "فور يو";
+    static final String NETWORK_SIGNATURE = "شبكة فور يو";
 
     static final String DEFAULT_SUCCESS_TEMPLATE = "كروتك فئة {amount}:\n"
             + "{card}\n"
@@ -915,6 +916,28 @@ class AppStore {
         return ensureSystemSignature(sb.toString());
     }
 
+    static String withoutSystemSignature(String message) {
+        if (message == null) return "";
+        String out = message.trim();
+        out = out.replace(NETWORK_SIGNATURE, "").replace(SYSTEM_SIGNATURE, "").trim();
+        return out;
+    }
+
+    static String buildPosSelfSaleMessage(Context c, ArrayList<CardItem> cards, String extraMessagePart, int remainingLimit) {
+        String base = withoutSystemSignature(buildGroupedCardsMessage(c, cards, extraMessagePart));
+        if (!base.isEmpty()) base += "\n\n";
+        base += "المتبقي: " + Math.max(0, remainingLimit);
+        return ensureSystemSignature(base);
+    }
+
+    static String buildTrustedCreditTopUpMessage(Context c, TrustedCreditAgent a, int addedAmount) {
+        int remain = remainingTrustedCredit(a);
+        return "تمت تعبئة رصيدك"
+                + "\nالمبلغ: " + Math.max(0, addedAmount)
+                + "\nالرصيد المتاح: " + remain
+                + "\n" + NETWORK_SIGNATURE;
+    }
+
     static String buildNoStockMessage(Context c, int amount) {
         return ensureSystemSignature(applyTemplate(c, getNoStockTemplate(c), amount, ""));
     }
@@ -923,6 +946,7 @@ class AppStore {
         if (message == null) return false;
         String t = message.trim();
         return t.contains(SYSTEM_SIGNATURE)
+                || t.contains(NETWORK_SIGNATURE)
                 || t.contains("تم التنفيذ")
                 || t.contains("تعذر التنفيذ")
                 || t.contains("تم الشحن")
@@ -2220,10 +2244,12 @@ class AppStore {
                         o.optString("id"),
                         o.optString("name"),
                         o.optString("senderPhone"),
+                        o.optString("posSignature", o.optString("signature", "")),
                         o.optInt("creditLimit", 5000),
                         o.optInt("usedAmount", 0),
                         o.optBoolean("active", true),
                         o.optBoolean("rewardsEnabled", true),
+                        o.optBoolean("signatureRequired", true),
                         o.optLong("createdAt", System.currentTimeMillis())
                 ));
             }
@@ -2239,6 +2265,8 @@ class AppStore {
                 o.put("id", a.id);
                 o.put("name", a.name);
                 o.put("senderPhone", normalizeLocalPhone(a.senderPhone));
+                o.put("posSignature", a.posSignature == null ? "" : a.posSignature.trim());
+                o.put("signatureRequired", a.signatureRequired);
                 o.put("creditLimit", Math.max(0, a.creditLimit));
                 o.put("usedAmount", Math.max(0, a.usedAmount));
                 o.put("active", a.active);
@@ -2251,17 +2279,24 @@ class AppStore {
     }
 
     static void addOrUpdateTrustedCreditAgent(Context c, String name, String senderPhone, int creditLimit, boolean active) {
-        addOrUpdateTrustedCreditAgent(c, name, senderPhone, creditLimit, active, true);
+        addOrUpdateTrustedCreditAgent(c, name, senderPhone, "", creditLimit, active, true, true);
     }
 
     static void addOrUpdateTrustedCreditAgent(Context c, String name, String senderPhone, int creditLimit, boolean active, boolean rewardsEnabled) {
+        addOrUpdateTrustedCreditAgent(c, name, senderPhone, "", creditLimit, active, rewardsEnabled, true);
+    }
+
+    static void addOrUpdateTrustedCreditAgent(Context c, String name, String senderPhone, String posSignature, int creditLimit, boolean active, boolean rewardsEnabled, boolean signatureRequired) {
         String phone = normalizeLocalPhone(senderPhone);
         if (phone.isEmpty()) return;
+        String sig = cleanPosSignature(posSignature);
         ArrayList<TrustedCreditAgent> list = loadTrustedCreditAgents(c);
         for (TrustedCreditAgent a : list) {
             if (normalizeLocalPhone(a.senderPhone).equals(phone)) {
                 a.name = name == null || name.trim().isEmpty() ? phone : name.trim();
                 a.senderPhone = phone;
+                a.posSignature = sig;
+                a.signatureRequired = signatureRequired;
                 a.creditLimit = Math.max(0, creditLimit);
                 a.active = active;
                 a.rewardsEnabled = rewardsEnabled;
@@ -2269,8 +2304,105 @@ class AppStore {
                 return;
             }
         }
-        list.add(0, new TrustedCreditAgent(UUID.randomUUID().toString(), name == null || name.trim().isEmpty() ? phone : name.trim(), phone, Math.max(0, creditLimit), 0, active, rewardsEnabled, System.currentTimeMillis()));
+        list.add(0, new TrustedCreditAgent(UUID.randomUUID().toString(), name == null || name.trim().isEmpty() ? phone : name.trim(), phone, sig, Math.max(0, creditLimit), 0, active, rewardsEnabled, signatureRequired, System.currentTimeMillis()));
         saveTrustedCreditAgents(c, list);
+    }
+
+    static TrustedCreditAgent findTrustedCreditAgentById(Context c, String id) {
+        if (id == null) return null;
+        for (TrustedCreditAgent a : loadTrustedCreditAgents(c)) {
+            if (a.id != null && a.id.equals(id)) return a;
+        }
+        return null;
+    }
+
+    static String addTrustedCreditTopUp(Context c, String id, int amount, String note) {
+        int add = Math.max(0, amount);
+        if (add <= 0) return "";
+        ArrayList<TrustedCreditAgent> list = loadTrustedCreditAgents(c);
+        TrustedCreditAgent updated = null;
+        int oldLimit = 0;
+        int oldRemaining = 0;
+        for (TrustedCreditAgent a : list) {
+            if (a.id != null && a.id.equals(id)) {
+                oldLimit = a.creditLimit;
+                oldRemaining = remainingTrustedCredit(a);
+                a.creditLimit = Math.max(0, a.creditLimit + add);
+                updated = a;
+                break;
+            }
+        }
+        if (updated == null) return "";
+        saveTrustedCreditAgents(c, list);
+        String msg = "تمت تعبئة رصيد نقطة البيع"
+                + "\nالنقطة: " + updated.name
+                + "\nالرقم: " + updated.senderPhone
+                + "\nالمبلغ المضاف: " + add
+                + "\nالسقف السابق: " + oldLimit
+                + "\nالرصيد السابق المتاح: " + oldRemaining
+                + "\nالسقف الجديد: " + updated.creditLimit
+                + "\nالرصيد الجديد المتاح: " + remainingTrustedCredit(updated);
+        if (note != null && !note.trim().isEmpty()) msg += "\nملاحظة: " + note.trim();
+        String logId = UUID.randomUUID().toString();
+        addLog(c, new OperationLog(logId, "تعبئة رصيد نقطة بيع", "admin", updated.name, updated.senderPhone, add, "تمت التعبئة", msg, "", now()));
+        performAutoBackupIfDue(c, "تعبئة رصيد نقطة بيع");
+        return logId;
+    }
+
+    static String cleanPosSignature(String value) {
+        String v = value == null ? "" : value.trim();
+        v = v.replace("\r", " ").replace("\n", " ").replace("\t", " ").replaceAll("\\s+", " ").trim();
+        if (v.length() > 40) v = v.substring(0, 40).trim();
+        return v;
+    }
+
+    private static String normalizeSignatureText(String value) {
+        String v = cleanPosSignature(value).toLowerCase(Locale.ROOT);
+        v = v.replace('ـ', ' ');
+        v = v.replace('أ', 'ا').replace('إ', 'ا').replace('آ', 'ا');
+        v = v.replace('ى', 'ي').replace('ة', 'ه');
+        v = v.replaceAll("[\\s\\-_/.,،:;|]+", " ").trim();
+        return v;
+    }
+
+    static boolean isBadPosSignature(String signature) {
+        String sig = cleanPosSignature(signature);
+        if (sig.length() < 3) return true;
+        if (sig.equals(SYSTEM_SIGNATURE) || sig.equals(NETWORK_SIGNATURE)) return true;
+        if (sig.matches("\\d+")) return true;
+        return false;
+    }
+
+    static String stripTrustedCreditSignature(TrustedCreditAgent agent, String body) {
+        if (agent == null || body == null) return null;
+        if (!agent.signatureRequired) return body;
+        String sig = normalizeSignatureText(agent.posSignature);
+        if (sig.isEmpty()) return null;
+
+        String raw = body.replace('\r', '\n');
+        String[] lines = raw.split("\\n");
+        int last = -1;
+        for (int i = lines.length - 1; i >= 0; i--) {
+            if (lines[i] != null && !lines[i].trim().isEmpty()) { last = i; break; }
+        }
+        if (last >= 0 && normalizeSignatureText(lines[last]).equals(sig)) {
+            StringBuilder sb = new StringBuilder();
+            for (int i = 0; i < lines.length; i++) {
+                if (i == last) continue;
+                if (sb.length() > 0) sb.append('\n');
+                sb.append(lines[i]);
+            }
+            return sb.toString().trim();
+        }
+
+        String flat = body.replace('\r', ' ').replace('\n', ' ').replace('\t', ' ').replaceAll("\\s+", " ").trim();
+        String nFlat = normalizeSignatureText(flat);
+        if (nFlat.equals(sig)) return "";
+        if (nFlat.endsWith(" " + sig)) {
+            int pos = flat.length() - agent.posSignature.trim().length();
+            if (pos >= 0) return flat.substring(0, pos).trim();
+        }
+        return null;
     }
 
     static void deleteTrustedCreditAgent(Context c, String id) {

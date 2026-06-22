@@ -78,7 +78,11 @@ class SmsProcessor {
         // بهذا يتم تجاهل رسائل المنظمات، العروض، تعبئة الرصيد، الرسائل الخاصة، وأي رسالة مزورة من مرسل غير موجود في المسموح.
         if (PaymentParser.isSystemGeneratedMessage(body) || PaymentParser.isIgnoredNotificationMessage(body)) return false;
         if (PaymentParser.isNonPaymentNoise(body)) return false;
-        if (AppStore.findTrustedCreditSender(context, sender) != null && PaymentParser.parseTrustedCreditRequest(context, body) != null) return true;
+        TrustedCreditAgent queueAgent = AppStore.findTrustedCreditSender(context, sender);
+        if (queueAgent != null) {
+            String signedBody = AppStore.stripTrustedCreditSignature(queueAgent, body);
+            return signedBody != null && PaymentParser.parseTrustedCreditRequest(context, signedBody) != null;
+        }
         if (PaymentParser.parse(context, sender, body) != null) return true;
         return PaymentParser.looksLikePayment(body);
     }
@@ -105,14 +109,21 @@ class SmsProcessor {
         // HOTFIX: يمنع دخول نفس رسالة نقطة البيع في مسار المحافظ أو أي مسار قديم، حتى لا تُنفذ مرتين.
         TrustedCreditAgent creditAgent = AppStore.findTrustedCreditSender(context, sender);
         if (creditAgent != null) {
-            ParsedCreditRequest creditRequest = PaymentParser.parseTrustedCreditRequest(context, body);
+            String signedBody = AppStore.stripTrustedCreditSignature(creditAgent, body);
+            if (signedBody == null) {
+                AppStore.markProcessed(context, eventId);
+                addLog(context, "أمان نقطة بيع", sender, creditAgent.name, "", 0,
+                        "مرفوض بصمت: بصمة غير صحيحة", "تم تجاهل رسالة من رقم موثوق لأنها لا تحتوي بصمة نقطة البيع المسجلة أو تحتوي بصمة غير مطابقة. لم يتم إرسال أي رد.\nالنص:\n" + body, "");
+                return;
+            }
+            ParsedCreditRequest creditRequest = PaymentParser.parseTrustedCreditRequest(context, signedBody);
             if (creditRequest != null) {
                 processTrustedCreditRequest(context, eventId, sender, creditAgent, creditRequest);
             } else {
                 AppStore.markProcessed(context, eventId);
-                if (body.matches(".*\\d.*")) {
+                if (signedBody.matches(".*\\d.*")) {
                     String logId = addLog(context, "رقم موثوق", sender, creditAgent.name, "", 0,
-                            "مراجعة: طلب غير مفهوم", "رسالة من رقم موثوق لم يتم فهمها ولم تُحوّل لأي مسار آخر.\nالنص:\n" + body, "");
+                            "مراجعة: طلب غير مفهوم", "رسالة من رقم موثوق موقعة ببصمة صحيحة لكن لم يتم فهمها ولم تُحوّل لأي مسار آخر.\nالنص:\n" + signedBody, "");
                     NotifyHelper.notifyPendingAction(context, logId, 0, "", "طلب رقم موثوق غير مفهوم");
                 }
             }
@@ -359,12 +370,15 @@ class SmsProcessor {
         if (!effectiveRewards) note += "\nالمكافأة معطلة لهذا الرقم الموثوق؛ تم تنفيذ البيع بدون احتساب نقاط جديدة.";
         String logId = addLog(context, provider, sender, agentName, customerPhone, totalAmount, "جاري إرسال SMS", note, cardCodes.toString());
 
-        String customerText = AppStore.buildGroupedCardsMessage(context, cards, rewardCustomerParts.toString());
-        String agentSuccess = AppStore.buildPosSuccessMessage(context, agent, req, remainingAfter);
+        boolean sameReceiverAsAgent = !agentPhone.isEmpty() && agentPhone.equals(customerPhone);
+        String customerText = sameReceiverAsAgent
+                ? AppStore.buildPosSelfSaleMessage(context, cards, rewardCustomerParts.toString(), remainingAfter)
+                : AppStore.buildGroupedCardsMessage(context, cards, rewardCustomerParts.toString());
+        String agentSuccess = sameReceiverAsAgent ? "" : AppStore.buildPosSuccessMessage(context, agent, req, remainingAfter);
         sendSmsWithTracking(context, customerPhone, customerText, logId, totalAmount, cardCodes.toString(), false,
-                "تم إرسال الكرت/الكروت للزبون وتم خصم العملية من السقف",
+                sameReceiverAsAgent ? "تم إرسال رسالة واحدة لنقطة البيع نفسها وتم خصم العملية من السقف" : "تم إرسال الكرت/الكروت للزبون وتم خصم العملية من السقف",
                 "فشل إرسال SMS لزبون الرقم الموثوق؛ لم يتم خصم السقف. استخدم إعادة إرسال SMS أو واتساب",
-                agent.id, totalAmount, agentPhone, agentSuccess);
+                agent.id, totalAmount, sameReceiverAsAgent ? "" : agentPhone, agentSuccess);
         AppStore.performAutoBackupIfDue(context, "طلب رقم موثوق ذكي");
     }
 

@@ -195,20 +195,28 @@ class TrustedCreditAgent {
     String id;
     String name;
     String senderPhone;
+    String posSignature;
     int creditLimit;
     int usedAmount;
     boolean active;
     boolean rewardsEnabled;
+    boolean signatureRequired;
     long createdAt;
 
     TrustedCreditAgent(String id, String name, String senderPhone, int creditLimit, int usedAmount, boolean active, boolean rewardsEnabled, long createdAt) {
+        this(id, name, senderPhone, "", creditLimit, usedAmount, active, rewardsEnabled, true, createdAt);
+    }
+
+    TrustedCreditAgent(String id, String name, String senderPhone, String posSignature, int creditLimit, int usedAmount, boolean active, boolean rewardsEnabled, boolean signatureRequired, long createdAt) {
         this.id = id == null ? "" : id;
         this.name = name == null ? "" : name.trim();
         this.senderPhone = senderPhone == null ? "" : senderPhone.trim();
+        this.posSignature = posSignature == null ? "" : posSignature.trim();
         this.creditLimit = Math.max(0, creditLimit);
         this.usedAmount = Math.max(0, usedAmount);
         this.active = active;
         this.rewardsEnabled = rewardsEnabled;
+        this.signatureRequired = signatureRequired;
         this.createdAt = createdAt;
     }
 
