@@ -2315,6 +2315,7 @@ class AppStore {
                         o.optString("id"),
                         o.optString("name"),
                         o.optString("senderPhone"),
+                        o.optString("secondaryPhone", o.optString("extraPhone", "")),
                         o.optString("posSignature", o.optString("signature", "")),
                         o.optInt("creditLimit", 5000),
                         o.optInt("usedAmount", 0),
@@ -2336,6 +2337,7 @@ class AppStore {
                 o.put("id", a.id);
                 o.put("name", a.name);
                 o.put("senderPhone", normalizeLocalPhone(a.senderPhone));
+                o.put("secondaryPhone", normalizeLocalPhone(a.secondaryPhone));
                 o.put("posSignature", a.posSignature == null ? "" : a.posSignature.trim());
                 o.put("signatureRequired", a.signatureRequired);
                 o.put("creditLimit", Math.max(0, a.creditLimit));
@@ -2358,14 +2360,40 @@ class AppStore {
     }
 
     static void addOrUpdateTrustedCreditAgent(Context c, String name, String senderPhone, String posSignature, int creditLimit, boolean active, boolean rewardsEnabled, boolean signatureRequired) {
+        addOrUpdateTrustedCreditAgent(c, name, senderPhone, "", posSignature, creditLimit, active, rewardsEnabled, signatureRequired);
+    }
+
+    static void addOrUpdateTrustedCreditAgent(Context c, String name, String senderPhone, String secondaryPhone, String posSignature, int creditLimit, boolean active, boolean rewardsEnabled, boolean signatureRequired) {
         String phone = normalizeLocalPhone(senderPhone);
+        String extra = normalizeLocalPhone(secondaryPhone);
         if (phone.isEmpty()) return;
+        if (extra.equals(phone)) extra = "";
         String sig = cleanPosSignature(posSignature);
         ArrayList<TrustedCreditAgent> list = loadTrustedCreditAgents(c);
+        String oldIdForSameMain = "";
+        for (TrustedCreditAgent a : list) {
+            if (normalizeLocalPhone(a.senderPhone).equals(phone)) {
+                oldIdForSameMain = a.id == null ? "" : a.id;
+                break;
+            }
+        }
+        if (!extra.isEmpty()) {
+            for (TrustedCreditAgent a : list) {
+                String aid = a.id == null ? "" : a.id;
+                String main = normalizeLocalPhone(a.senderPhone);
+                String oldExtra = normalizeLocalPhone(a.secondaryPhone);
+                if (!aid.equals(oldIdForSameMain) && (extra.equals(main) || extra.equals(oldExtra))) {
+                    // الرقم الإضافي مستخدم في نقطة أخرى؛ تجاهله للأمان بدلاً من ربط حسابين بنفس رقم.
+                    extra = "";
+                    break;
+                }
+            }
+        }
         for (TrustedCreditAgent a : list) {
             if (normalizeLocalPhone(a.senderPhone).equals(phone)) {
                 a.name = name == null || name.trim().isEmpty() ? phone : name.trim();
                 a.senderPhone = phone;
+                a.secondaryPhone = extra;
                 a.posSignature = sig;
                 a.signatureRequired = signatureRequired;
                 a.creditLimit = Math.max(0, creditLimit);
@@ -2375,7 +2403,7 @@ class AppStore {
                 return;
             }
         }
-        list.add(0, new TrustedCreditAgent(UUID.randomUUID().toString(), name == null || name.trim().isEmpty() ? phone : name.trim(), phone, sig, Math.max(0, creditLimit), 0, active, rewardsEnabled, signatureRequired, System.currentTimeMillis()));
+        list.add(0, new TrustedCreditAgent(UUID.randomUUID().toString(), name == null || name.trim().isEmpty() ? phone : name.trim(), phone, extra, sig, Math.max(0, creditLimit), 0, active, rewardsEnabled, signatureRequired, System.currentTimeMillis()));
         saveTrustedCreditAgents(c, list);
     }
 
@@ -2385,6 +2413,22 @@ class AppStore {
             if (a.id != null && a.id.equals(id)) return a;
         }
         return null;
+    }
+
+    static boolean trustedCreditAgentOwnsPhone(TrustedCreditAgent a, String phone) {
+        if (a == null) return false;
+        String clean = normalizeLocalPhone(phone);
+        if (clean.isEmpty()) return false;
+        String main = normalizeLocalPhone(a.senderPhone);
+        String extra = normalizeLocalPhone(a.secondaryPhone);
+        return (!main.isEmpty() && (clean.equals(main) || clean.endsWith(main) || main.endsWith(clean)))
+                || (!extra.isEmpty() && (clean.equals(extra) || clean.endsWith(extra) || extra.endsWith(clean)));
+    }
+
+    static String replyPhoneForTrustedCreditAgent(TrustedCreditAgent a, String incomingSender) {
+        String sender = normalizeLocalPhone(incomingSender);
+        if (a != null && trustedCreditAgentOwnsPhone(a, sender)) return sender;
+        return a == null ? "" : normalizeLocalPhone(a.senderPhone);
     }
 
     static String addTrustedCreditTopUp(Context c, String id, int amount, String note) {
@@ -2498,9 +2542,8 @@ class AppStore {
         String clean = normalizeLocalPhone(sender);
         if (clean.isEmpty()) return null;
         for (TrustedCreditAgent a : loadTrustedCreditAgents(c)) {
-            String allowed = normalizeLocalPhone(a.senderPhone);
-            if (!a.active || allowed.isEmpty()) continue;
-            if (clean.equals(allowed) || clean.endsWith(allowed) || allowed.endsWith(clean)) return a;
+            if (!a.active) continue;
+            if (trustedCreditAgentOwnsPhone(a, clean)) return a;
         }
         return null;
     }

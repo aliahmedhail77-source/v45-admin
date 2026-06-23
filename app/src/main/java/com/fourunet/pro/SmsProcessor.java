@@ -260,7 +260,8 @@ class SmsProcessor {
     private static void processTrustedCreditRequest(Context context, String eventId, String sender, TrustedCreditAgent agent, ParsedCreditRequest req) {
         AppStore.markProcessed(context, eventId);
         String customerPhone = cleanPhone(req.customerPhone);
-        String agentPhone = cleanPhone(agent.senderPhone);
+        String agentPhone = cleanPhone(AppStore.replyPhoneForTrustedCreditAgent(agent, sender));
+        if (agentPhone.isEmpty()) agentPhone = cleanPhone(agent.senderPhone);
         String agentName = agent.name == null || agent.name.trim().isEmpty() ? agentPhone : agent.name.trim();
         String provider = "رقم موثوق";
         int totalAmount = req.totalAmount();
@@ -360,6 +361,8 @@ class SmsProcessor {
         }
 
         String note = "تم تنفيذ طلب رقم موثوق: " + agentName
+                + "\nرقم الطلب المرسل: " + cleanPhone(sender)
+                + "\nمصدر الرقم: " + (cleanPhone(sender).equals(cleanPhone(agent.senderPhone)) ? "الرقم الأساسي" : "الرقم الإضافي")
                 + "\nالفئات: " + req.amountsText()
                 + "\nعدد الكروت: " + req.countCards()
                 + "\nإجمالي الطلب: " + totalAmount

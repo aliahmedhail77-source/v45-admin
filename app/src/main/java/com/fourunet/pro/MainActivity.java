@@ -4573,18 +4573,21 @@ public class MainActivity extends Activity {
 
         LinearLayout intro = cardBox();
         intro.addView(tv("إضافة رصيد عبر رقم موثوق", 17, text, true));
-        intro.addView(small("الأرقام الموثوقة هي نقاط البيع أو أي شخص تثق فيه. لا تُقبل طلبات نقطة البيع إلا برقم موثوق وبصمة نقطة البيع المسجلة."));
+        intro.addView(small("الأرقام الموثوقة هي نقاط البيع أو أي شخص تثق فيه. يمكن تسجيل رقم أساسي ورقم إضافي لنفس نقطة البيع، لكن لا تُقبل الطلبات إلا بالبصمة المسجلة."));
         intro.addView(action("➕ إضافة رقم موثوق", purple, Color.WHITE, v -> showTrustedCreditAgentDialog(null)));
         content.addView(intro);
 
         LinearLayout searchBox = cardBox();
-        searchBox.addView(tv("بحث عن نقطة بيع", 17, text, true));
+        searchBox.addView(tv("🔍 بحث واضح عن نقطة بيع", 18, text, true));
+        searchBox.addView(small("ابحث بالاسم، الرقم الأساسي، الرقم الإضافي، أو البصمة."));
         EditText search = new EditText(this);
-        search.setHint("اكتب الاسم أو الرقم أو البصمة");
+        search.setHint("مثال: الشرعبي أو 77xxxxxxx أو البصمة");
         search.setGravity(Gravity.RIGHT);
+        search.setTextSize(18);
+        search.setSingleLine(true);
         search.setInputType(InputType.TYPE_CLASS_TEXT);
         search.setText(filterText == null ? "" : filterText);
-        searchBox.addView(search);
+        searchBox.addView(search, new LinearLayout.LayoutParams(-1, dp(56)));
         LinearLayout searchRow = new LinearLayout(this); searchRow.setOrientation(LinearLayout.HORIZONTAL);
         searchRow.addView(action("بحث", purple, Color.WHITE, v -> showTrustedCreditAgents(search.getText().toString().trim())), new LinearLayout.LayoutParams(0, -2, 1));
         searchRow.addView(action("عرض الكل", card2, text, v -> showTrustedCreditAgents("")), new LinearLayout.LayoutParams(0, -2, 1));
@@ -4598,6 +4601,7 @@ public class MainActivity extends Activity {
             if (item == null) continue;
             String hay = ((item.name == null ? "" : item.name) + " "
                     + (item.senderPhone == null ? "" : item.senderPhone) + " "
+                    + (item.secondaryPhone == null ? "" : item.secondaryPhone) + " "
                     + (item.posSignature == null ? "" : item.posSignature) + " "
                     + (item.active ? "مفعل active" : "موقوف inactive") + " "
                     + (item.signatureRequired ? "بصمة" : "بدون بصمة")).toLowerCase(Locale.US);
@@ -4616,7 +4620,8 @@ public class MainActivity extends Activity {
             LinearLayout box = cardBox();
             int remain = AppStore.remainingTrustedCredit(a);
             box.addView(tv((a.active ? "✅ " : "⛔ ") + a.name, 18, text, true));
-            box.addView(small("رقم نقطة البيع: " + a.senderPhone
+            box.addView(small("الرقم الأساسي: " + a.senderPhone
+                    + "\nالرقم الإضافي: " + ((a.secondaryPhone == null || a.secondaryPhone.trim().isEmpty()) ? "غير مسجل" : a.secondaryPhone)
                     + "\nالسقف: " + a.creditLimit + " ريال"
                     + "\nالمستخدم: " + a.usedAmount + " ريال"
                     + "\nالمتبقي: " + remain + " ريال"
@@ -4628,6 +4633,7 @@ public class MainActivity extends Activity {
             row1.addView(action("تعبئة رصيد", Color.rgb(160, 120, 25), Color.WHITE, v -> showTrustedCreditTopUpDialog(a)), new LinearLayout.LayoutParams(0, -2, 1));
             row1.addView(action("تصفير السقف", Color.rgb(51, 90, 64), Color.WHITE, v -> confirmResetTrustedCreditAgent(a)), new LinearLayout.LayoutParams(0, -2, 1));
             box.addView(row1);
+            box.addView(action("📅 تقرير نقطة البيع حسب التاريخ", card2, text, v -> showTrustedCreditAgentDateReportDialog(a)));
             box.addView(action("حذف الرقم", Color.rgb(82,30,42), Color.WHITE, v -> new AlertDialog.Builder(this)
                     .setTitle("حذف رقم موثوق")
                     .setMessage("هل تريد حذف " + a.name + "؟")
@@ -4639,6 +4645,144 @@ public class MainActivity extends Activity {
         LinearLayout back = cardBox();
         back.addView(action("رجوع للإعدادات", card2, text, v -> showSettings()));
         content.addView(back);
+    }
+
+
+    private void showTrustedCreditAgentDateReportDialog(TrustedCreditAgent a) {
+        if (a == null) return;
+        LinearLayout layout = new LinearLayout(this);
+        layout.setOrientation(LinearLayout.VERTICAL);
+        layout.setPadding(dp(8), dp(8), dp(8), dp(8));
+        layout.addView(small("اختر الفترة لعرض تقرير مرتب خاص بهذه النقطة. اترك التاريخ فارغاً لعرض كل السجل. الصيغة المقبولة: 2026/06/23 أو 2026-06-23."));
+        EditText from = new EditText(this);
+        from.setHint("من تاريخ اختياري: 2026/06/01");
+        from.setGravity(Gravity.RIGHT);
+        from.setSingleLine(true);
+        from.setInputType(InputType.TYPE_CLASS_TEXT);
+        EditText to = new EditText(this);
+        to.setHint("إلى تاريخ اختياري: 2026/06/23");
+        to.setGravity(Gravity.RIGHT);
+        to.setSingleLine(true);
+        to.setInputType(InputType.TYPE_CLASS_TEXT);
+        layout.addView(from);
+        layout.addView(to);
+        new AlertDialog.Builder(this)
+                .setTitle("تقرير نقطة البيع: " + a.name)
+                .setView(layout)
+                .setPositiveButton("عرض التقرير", (d,w) -> showTrustedCreditAgentReportText(a, from.getText().toString().trim(), to.getText().toString().trim()))
+                .setNegativeButton("إلغاء", null)
+                .show();
+    }
+
+    private void showTrustedCreditAgentReportText(TrustedCreditAgent a, String from, String to) {
+        String report = buildTrustedCreditAgentDateReport(a, from, to);
+        TextView tvReport = small(report);
+        tvReport.setTextSize(14);
+        tvReport.setTextColor(text);
+        tvReport.setGravity(Gravity.RIGHT);
+        ScrollView scroll = new ScrollView(this);
+        scroll.setPadding(dp(8), dp(8), dp(8), dp(8));
+        scroll.addView(tvReport);
+        new AlertDialog.Builder(this)
+                .setTitle("تقرير المراجعة: " + (a == null ? "" : a.name))
+                .setView(scroll)
+                .setPositiveButton("إغلاق", null)
+                .show();
+    }
+
+    private String normalizeReportDate(String value) {
+        String v = value == null ? "" : value.trim();
+        if (v.isEmpty()) return "";
+        v = v.replace('-', '/');
+        try {
+            String[] parts = v.split("/");
+            if (parts.length >= 3) {
+                int y = Integer.parseInt(parts[0].trim());
+                int m = Integer.parseInt(parts[1].trim());
+                int d = Integer.parseInt(parts[2].trim());
+                return String.format(Locale.US, "%04d/%02d/%02d", y, m, d);
+            }
+        } catch (Exception ignored) {}
+        if (v.length() >= 10) return v.substring(0, 10);
+        return v;
+    }
+
+    private boolean isLogInReportDateRange(OperationLog log, String from, String to) {
+        String date = log == null || log.createdAt == null ? "" : log.createdAt.trim();
+        if (date.length() >= 10) date = date.substring(0, 10).replace('-', '/');
+        String f = normalizeReportDate(from);
+        String t = normalizeReportDate(to);
+        if (!f.isEmpty() && date.compareTo(f) < 0) return false;
+        if (!t.isEmpty() && date.compareTo(t) > 0) return false;
+        return true;
+    }
+
+    private boolean isLogForTrustedCreditAgent(OperationLog log, TrustedCreditAgent a) {
+        if (log == null || a == null) return false;
+        String sender = SmsProcessor.cleanPhone(log.sender == null ? "" : log.sender);
+        String main = SmsProcessor.cleanPhone(a.senderPhone == null ? "" : a.senderPhone);
+        String extra = SmsProcessor.cleanPhone(a.secondaryPhone == null ? "" : a.secondaryPhone);
+        if (!sender.isEmpty() && (sender.equals(main) || (!extra.isEmpty() && sender.equals(extra)))) return true;
+        String name = a.name == null ? "" : a.name.trim();
+        if (!name.isEmpty() && log.customerName != null && log.customerName.trim().equals(name)) return true;
+        String msg = log.message == null ? "" : log.message;
+        return !name.isEmpty() && msg.contains(name);
+    }
+
+    private String sourceLabelForTrustedLog(OperationLog log, TrustedCreditAgent a) {
+        String sender = SmsProcessor.cleanPhone(log == null || log.sender == null ? "" : log.sender);
+        String main = SmsProcessor.cleanPhone(a == null || a.senderPhone == null ? "" : a.senderPhone);
+        String extra = SmsProcessor.cleanPhone(a == null || a.secondaryPhone == null ? "" : a.secondaryPhone);
+        if (!sender.isEmpty() && sender.equals(main)) return "الرقم الأساسي";
+        if (!sender.isEmpty() && !extra.isEmpty() && sender.equals(extra)) return "الرقم الإضافي";
+        if ("admin".equalsIgnoreCase(log == null ? "" : log.sender)) return "الإدارة";
+        return sender.isEmpty() ? "غير محدد" : sender;
+    }
+
+    private String buildTrustedCreditAgentDateReport(TrustedCreditAgent a, String from, String to) {
+        if (a == null) return "لا توجد نقطة بيع محددة.";
+        ArrayList<OperationLog> logs = AppStore.loadLogs(this);
+        StringBuilder out = new StringBuilder();
+        String f = normalizeReportDate(from);
+        String t = normalizeReportDate(to);
+        out.append("نقطة البيع: ").append(a.name).append("\n");
+        out.append("الرقم الأساسي: ").append(a.senderPhone).append("\n");
+        out.append("الرقم الإضافي: ").append((a.secondaryPhone == null || a.secondaryPhone.trim().isEmpty()) ? "غير مسجل" : a.secondaryPhone).append("\n");
+        out.append("الفترة: ").append(f.isEmpty() ? "من البداية" : f).append(" إلى ").append(t.isEmpty() ? "آخر سجل" : t).append("\n");
+        out.append("--------------------------------\n");
+        int count = 0, success = 0, pending = 0, rejected = 0, total = 0, topups = 0;
+        StringBuilder rows = new StringBuilder();
+        for (OperationLog log : logs) {
+            if (!isLogForTrustedCreditAgent(log, a)) continue;
+            if (!isLogInReportDateRange(log, from, to)) continue;
+            count++;
+            String st = log.status == null ? "" : log.status;
+            String provider = log.provider == null ? "" : log.provider;
+            boolean isTopup = provider.contains("تعبئة رصيد");
+            if (isTopup) topups += Math.max(0, log.amount);
+            if (AppStore.isPendingCriticalLog(log) || st.contains("معلق") || st.contains("مراجعة")) pending++;
+            else if (st.contains("رفض") || st.contains("مرفوض") || st.contains("تجاوز") || st.contains("فشل")) rejected++;
+            else if (st.contains("تم") || st.contains("جاري إرسال")) { success++; if (!isTopup) total += Math.max(0, log.amount); }
+            rows.append("\n").append(count).append(") ").append(log.createdAt == null ? "" : log.createdAt).append("\n")
+                    .append("الحالة: ").append(st.isEmpty() ? "غير محدد" : st).append("\n")
+                    .append("المصدر: ").append(sourceLabelForTrustedLog(log, a)).append("\n")
+                    .append("العميل: ").append((log.customerPhone == null || log.customerPhone.isEmpty()) ? "-" : log.customerPhone).append("\n")
+                    .append("المبلغ: ").append(log.amount).append("\n")
+                    .append("الكرت: ").append(displayCardCode(log.cardCode)).append("\n")
+                    .append("ملاحظة: ").append(log.message == null ? "" : log.message).append("\n")
+                    .append("--------------------------------\n");
+        }
+        out.append("عدد العمليات: ").append(count).append("\n");
+        out.append("عمليات ناجحة/قيد الإرسال: ").append(success).append("\n");
+        out.append("عمليات تحتاج مراجعة: ").append(pending).append("\n");
+        out.append("عمليات مرفوضة/فاشلة: ").append(rejected).append("\n");
+        out.append("إجمالي مبيعات الفترة: ").append(total).append(" ريال\n");
+        out.append("إجمالي تعبئة الرصيد بالفترة: ").append(topups).append(" ريال\n");
+        out.append("المتبقي الحالي: ").append(AppStore.remainingTrustedCredit(a)).append(" ريال\n");
+        out.append("================================\n");
+        if (count == 0) out.append("لا توجد عمليات مطابقة لهذه النقطة ضمن التاريخ المحدد.");
+        else out.append(rows);
+        return out.toString();
     }
 
     private void showTrustedCreditTopUpDialog(TrustedCreditAgent a) {
@@ -4705,7 +4849,8 @@ public class MainActivity extends Activity {
         layout.setPadding(dp(8), dp(8), dp(8), dp(8));
         TextView help = small("الرقم الموثوق هو رقم نقطة البيع أو أي شخص تثق فيه ويرسل لك SMS. مثال رسالته: تم اضافة 100 من-733938509. تستطيع تفعيل أو تعطيل المكافآت لكل رقم بشكل مستقل.");
         EditText name = new EditText(this); name.setHint("اسم نقطة البيع / الشخص الموثوق"); name.setGravity(Gravity.RIGHT); name.setInputType(InputType.TYPE_CLASS_TEXT);
-        EditText phone = new EditText(this); phone.setHint("رقم المرسل الموثوق"); phone.setGravity(Gravity.RIGHT); phone.setInputType(InputType.TYPE_CLASS_PHONE);
+        EditText phone = new EditText(this); phone.setHint("الرقم الأساسي لنقطة البيع"); phone.setGravity(Gravity.RIGHT); phone.setInputType(InputType.TYPE_CLASS_PHONE);
+        EditText secondaryPhone = new EditText(this); secondaryPhone.setHint("رقم إضافي اختياري لنفس نقطة البيع"); secondaryPhone.setGravity(Gravity.RIGHT); secondaryPhone.setInputType(InputType.TYPE_CLASS_PHONE);
         EditText signature = new EditText(this); signature.setHint("بصمة نقطة البيع مثل: الشرعبي"); signature.setGravity(Gravity.RIGHT); signature.setInputType(InputType.TYPE_CLASS_TEXT);
         EditText limit = new EditText(this); limit.setHint("السقف بالريال مثل 5000"); limit.setGravity(Gravity.RIGHT); limit.setInputType(InputType.TYPE_CLASS_NUMBER);
         CheckBox active = new CheckBox(this); active.setText("مفعل"); active.setTextColor(text); active.setGravity(Gravity.RIGHT); active.setChecked(true);
@@ -4714,6 +4859,7 @@ public class MainActivity extends Activity {
         if (old != null) {
             name.setText(old.name);
             phone.setText(old.senderPhone);
+            secondaryPhone.setText(old.secondaryPhone == null ? "" : old.secondaryPhone);
             signature.setText(old.posSignature);
             limit.setText(String.valueOf(old.creditLimit));
             active.setChecked(old.active);
@@ -4725,6 +4871,7 @@ public class MainActivity extends Activity {
         layout.addView(help);
         layout.addView(name);
         layout.addView(phone);
+        layout.addView(secondaryPhone);
         layout.addView(signature);
         layout.addView(limit);
         layout.addView(active);
@@ -4739,11 +4886,15 @@ public class MainActivity extends Activity {
                 .setPositiveButton("حفظ", (d,w) -> {
                     String ph = phone.getText().toString().trim();
                     if (ph.isEmpty()) { toast("رقم نقطة البيع مطلوب"); return; }
+                    String extraPh = secondaryPhone.getText().toString().trim();
+                    String cleanMain = SmsProcessor.cleanPhone(ph);
+                    String cleanExtra = SmsProcessor.cleanPhone(extraPh);
+                    if (!cleanExtra.isEmpty() && cleanExtra.equals(cleanMain)) { toast("الرقم الإضافي يجب أن يختلف عن الرقم الأساسي"); return; }
                     String sig = signature.getText().toString().trim();
                     if (requireSignature.isChecked() && AppStore.isBadPosSignature(sig)) { toast("البصمة مطلوبة ويجب ألا تكون رقماً فقط أو أقل من 3 أحرف أو فور يو"); return; }
                     int lim = 5000;
                     try { lim = Integer.parseInt(limit.getText().toString().trim()); } catch(Exception ignored) {}
-                    AppStore.addOrUpdateTrustedCreditAgent(this, name.getText().toString().trim(), ph, sig, lim, active.isChecked(), rewards.isChecked(), requireSignature.isChecked());
+                    AppStore.addOrUpdateTrustedCreditAgent(this, name.getText().toString().trim(), ph, extraPh, sig, lim, active.isChecked(), rewards.isChecked(), requireSignature.isChecked());
                     toast("تم حفظ الرقم الموثوق" + (requireSignature.isChecked() ? " مع بصمة إجبارية" : " بدون بصمة إجبارية"));
                     showTrustedCreditAgents();
                 })
