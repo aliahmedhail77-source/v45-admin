@@ -4,12 +4,12 @@ plugins {
 
 android {
     namespace 'com.fourunet.pro'
-    compileSdk 35
+    compileSdk 34
 
     defaultConfig {
         applicationId 'com.fourunet.onlineadmin.stable'
         minSdk 23
-        targetSdk 35
+        targetSdk 34
         versionCode 49
         versionName '45.0-whatsapp-business-default'
     }
