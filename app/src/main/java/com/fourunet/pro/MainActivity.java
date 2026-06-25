@@ -15,6 +15,7 @@ import android.graphics.Typeface;
 import android.graphics.drawable.GradientDrawable;
 import android.graphics.pdf.PdfDocument;
 import android.net.Uri;
+import androidx.core.content.FileProvider;
 import android.os.Build;
 import android.os.CancellationSignal;
 import android.os.Bundle;
@@ -4709,6 +4710,7 @@ public class MainActivity extends Activity {
         out.append("رقم العملية: ").append(safe(log.id)).append("\n");
         out.append("التاريخ والوقت: ").append(safe(log.createdAt)).append("\n");
         out.append("نوع العملية: ").append(safe(log.provider)).append("\n");
+        out.append("طريقة الشراء: ").append(purchaseMethodForLog(log)).append("\n");
         out.append("الحالة: ").append(safe(log.status)).append("\n");
         out.append("المصدر: ").append(safe(log.sender)).append("\n");
         out.append("الاسم/نقطة البيع: ").append(safe(log.customerName)).append("\n");
@@ -4758,6 +4760,7 @@ public class MainActivity extends Activity {
             details.append("\n").append(count).append(") ").append(safe(log.createdAt)).append("\n")
                     .append("النوع: ").append(safe(provider)).append("\n")
                     .append("الحالة: ").append(safe(st)).append("\n")
+                    .append("طريقة الشراء: ").append(purchaseMethodForLog(log)).append("\n")
                     .append("الاسم/النقطة: ").append(safe(log.customerName)).append("\n")
                     .append("الرقم/العميل: ").append(safe(log.customerPhone)).append("\n")
                     .append("المبلغ: ").append(log.amount).append("\n")
@@ -4804,61 +4807,275 @@ public class MainActivity extends Activity {
         return v.substring(0, Math.max(0, max)) + "...";
     }
 
+    private String purchaseMethodForLog(OperationLog log) {
+        if (log == null) return "غير محدد";
+        String provider = log.provider == null ? "" : log.provider;
+        String msg = log.message == null ? "" : log.message;
+        String sender = log.sender == null ? "" : log.sender;
+        if (provider.contains("تعبئة رصيد")) return "تعبئة رصيد نقطة بيع من الإدارة";
+        if (provider.contains("طلب رصيد")) return "طلب رصيد من نقطة بيع ببصمة معتمدة";
+        if (provider.contains("نقطة") || provider.contains("موثوق") || msg.contains("بصمة") || msg.contains("نقطة البيع")) return "شراء عبر نقطة بيع ببصمة معتمدة";
+        if (provider.toLowerCase(Locale.US).contains("sms") || msg.toLowerCase(Locale.US).contains("sms")) return "شراء عبر رسالة SMS";
+        if ("admin".equalsIgnoreCase(sender)) return "عملية إدارية داخل التطبيق";
+        if (provider.contains("مباشر")) return "بيع مباشر من الإدارة";
+        return "شراء من مخزون كروت فور يو";
+    }
+
+    private static class PdfRenderState {
+        PdfDocument pdf;
+        PdfDocument.Page page;
+        Canvas canvas;
+        int pageNo;
+        int y;
+        final int w = 595;
+        final int h = 842;
+        final int margin = 36;
+    }
+
     private File createTextPdfFile(String title, String report, String prefix) {
-        PdfDocument pdf = new PdfDocument();
-        Paint p = new Paint(Paint.ANTI_ALIAS_FLAG);
-        p.setTypeface(Typeface.create(Typeface.SANS_SERIF, Typeface.NORMAL));
-        int w = 595, h = 842, margin = 34, y = 44, pageNo = 1;
-        PdfDocument.Page page = pdf.startPage(new PdfDocument.PageInfo.Builder(w, h, pageNo).create());
-        Canvas c = page.getCanvas();
+        PdfRenderState st = new PdfRenderState();
+        st.pdf = new PdfDocument();
+        st.pageNo = 1;
         try {
-            p.setTextAlign(Paint.Align.RIGHT);
-            p.setColor(Color.rgb(80, 58, 130));
-            p.setTextSize(18);
-            p.setTypeface(Typeface.DEFAULT_BOLD);
-            c.drawText(title == null ? "تقرير" : title, w - margin, y, p);
-            y += 24;
-            p.setColor(Color.BLACK);
-            p.setTextSize(10);
-            p.setTypeface(Typeface.DEFAULT);
-            String[] rawLines = (report == null ? "" : report).split("\\n");
-            for (String raw : rawLines) {
-                ArrayList<String> lines = wrapPdfLine(raw == null ? "" : raw, 82);
-                if (lines.isEmpty()) lines.add("");
-                for (String line : lines) {
-                    if (y > h - 44) {
-                        p.setTextAlign(Paint.Align.CENTER); p.setTextSize(9); p.setColor(Color.GRAY);
-                        c.drawText("صفحة " + pageNo, w / 2, h - 22, p);
-                        pdf.finishPage(page);
-                        pageNo++;
-                        page = pdf.startPage(new PdfDocument.PageInfo.Builder(w, h, pageNo).create());
-                        c = page.getCanvas();
-                        y = 44;
-                        p.setTextAlign(Paint.Align.RIGHT); p.setTextSize(10); p.setColor(Color.BLACK); p.setTypeface(Typeface.DEFAULT);
-                    }
-                    c.drawText(line, w - margin, y, p);
-                    y += 15;
-                }
-            }
-            p.setTextAlign(Paint.Align.CENTER); p.setTextSize(9); p.setColor(Color.GRAY);
-            c.drawText("صفحة " + pageNo, w / 2, h - 22, p);
-            pdf.finishPage(page);
+            startStyledPdfPage(st, title);
+            drawReportMetaCard(st, title, report);
+            drawParsedProfessionalReport(st, report == null ? "" : report);
+            finishStyledPdfPage(st);
+
             File dir = new File(getCacheDir(), "reports_pdf");
             if (!dir.exists()) dir.mkdirs();
             String stamp = new SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(new Date());
-            File file = new File(dir, (prefix == null || prefix.trim().isEmpty() ? "report" : prefix.trim()) + "_" + stamp + ".pdf");
+            String safePrefix = prefix == null || prefix.trim().isEmpty() ? "fouru_report" : prefix.trim().replaceAll("[^A-Za-z0-9_\\-]", "_");
+            File file = new File(dir, safePrefix + "_professional_" + stamp + ".pdf");
             OutputStream out = new java.io.FileOutputStream(file);
-            pdf.writeTo(out);
+            st.pdf.writeTo(out);
             out.close();
-            toast("تم إنشاء تقرير PDF");
+            toast("تم إنشاء تقرير PDF احترافي");
             return file;
         } catch (Exception e) {
             toast("فشل إنشاء PDF: " + e.getMessage());
-            try { pdf.finishPage(page); } catch (Exception ignored) {}
+            try { if (st.page != null) st.pdf.finishPage(st.page); } catch (Exception ignored) {}
             return null;
         } finally {
-            try { pdf.close(); } catch (Exception ignored) {}
+            try { st.pdf.close(); } catch (Exception ignored) {}
         }
+    }
+
+    private void startStyledPdfPage(PdfRenderState st, String title) {
+        st.page = st.pdf.startPage(new PdfDocument.PageInfo.Builder(st.w, st.h, st.pageNo).create());
+        st.canvas = st.page.getCanvas();
+        st.y = 36;
+        drawPdfHeader(st, title);
+    }
+
+    private void finishStyledPdfPage(PdfRenderState st) {
+        drawPdfFooter(st);
+        st.pdf.finishPage(st.page);
+        st.page = null;
+    }
+
+    private void ensurePdfSpace(PdfRenderState st, int needed, String title) {
+        if (st.y + needed <= st.h - 56) return;
+        finishStyledPdfPage(st);
+        st.pageNo++;
+        startStyledPdfPage(st, title);
+    }
+
+    private Paint pdfPaint(int color, float size, boolean bold, Paint.Align align) {
+        Paint p = new Paint(Paint.ANTI_ALIAS_FLAG);
+        p.setColor(color);
+        p.setTextSize(size);
+        p.setTextAlign(align);
+        p.setTypeface(Typeface.create(Typeface.SANS_SERIF, bold ? Typeface.BOLD : Typeface.NORMAL));
+        return p;
+    }
+
+    private void drawPdfHeader(PdfRenderState st, String title) {
+        Canvas c = st.canvas;
+        Paint p = pdfPaint(Color.WHITE, 11, false, Paint.Align.RIGHT);
+        Paint bgPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+        bgPaint.setColor(Color.rgb(80, 55, 132));
+        c.drawRoundRect(new RectF(st.margin, st.y, st.w - st.margin, st.y + 82), 18, 18, bgPaint);
+
+        Paint goldPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+        goldPaint.setColor(Color.rgb(218, 170, 72));
+        c.drawCircle(st.w - st.margin - 38, st.y + 41, 25, goldPaint);
+        Paint logoText = pdfPaint(Color.WHITE, 19, true, Paint.Align.CENTER);
+        c.drawText("4U", st.w - st.margin - 38, st.y + 48, logoText);
+
+        Paint titlePaint = pdfPaint(Color.WHITE, 20, true, Paint.Align.RIGHT);
+        c.drawText("فور يو", st.w - st.margin - 76, st.y + 31, titlePaint);
+        Paint subPaint = pdfPaint(Color.rgb(238, 230, 255), 10, false, Paint.Align.RIGHT);
+        c.drawText("إدارة وبيع كروت الإنترنت تلقائياً", st.w - st.margin - 76, st.y + 50, subPaint);
+        c.drawText(title == null || title.trim().isEmpty() ? "تقرير" : title, st.w - st.margin - 76, st.y + 68, subPaint);
+
+        Paint datePaint = pdfPaint(Color.WHITE, 9, false, Paint.Align.LEFT);
+        c.drawText("تاريخ الإنشاء: " + AppStore.now(), st.margin + 14, st.y + 32, datePaint);
+        c.drawText("رقم التقرير: " + new SimpleDateFormat("yyyyMMddHHmmss", Locale.US).format(new Date()), st.margin + 14, st.y + 52, datePaint);
+        st.y += 104;
+    }
+
+    private void drawPdfFooter(PdfRenderState st) {
+        Canvas c = st.canvas;
+        Paint linePaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+        linePaint.setColor(Color.rgb(221, 216, 232));
+        linePaint.setStrokeWidth(1f);
+        c.drawLine(st.margin, st.h - 42, st.w - st.margin, st.h - 42, linePaint);
+        Paint p = pdfPaint(Color.rgb(90, 88, 96), 9, false, Paint.Align.RIGHT);
+        c.drawText("فور يو - تقرير صادر من النظام", st.w - st.margin, st.h - 24, p);
+        Paint pagePaint = pdfPaint(Color.rgb(90, 88, 96), 9, false, Paint.Align.LEFT);
+        c.drawText("صفحة " + st.pageNo, st.margin, st.h - 24, pagePaint);
+    }
+
+    private void drawReportMetaCard(PdfRenderState st, String title, String report) {
+        ensurePdfSpace(st, 84, title);
+        int x = st.margin;
+        int w = st.w - (st.margin * 2);
+        Paint fill = new Paint(Paint.ANTI_ALIAS_FLAG);
+        fill.setColor(Color.rgb(249, 247, 253));
+        st.canvas.drawRoundRect(new RectF(x, st.y, x + w, st.y + 70), 14, 14, fill);
+        Paint accent = new Paint(Paint.ANTI_ALIAS_FLAG);
+        accent.setColor(Color.rgb(218, 170, 72));
+        st.canvas.drawRoundRect(new RectF(x + w - 7, st.y, x + w, st.y + 70), 8, 8, accent);
+        Paint label = pdfPaint(Color.rgb(80, 55, 132), 12, true, Paint.Align.RIGHT);
+        Paint val = pdfPaint(Color.rgb(35, 35, 42), 10, false, Paint.Align.RIGHT);
+        st.canvas.drawText("ملخص التقرير", x + w - 18, st.y + 24, label);
+        st.canvas.drawText("نوع التقرير: " + (title == null ? "تقرير" : title), x + w - 18, st.y + 43, val);
+        st.canvas.drawText("طريقة العرض: PDF منظم ببطاقات وجداول بدون فواصل نصية", x + w - 18, st.y + 59, val);
+        st.y += 88;
+    }
+
+    private void drawParsedProfessionalReport(PdfRenderState st, String report) {
+        String currentTitle = "تقرير";
+        String[] lines = report.replace("\r", "").split("\n");
+        boolean inDetails = false;
+        for (String rawLine : lines) {
+            String line = rawLine == null ? "" : rawLine.trim();
+            if (line.isEmpty()) { st.y += 4; continue; }
+            if (isPdfDividerLine(line)) { st.y += 6; continue; }
+            if (line.equals("شبكة فور يو") || line.equals("فور يو")) continue;
+
+            if (line.equals("ملخص نقاط البيع") || line.equals("تفاصيل العمليات") || line.equals("بيانات نقطة البيع") || line.equals("طريقة الشراء") || line.contains("طلبات الرصيد")) {
+                currentTitle = line;
+                inDetails = line.equals("تفاصيل العمليات");
+                drawPdfSectionTitle(st, line);
+                continue;
+            }
+
+            if (line.matches("^[0-9]+\\).*")) {
+                drawPdfOperationHeader(st, line);
+                inDetails = true;
+                continue;
+            }
+
+            int sep = line.indexOf(':');
+            if (sep > 0 && sep < 34) {
+                String key = line.substring(0, sep).trim();
+                String value = line.substring(sep + 1).trim();
+                if (isSummaryKey(key) && !inDetails) drawPdfSummaryChip(st, key, value);
+                else drawPdfInfoRow(st, key, value, key.contains("الحالة") ? colorForStatus(value) : Color.rgb(45, 43, 52));
+            } else {
+                drawPdfParagraph(st, line, currentTitle);
+            }
+        }
+        drawPdfSectionTitle(st, "التوقيع");
+        drawPdfInfoRow(st, "توقيع النظام", "فور يو", Color.rgb(80, 55, 132));
+    }
+
+    private boolean isPdfDividerLine(String line) {
+        if (line == null) return false;
+        String v = line.trim();
+        if (v.length() < 3) return false;
+        for (int i = 0; i < v.length(); i++) {
+            char ch = v.charAt(i);
+            if (ch != '-' && ch != '=' && ch != '_' && ch != '—') return false;
+        }
+        return true;
+    }
+
+    private boolean isSummaryKey(String key) {
+        if (key == null) return false;
+        return key.contains("عدد") || key.contains("إجمالي") || key.contains("عمليات") || key.contains("المتبقي") || key.contains("الفترة") || key.contains("تاريخ إنشاء");
+    }
+
+    private int colorForStatus(String value) {
+        String v = value == null ? "" : value;
+        if (v.contains("رفض") || v.contains("فشل") || v.contains("مرفوض")) return Color.rgb(169, 42, 66);
+        if (v.contains("مراجعة") || v.contains("معلق") || v.contains("قيد")) return Color.rgb(188, 128, 22);
+        if (v.contains("تم") || v.contains("نجاح") || v.contains("إرسال")) return Color.rgb(38, 124, 82);
+        return Color.rgb(45, 43, 52);
+    }
+
+    private void drawPdfSectionTitle(PdfRenderState st, String title) {
+        ensurePdfSpace(st, 44, title);
+        Paint p = pdfPaint(Color.rgb(80, 55, 132), 13, true, Paint.Align.RIGHT);
+        Paint line = new Paint(Paint.ANTI_ALIAS_FLAG);
+        line.setColor(Color.rgb(218, 170, 72));
+        line.setStrokeWidth(3f);
+        st.canvas.drawLine(st.margin, st.y + 10, st.w - st.margin - 150, st.y + 10, line);
+        st.canvas.drawText(title == null ? "قسم" : title, st.w - st.margin, st.y + 15, p);
+        st.y += 34;
+    }
+
+    private void drawPdfSummaryChip(PdfRenderState st, String key, String value) {
+        ensurePdfSpace(st, 44, key);
+        int x = st.margin;
+        int w = st.w - st.margin * 2;
+        Paint fill = new Paint(Paint.ANTI_ALIAS_FLAG);
+        fill.setColor(Color.rgb(245, 242, 251));
+        st.canvas.drawRoundRect(new RectF(x, st.y, x + w, st.y + 34), 12, 12, fill);
+        Paint keyPaint = pdfPaint(Color.rgb(80, 55, 132), 10, true, Paint.Align.RIGHT);
+        Paint valPaint = pdfPaint(Color.rgb(35, 35, 42), 10, false, Paint.Align.RIGHT);
+        st.canvas.drawText(key, x + w - 14, st.y + 22, keyPaint);
+        st.canvas.drawText(value == null || value.isEmpty() ? "-" : value, x + w - 205, st.y + 22, valPaint);
+        st.y += 40;
+    }
+
+    private void drawPdfOperationHeader(PdfRenderState st, String title) {
+        ensurePdfSpace(st, 54, title);
+        Paint fill = new Paint(Paint.ANTI_ALIAS_FLAG);
+        fill.setColor(Color.rgb(80, 55, 132));
+        st.canvas.drawRoundRect(new RectF(st.margin, st.y, st.w - st.margin, st.y + 34), 12, 12, fill);
+        Paint p = pdfPaint(Color.WHITE, 11, true, Paint.Align.RIGHT);
+        st.canvas.drawText("عملية " + title, st.w - st.margin - 14, st.y + 22, p);
+        st.y += 44;
+    }
+
+    private void drawPdfInfoRow(PdfRenderState st, String key, String value, int valueColor) {
+        ArrayList<String> valueLines = wrapPdfLine(value == null || value.isEmpty() ? "-" : value, 54);
+        int rowH = Math.max(30, 18 + valueLines.size() * 15);
+        ensurePdfSpace(st, rowH + 6, key);
+        int x = st.margin;
+        int w = st.w - st.margin * 2;
+        Paint fill = new Paint(Paint.ANTI_ALIAS_FLAG);
+        fill.setColor(Color.rgb(253, 252, 255));
+        st.canvas.drawRoundRect(new RectF(x, st.y, x + w, st.y + rowH), 8, 8, fill);
+        Paint border = new Paint(Paint.ANTI_ALIAS_FLAG);
+        border.setStyle(Paint.Style.STROKE);
+        border.setStrokeWidth(0.8f);
+        border.setColor(Color.rgb(229, 225, 238));
+        st.canvas.drawRoundRect(new RectF(x, st.y, x + w, st.y + rowH), 8, 8, border);
+        Paint keyPaint = pdfPaint(Color.rgb(88, 75, 112), 9.5f, true, Paint.Align.RIGHT);
+        Paint valPaint = pdfPaint(valueColor, 9.5f, false, Paint.Align.RIGHT);
+        st.canvas.drawText(key == null ? "" : key, x + w - 12, st.y + 20, keyPaint);
+        int yy = st.y + 20;
+        for (String line : valueLines) {
+            st.canvas.drawText(line, x + w - 150, yy, valPaint);
+            yy += 15;
+        }
+        st.y += rowH + 6;
+    }
+
+    private void drawPdfParagraph(PdfRenderState st, String line, String title) {
+        ArrayList<String> lines = wrapPdfLine(line, 74);
+        int needed = Math.max(24, lines.size() * 15 + 12);
+        ensurePdfSpace(st, needed, title);
+        Paint p = pdfPaint(Color.rgb(55, 53, 65), 9.5f, false, Paint.Align.RIGHT);
+        for (String v : lines) {
+            st.canvas.drawText(v, st.w - st.margin, st.y, p);
+            st.y += 15;
+        }
+        st.y += 4;
     }
 
     private ArrayList<String> wrapPdfLine(String line, int maxChars) {
@@ -4879,13 +5096,19 @@ public class MainActivity extends Activity {
     private void sharePdfFile(File file, String title) {
         try {
             if (file == null || !file.exists()) { toast("ملف PDF غير موجود"); return; }
+            Uri uri;
             try {
-                Method m = StrictMode.class.getMethod("disableDeathOnFileUriExposure");
-                m.invoke(null);
-            } catch (Exception ignored) {}
+                uri = FileProvider.getUriForFile(this, getPackageName() + ".fileprovider", file);
+            } catch (Exception fpError) {
+                try {
+                    Method m = StrictMode.class.getMethod("disableDeathOnFileUriExposure");
+                    m.invoke(null);
+                } catch (Exception ignored) {}
+                uri = Uri.fromFile(file);
+            }
             Intent intent = new Intent(Intent.ACTION_SEND);
             intent.setType("application/pdf");
-            intent.putExtra(Intent.EXTRA_STREAM, Uri.fromFile(file));
+            intent.putExtra(Intent.EXTRA_STREAM, uri);
             intent.putExtra(Intent.EXTRA_TEXT, title == null ? "تقرير PDF - فور يو" : title);
             intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
             startActivity(Intent.createChooser(intent, "إرسال التقرير PDF عبر واتساب أو أي تطبيق"));
@@ -5013,6 +5236,7 @@ public class MainActivity extends Activity {
             else if (st.contains("تم") || st.contains("جاري إرسال")) { success++; if (!isTopup) total += Math.max(0, log.amount); }
             rows.append("\n").append(count).append(") ").append(log.createdAt == null ? "" : log.createdAt).append("\n")
                     .append("الحالة: ").append(st.isEmpty() ? "غير محدد" : st).append("\n")
+                    .append("طريقة الشراء: ").append(purchaseMethodForLog(log)).append("\n")
                     .append("المصدر: ").append(sourceLabelForTrustedLog(log, a)).append("\n")
                     .append("العميل: ").append((log.customerPhone == null || log.customerPhone.isEmpty()) ? "-" : log.customerPhone).append("\n")
                     .append("المبلغ: ").append(log.amount).append("\n")
