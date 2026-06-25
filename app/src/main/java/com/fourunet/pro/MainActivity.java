@@ -46,6 +46,7 @@ import java.util.Date;
 import java.util.Locale;
 import java.util.Random;
 import java.util.HashSet;
+import java.util.Calendar;
 import java.util.zip.ZipInputStream;
 import java.util.zip.ZipEntry;
 
@@ -1367,6 +1368,16 @@ public class MainActivity extends Activity {
         report.addView(action("تقرير إجمالي مفصل حسب الفئات", purple, Color.WHITE, v -> startPdfDownload(-1, false)));
         report.addView(action("تقرير إجمالي مختصر", card2, text, v -> startPdfDownload(-1, true)));
         report.addView(action("تقرير PDF لفئة محددة", card2, text, v -> showPdfCategoryDialog()));
+        report.addView(separator());
+        report.addView(tv("تقارير المراجعة والمتابعة", 16, text, true));
+        report.addView(small("تقارير PDF منظمة يمكن مشاركتها عبر واتساب: يومي، أسبوعي، شهري، أو فترة مخصصة."));
+        LinearLayout reportQuick = new LinearLayout(this);
+        reportQuick.setOrientation(LinearLayout.HORIZONTAL);
+        reportQuick.addView(action("يومي PDF", gold, Color.rgb(35,24,8), v -> sharePeriodReportPdf("تقرير يومي", periodStartDaysAgo(0), todayDate())), new LinearLayout.LayoutParams(0, dp(50), 1));
+        reportQuick.addView(action("أسبوعي PDF", card2, text, v -> sharePeriodReportPdf("تقرير أسبوعي", periodStartDaysAgo(6), todayDate())), new LinearLayout.LayoutParams(0, dp(50), 1));
+        reportQuick.addView(action("شهري PDF", card2, text, v -> sharePeriodReportPdf("تقرير شهري", firstDayOfThisMonth(), todayDate())), new LinearLayout.LayoutParams(0, dp(50), 1));
+        report.addView(reportQuick);
+        report.addView(action("تقرير PDF حسب تاريخ مخصص", purple, Color.WHITE, v -> showCustomPeriodReportDialog()));
         report.addView(action("حذف كل إشعارات السداد", Color.rgb(82,30,42), Color.WHITE, v -> confirmClearLogs()));
         content.addView(report);
 
@@ -1415,6 +1426,7 @@ public class MainActivity extends Activity {
                 tools.addView(wa, toolLp);
                 box.addView(tools);
             }
+            box.addView(action("📄 تقرير العملية PDF / واتساب", purple, Color.WHITE, v -> shareSingleOperationPdf(log)));
             box.addView(action("حذف إشعار السداد", Color.rgb(82,30,42), Color.WHITE, v -> confirmDeleteLog(log)));
             content.addView(box);
         }
@@ -4648,6 +4660,240 @@ public class MainActivity extends Activity {
     }
 
 
+
+    private String todayDate() {
+        return new SimpleDateFormat("yyyy/MM/dd", Locale.US).format(new Date());
+    }
+
+    private String periodStartDaysAgo(int daysAgo) {
+        Calendar cal = Calendar.getInstance();
+        cal.add(Calendar.DAY_OF_YEAR, -Math.max(0, daysAgo));
+        return new SimpleDateFormat("yyyy/MM/dd", Locale.US).format(cal.getTime());
+    }
+
+    private String firstDayOfThisMonth() {
+        Calendar cal = Calendar.getInstance();
+        cal.set(Calendar.DAY_OF_MONTH, 1);
+        return new SimpleDateFormat("yyyy/MM/dd", Locale.US).format(cal.getTime());
+    }
+
+    private void showCustomPeriodReportDialog() {
+        LinearLayout layout = new LinearLayout(this);
+        layout.setOrientation(LinearLayout.VERTICAL);
+        layout.setPadding(dp(8), dp(8), dp(8), dp(8));
+        layout.addView(small("اكتب الفترة بصيغة 2026/06/01 أو 2026-06-01. سيُنشأ تقرير PDF منظم قابل للمشاركة عبر واتساب."));
+        EditText from = new EditText(this); from.setHint("من تاريخ"); from.setGravity(Gravity.RIGHT); from.setSingleLine(true); from.setInputType(InputType.TYPE_CLASS_TEXT);
+        EditText to = new EditText(this); to.setHint("إلى تاريخ"); to.setGravity(Gravity.RIGHT); to.setSingleLine(true); to.setInputType(InputType.TYPE_CLASS_TEXT);
+        layout.addView(from);
+        layout.addView(to);
+        new AlertDialog.Builder(this)
+                .setTitle("تقرير فترة مخصصة")
+                .setView(layout)
+                .setPositiveButton("إنشاء ومشاركة PDF", (d,w) -> sharePeriodReportPdf("تقرير فترة مخصصة", from.getText().toString().trim(), to.getText().toString().trim()))
+                .setNegativeButton("إلغاء", null)
+                .show();
+    }
+
+    private void shareSingleOperationPdf(OperationLog log) {
+        if (log == null) return;
+        String report = buildSingleOperationReport(log);
+        File file = createTextPdfFile("تقرير عملية", report, "operation_report");
+        if (file != null) sharePdfFile(file, "تقرير عملية");
+    }
+
+    private String buildSingleOperationReport(OperationLog log) {
+        if (log == null) return "لا توجد عملية محددة.";
+        StringBuilder out = new StringBuilder();
+        out.append("تقرير عملية\n");
+        out.append("==============================\n");
+        out.append("رقم العملية: ").append(safe(log.id)).append("\n");
+        out.append("التاريخ والوقت: ").append(safe(log.createdAt)).append("\n");
+        out.append("نوع العملية: ").append(safe(log.provider)).append("\n");
+        out.append("الحالة: ").append(safe(log.status)).append("\n");
+        out.append("المصدر: ").append(safe(log.sender)).append("\n");
+        out.append("الاسم/نقطة البيع: ").append(safe(log.customerName)).append("\n");
+        out.append("رقم العميل: ").append(safe(log.customerPhone)).append("\n");
+        out.append("المبلغ: ").append(log.amount).append(" ريال\n");
+        out.append("الكرت: ").append(displayCardCode(log.cardCode)).append("\n");
+        out.append("------------------------------\n");
+        out.append("ملاحظة النظام:\n").append(safe(log.message)).append("\n");
+        out.append("==============================\n");
+        out.append("تم إنشاء التقرير: ").append(AppStore.now()).append("\n");
+        out.append("شبكة فور يو\n");
+        return out.toString();
+    }
+
+    private void shareTrustedAgentReportPdf(TrustedCreditAgent a, String from, String to) {
+        if (a == null) return;
+        String report = buildTrustedCreditAgentDateReport(a, from, to);
+        File file = createTextPdfFile("تقرير نقطة البيع", report, "pos_report");
+        if (file != null) sharePdfFile(file, "تقرير نقطة البيع: " + a.name);
+    }
+
+    private void sharePeriodReportPdf(String title, String from, String to) {
+        String report = buildPeriodReport(title, from, to);
+        File file = createTextPdfFile(title, report, "period_report");
+        if (file != null) sharePdfFile(file, title);
+    }
+
+    private String buildPeriodReport(String title, String from, String to) {
+        String f = normalizeReportDate(from);
+        String t = normalizeReportDate(to);
+        ArrayList<OperationLog> logs = AppStore.loadLogs(this);
+        ArrayList<TrustedCreditAgent> agents = AppStore.loadTrustedCreditAgents(this);
+        int count = 0, success = 0, pending = 0, rejected = 0, totalSales = 0, topups = 0, balanceRequests = 0;
+        StringBuilder details = new StringBuilder();
+        for (OperationLog log : logs) {
+            if (!isLogInReportDateRange(log, f, t)) continue;
+            count++;
+            String st = log.status == null ? "" : log.status;
+            String provider = log.provider == null ? "" : log.provider;
+            boolean isTopup = provider.contains("تعبئة رصيد");
+            boolean isBalanceReq = provider.contains("طلب رصيد");
+            if (isTopup) topups += Math.max(0, log.amount);
+            if (isBalanceReq) balanceRequests++;
+            if (AppStore.isPendingCriticalLog(log) || st.contains("معلق") || st.contains("مراجعة")) pending++;
+            else if (st.contains("رفض") || st.contains("مرفوض") || st.contains("تجاوز") || st.contains("فشل")) rejected++;
+            else if (st.contains("تم") || st.contains("جاري إرسال")) { success++; if (!isTopup && !isBalanceReq) totalSales += Math.max(0, log.amount); }
+            details.append("\n").append(count).append(") ").append(safe(log.createdAt)).append("\n")
+                    .append("النوع: ").append(safe(provider)).append("\n")
+                    .append("الحالة: ").append(safe(st)).append("\n")
+                    .append("الاسم/النقطة: ").append(safe(log.customerName)).append("\n")
+                    .append("الرقم/العميل: ").append(safe(log.customerPhone)).append("\n")
+                    .append("المبلغ: ").append(log.amount).append("\n")
+                    .append("ملاحظة: ").append(shortText(log.message, 260)).append("\n")
+                    .append("------------------------------\n");
+        }
+        int remainingAll = 0;
+        for (TrustedCreditAgent a : agents) remainingAll += AppStore.remainingTrustedCredit(a);
+        StringBuilder out = new StringBuilder();
+        out.append(title == null ? "تقرير" : title).append("\n");
+        out.append("==============================\n");
+        out.append("الفترة: ").append(f.isEmpty() ? "من البداية" : f).append(" إلى ").append(t.isEmpty() ? "آخر سجل" : t).append("\n");
+        out.append("تاريخ إنشاء التقرير: ").append(AppStore.now()).append("\n");
+        out.append("------------------------------\n");
+        out.append("عدد العمليات: ").append(count).append("\n");
+        out.append("عمليات ناجحة/قيد الإرسال: ").append(success).append("\n");
+        out.append("عمليات تحتاج مراجعة: ").append(pending).append("\n");
+        out.append("عمليات مرفوضة/فاشلة: ").append(rejected).append("\n");
+        out.append("طلبات رصيد من نقاط البيع: ").append(balanceRequests).append("\n");
+        out.append("إجمالي المبيعات: ").append(totalSales).append(" ريال\n");
+        out.append("إجمالي تعبئة أرصدة نقاط البيع: ").append(topups).append(" ريال\n");
+        out.append("إجمالي المتبقي الحالي لنقاط البيع: ").append(remainingAll).append(" ريال\n");
+        out.append("==============================\n");
+        out.append("ملخص نقاط البيع\n");
+        out.append("------------------------------\n");
+        if (agents.isEmpty()) out.append("لا توجد نقاط بيع مسجلة.\n");
+        for (TrustedCreditAgent a : agents) {
+            out.append("نقطة البيع: ").append(a.name).append("\n")
+                    .append("الأساسي: ").append(a.senderPhone).append(" | الإضافي: ").append((a.secondaryPhone == null || a.secondaryPhone.trim().isEmpty()) ? "غير مسجل" : a.secondaryPhone).append("\n")
+                    .append("السقف: ").append(a.creditLimit).append(" | المستخدم: ").append(a.usedAmount).append(" | المتبقي: ").append(AppStore.remainingTrustedCredit(a)).append("\n")
+                    .append("------------------------------\n");
+        }
+        out.append("تفاصيل العمليات\n");
+        out.append("==============================\n");
+        if (count == 0) out.append("لا توجد عمليات ضمن الفترة المحددة.\n");
+        else out.append(details);
+        out.append("شبكة فور يو\n");
+        return out.toString();
+    }
+
+    private String shortText(String value, int max) {
+        String v = value == null ? "" : value.replace('\r', ' ').trim();
+        if (v.length() <= max) return v;
+        return v.substring(0, Math.max(0, max)) + "...";
+    }
+
+    private File createTextPdfFile(String title, String report, String prefix) {
+        PdfDocument pdf = new PdfDocument();
+        Paint p = new Paint(Paint.ANTI_ALIAS_FLAG);
+        p.setTypeface(Typeface.create(Typeface.SANS_SERIF, Typeface.NORMAL));
+        int w = 595, h = 842, margin = 34, y = 44, pageNo = 1;
+        PdfDocument.Page page = pdf.startPage(new PdfDocument.PageInfo.Builder(w, h, pageNo).create());
+        Canvas c = page.getCanvas();
+        try {
+            p.setTextAlign(Paint.Align.RIGHT);
+            p.setColor(Color.rgb(80, 58, 130));
+            p.setTextSize(18);
+            p.setTypeface(Typeface.DEFAULT_BOLD);
+            c.drawText(title == null ? "تقرير" : title, w - margin, y, p);
+            y += 24;
+            p.setColor(Color.BLACK);
+            p.setTextSize(10);
+            p.setTypeface(Typeface.DEFAULT);
+            String[] rawLines = (report == null ? "" : report).split("\\n");
+            for (String raw : rawLines) {
+                ArrayList<String> lines = wrapPdfLine(raw == null ? "" : raw, 82);
+                if (lines.isEmpty()) lines.add("");
+                for (String line : lines) {
+                    if (y > h - 44) {
+                        p.setTextAlign(Paint.Align.CENTER); p.setTextSize(9); p.setColor(Color.GRAY);
+                        c.drawText("صفحة " + pageNo, w / 2, h - 22, p);
+                        pdf.finishPage(page);
+                        pageNo++;
+                        page = pdf.startPage(new PdfDocument.PageInfo.Builder(w, h, pageNo).create());
+                        c = page.getCanvas();
+                        y = 44;
+                        p.setTextAlign(Paint.Align.RIGHT); p.setTextSize(10); p.setColor(Color.BLACK); p.setTypeface(Typeface.DEFAULT);
+                    }
+                    c.drawText(line, w - margin, y, p);
+                    y += 15;
+                }
+            }
+            p.setTextAlign(Paint.Align.CENTER); p.setTextSize(9); p.setColor(Color.GRAY);
+            c.drawText("صفحة " + pageNo, w / 2, h - 22, p);
+            pdf.finishPage(page);
+            File dir = new File(getCacheDir(), "reports_pdf");
+            if (!dir.exists()) dir.mkdirs();
+            String stamp = new SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(new Date());
+            File file = new File(dir, (prefix == null || prefix.trim().isEmpty() ? "report" : prefix.trim()) + "_" + stamp + ".pdf");
+            OutputStream out = new java.io.FileOutputStream(file);
+            pdf.writeTo(out);
+            out.close();
+            toast("تم إنشاء تقرير PDF");
+            return file;
+        } catch (Exception e) {
+            toast("فشل إنشاء PDF: " + e.getMessage());
+            try { pdf.finishPage(page); } catch (Exception ignored) {}
+            return null;
+        } finally {
+            try { pdf.close(); } catch (Exception ignored) {}
+        }
+    }
+
+    private ArrayList<String> wrapPdfLine(String line, int maxChars) {
+        ArrayList<String> out = new ArrayList<>();
+        if (line == null) { out.add(""); return out; }
+        String s = line.trim();
+        if (s.length() <= maxChars) { out.add(s); return out; }
+        while (s.length() > maxChars) {
+            int cut = s.lastIndexOf(' ', maxChars);
+            if (cut < 20) cut = maxChars;
+            out.add(s.substring(0, cut).trim());
+            s = s.substring(cut).trim();
+        }
+        if (!s.isEmpty()) out.add(s);
+        return out;
+    }
+
+    private void sharePdfFile(File file, String title) {
+        try {
+            if (file == null || !file.exists()) { toast("ملف PDF غير موجود"); return; }
+            try {
+                Method m = StrictMode.class.getMethod("disableDeathOnFileUriExposure");
+                m.invoke(null);
+            } catch (Exception ignored) {}
+            Intent intent = new Intent(Intent.ACTION_SEND);
+            intent.setType("application/pdf");
+            intent.putExtra(Intent.EXTRA_STREAM, Uri.fromFile(file));
+            intent.putExtra(Intent.EXTRA_TEXT, title == null ? "تقرير PDF - فور يو" : title);
+            intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+            startActivity(Intent.createChooser(intent, "إرسال التقرير PDF عبر واتساب أو أي تطبيق"));
+        } catch (Exception e) {
+            toast("تم إنشاء PDF لكن تعذرت المشاركة. المسار: " + (file == null ? "" : file.getAbsolutePath()));
+        }
+    }
+
     private void showTrustedCreditAgentDateReportDialog(TrustedCreditAgent a) {
         if (a == null) return;
         LinearLayout layout = new LinearLayout(this);
@@ -4670,23 +4916,25 @@ public class MainActivity extends Activity {
                 .setTitle("تقرير نقطة البيع: " + a.name)
                 .setView(layout)
                 .setPositiveButton("عرض التقرير", (d,w) -> showTrustedCreditAgentReportText(a, from.getText().toString().trim(), to.getText().toString().trim()))
+                .setNeutralButton("مشاركة PDF", (d,w) -> shareTrustedAgentReportPdf(a, from.getText().toString().trim(), to.getText().toString().trim()))
                 .setNegativeButton("إلغاء", null)
                 .show();
     }
 
     private void showTrustedCreditAgentReportText(TrustedCreditAgent a, String from, String to) {
         String report = buildTrustedCreditAgentDateReport(a, from, to);
-        TextView tvReport = small(report);
-        tvReport.setTextSize(14);
-        tvReport.setTextColor(text);
+        TextView tvReport = tv(report, 14, Color.rgb(25, 25, 30), false);
         tvReport.setGravity(Gravity.RIGHT);
+        tvReport.setLineSpacing(4, 1.1f);
         ScrollView scroll = new ScrollView(this);
-        scroll.setPadding(dp(8), dp(8), dp(8), dp(8));
+        scroll.setPadding(dp(10), dp(10), dp(10), dp(10));
+        scroll.setBackgroundColor(Color.WHITE);
         scroll.addView(tvReport);
         new AlertDialog.Builder(this)
                 .setTitle("تقرير المراجعة: " + (a == null ? "" : a.name))
                 .setView(scroll)
                 .setPositiveButton("إغلاق", null)
+                .setNeutralButton("مشاركة PDF", (d,w) -> shareTrustedAgentReportPdf(a, from, to))
                 .show();
     }
 

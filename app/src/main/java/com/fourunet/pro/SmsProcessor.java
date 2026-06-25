@@ -81,7 +81,7 @@ class SmsProcessor {
         TrustedCreditAgent queueAgent = AppStore.findTrustedCreditSender(context, sender);
         if (queueAgent != null) {
             String signedBody = AppStore.stripTrustedCreditSignature(queueAgent, body);
-            return signedBody != null && PaymentParser.parseTrustedCreditRequest(context, signedBody) != null;
+            return signedBody != null && (PaymentParser.isTrustedCreditBalanceRequest(signedBody) || PaymentParser.parseTrustedCreditRequest(context, signedBody) != null);
         }
         if (PaymentParser.parse(context, sender, body) != null) return true;
         return PaymentParser.looksLikePayment(body);
@@ -114,6 +114,21 @@ class SmsProcessor {
                 AppStore.markProcessed(context, eventId);
                 addLog(context, "أمان نقطة بيع", sender, creditAgent.name, "", 0,
                         "مرفوض بصمت: بصمة غير صحيحة", "تم تجاهل رسالة من رقم موثوق لأنها لا تحتوي بصمة نقطة البيع المسجلة أو تحتوي بصمة غير مطابقة. لم يتم إرسال أي رد.\nالنص:\n" + body, "");
+                return;
+            }
+            if (PaymentParser.isTrustedCreditBalanceRequest(signedBody)) {
+                AppStore.markProcessed(context, eventId);
+                int requestedAmount = PaymentParser.extractAmountForReview(signedBody);
+                String agentPhone = cleanPhone(AppStore.replyPhoneForTrustedCreditAgent(creditAgent, sender));
+                String msg = "نقطة بيع طلبت رصيد"
+                        + "\nالنقطة: " + (creditAgent.name == null ? "" : creditAgent.name)
+                        + "\nالرقم: " + agentPhone
+                        + "\nالمتبقي الحالي: " + AppStore.remainingTrustedCredit(creditAgent) + " ريال"
+                        + (requestedAmount > 0 ? "\nالمبلغ المطلوب تقريباً: " + requestedAmount + " ريال" : "")
+                        + "\nنص الرسالة بعد البصمة:\n" + signedBody;
+                String logId = addLog(context, "طلب رصيد نقطة بيع", sender, creditAgent.name, agentPhone, requestedAmount,
+                        "معلق: نقطة بيع تحتاج رصيد", msg, "");
+                NotifyHelper.notifyPendingAction(context, logId, requestedAmount, "", "نقطة بيع تحتاج رصيد: " + (creditAgent.name == null ? agentPhone : creditAgent.name));
                 return;
             }
             ParsedCreditRequest creditRequest = PaymentParser.parseTrustedCreditRequest(context, signedBody);

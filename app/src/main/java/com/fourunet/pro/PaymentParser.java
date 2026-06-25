@@ -154,6 +154,31 @@ class PaymentParser {
     }
 
 
+
+    static boolean isTrustedCreditBalanceRequest(String body) {
+        if (body == null) return false;
+        String b = body.trim().toLowerCase(Locale.ROOT);
+        if (b.isEmpty()) return false;
+        if (isSystemGeneratedMessage(b) || isIgnoredNotificationMessage(b)) return false;
+        b = b.replace('أ', 'ا').replace('إ', 'ا').replace('آ', 'ا').replace('ى', 'ي').replace('ة', 'ه');
+        boolean hasRequest = b.contains("طلب رصيد")
+                || b.contains("احتاج رصيد")
+                || b.contains("اريد رصيد")
+                || b.contains("نريد رصيد")
+                || b.contains("عايز رصيد")
+                || b.contains("عبئ رصيد")
+                || b.contains("عبئ لي")
+                || b.contains("اضف رصيد")
+                || b.contains("اضافة رصيد")
+                || b.contains("رصيد لو سمحت")
+                || b.matches(".*(^|\\s)رصيد(\\s|$).*");
+        if (!hasRequest) return false;
+        // لا تعتبر طلب رصيد إذا كانت رسالة بيع عادية فيها رقم عميل وفئة؛ هذه تذهب لمسار البيع بعد حذف البصمة.
+        ParsedCreditRequest maybeSale = parseTrustedCreditRequest(null, body);
+        if (maybeSale != null && maybeSale.isValid()) return false;
+        return true;
+    }
+
     static ParsedCreditRequest parseTrustedCreditRequest(String body) {
         return parseTrustedCreditRequest(null, body);
     }
