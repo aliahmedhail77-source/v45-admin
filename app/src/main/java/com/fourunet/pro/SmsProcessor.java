@@ -363,10 +363,13 @@ class SmsProcessor {
         }
         LedgerCustomer updated = AppStore.changeLedgerDebtByPhone(context, customerPhone, amount, 0, "سلفة كرت",
                 "صرف كرت كسلفة فئة " + amount + " للزبون " + customer.name, card.code);
-        String msg = "كرتك فئة " + amount + " ريال\n\n"
+        String displayName = customer.name == null || customer.name.trim().isEmpty() ? "عميلنا" : customer.name.trim();
+        String msg = "مرحبا " + displayName + " 👋\n\n"
+                + "كرتك فئة " + amount + " ريال\n\n"
                 + card.code + "\n\n"
                 + "تم تقييدها كسلفة على حسابك.\n"
                 + "المتبقي عليك: " + updated.debt + " ريال\n"
+                + "المتاح لك من السقف: " + Math.max(0, updated.loanLimit - updated.debt) + " ريال\n"
                 + AppStore.SYSTEM_SIGNATURE;
         String logId = addLog(context, "الدفتر المحاسبي", sender, customer.name, customerPhone, amount, "جاري إرسال SMS",
                 "تم صرف كرت كسلفة وتقييده ديناً في الدفتر. المتبقي على الزبون: " + updated.debt, card.code);

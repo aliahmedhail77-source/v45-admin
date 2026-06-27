@@ -2485,36 +2485,66 @@ class AppStore {
     static String buildLedgerCustomerStatement(Context c, LedgerCustomer customer) {
         if (customer == null) return "";
         String clean = normalizeLocalPhone(customer.phone);
+        String name = (customer.name == null || customer.name.trim().isEmpty()) ? clean : customer.name.trim();
         StringBuilder sb = new StringBuilder();
-        sb.append("كشف حساب الزبون\n");
-        sb.append("الاسم: ").append(customer.name).append("\n");
+        sb.append("مرحبا ").append(name).append(" 👋\n\n");
+        sb.append("تقرير حسابك في الفترة الحالية\n");
         sb.append("الرقم: ").append(clean).append("\n");
-        sb.append("الحالة: ").append(customer.active ? "مفعل" : "متوقف").append("\n");
-        sb.append("موثوق للسلفة: ").append(customer.trusted && customer.loanEnabled ? "نعم" : "لا").append("\n");
-        sb.append("حد السلفة: ").append(customer.loanLimit).append(" ريال\n");
-        sb.append("الرصيد الحالي عليه: ").append(customer.debt).append(" ريال\n");
-        sb.append("------------------------------\n");
-        sb.append("التاريخ | البيان | مدين | دائن | الرصيد\n");
-        int count = 0;
+        sb.append("سقف السلفة: ").append(customer.loanLimit).append(" ريال\n");
+        sb.append("المتبقي عليك: ").append(customer.debt).append(" ريال\n");
+        sb.append("المتاح من السقف: ").append(customer.remainingLoan()).append(" ريال\n");
+        sb.append("\n");
+        sb.append("الحالة | الوقت والتاريخ | الفئة | عبر | طريق الدفع | العدد | الملاحظات\n");
+        sb.append("------------------------------------------------------------\n");
+        int count = 0, totalDebit = 0, totalCredit = 0, failed = 0;
         for (LedgerEntry e : loadLedgerEntries(c)) {
             if (!normalizeLocalPhone(e.customerPhone).equals(clean)) continue;
-            sb.append(e.createdAt).append(" | ")
-                    .append(e.description).append(" | ")
-                    .append(e.debit).append(" | ")
-                    .append(e.credit).append(" | ")
-                    .append(e.balanceAfter).append("\n");
+            String status = "نجاح";
+            String type = e.type == null ? "" : e.type;
+            if (type.contains("مرفوض") || type.contains("فشل")) { status = "فشل"; failed++; }
+            String category = e.debit > 0 ? String.valueOf(e.debit) : (e.credit > 0 ? String.valueOf(e.credit) : "-");
+            String route = type.contains("سلفة") ? "SMS " + maskPhone(clean) : "المحافظ";
+            String payMethod = type.contains("سداد") ? "سداد" : (type.contains("سلفة") ? "سلفة" : type);
+            sb.append(status).append(" | ")
+                    .append(e.createdAt).append(" | ")
+                    .append(category).append(" | ")
+                    .append(route).append(" | ")
+                    .append(payMethod).append(" | ")
+                    .append("1").append(" | ")
+                    .append(e.description == null ? "" : e.description).append("\n");
+            totalDebit += Math.max(0, e.debit);
+            totalCredit += Math.max(0, e.credit);
             count++;
-            if (count >= 80) break;
+            if (count >= 120) break;
         }
-        if (count == 0) sb.append("لا توجد قيود لهذا الزبون حتى الآن.\n");
-        sb.append("------------------------------\n");
+        if (count == 0) sb.append("لا توجد عمليات لهذا الزبون حتى الآن.\n");
+        sb.append("------------------------------------------------------------\n");
+        sb.append("الإجمالي\n");
+        sb.append("عدد العمليات: ").append(count).append("\n");
+        sb.append("إجمالي السلف: ").append(totalDebit).append(" ريال\n");
+        sb.append("إجمالي السداد: ").append(totalCredit).append(" ريال\n");
+        sb.append("عمليات فاشلة: ").append(failed).append("\n");
+        sb.append("المتبقي عليك: ").append(customer.debt).append(" ريال\n");
+        sb.append("المتاح من السقف: ").append(customer.remainingLoan()).append(" ريال\n\n");
         sb.append(SYSTEM_SIGNATURE);
         return sb.toString();
     }
 
+    private static String maskPhone(String phone) {
+        String p = normalizeLocalPhone(phone);
+        if (p.length() < 6) return p;
+        return p.substring(0, 3) + "***" + p.substring(p.length() - 3);
+    }
+
+
     static boolean isLoanRequestText(String body) {
         String v = normalizeArabicDigits(body == null ? "" : body).trim().toLowerCase(Locale.US);
-        return v.startsWith("سلفني") || v.startsWith("سلفة") || v.startsWith("سلفه");
+        if (v.isEmpty()) return false;
+        // STAGE 12.1: الزبون الموثوق يستطيع طلب أي باقة متوفرة برسالة رقمية فقط مثل: 100
+        // أو بصيغ بسيطة مثل: سلفني 100 / سلف 100 / كرت 100.
+        if (v.matches("^\\d{2,5}$")) return true;
+        if (v.matches("^(سلفني|سلف|سلفة|سلفه|كرت|اريد|أريد)\\s+\\d{2,5}.*")) return true;
+        return v.startsWith("سلفني") || v.startsWith("سلفة") || v.startsWith("سلفه") || v.startsWith("سلف ");
     }
 
     static int extractLoanAmount(String body) {

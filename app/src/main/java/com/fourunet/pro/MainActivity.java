@@ -2533,6 +2533,10 @@ public class MainActivity extends Activity {
                 .setTitle("كشف حساب")
                 .setView(view)
                 .setPositiveButton("واتساب", (d,w) -> openWhatsAppBusinessMessage(c.phone, statement))
+                .setNeutralButton("PDF", (d,w) -> {
+                    File file = createTextPdfFile("كشف حساب الزبون", statement, "ledger_customer_statement");
+                    if (file != null) sharePdfFile(file, "كشف حساب: " + (c.name == null ? c.phone : c.name));
+                })
                 .setNegativeButton("إغلاق", null)
                 .show();
     }
