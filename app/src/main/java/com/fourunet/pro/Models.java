@@ -276,3 +276,62 @@ class ParsedCreditRequest {
         return sb.toString();
     }
 }
+
+
+class LedgerCustomer {
+    String id;
+    String name;
+    String phone;
+    boolean trusted;
+    boolean loanEnabled;
+    int loanLimit;
+    int debt;
+    boolean active;
+    String notes;
+    long createdAt;
+
+    LedgerCustomer(String id, String name, String phone, boolean trusted, boolean loanEnabled, int loanLimit, int debt, boolean active, String notes, long createdAt) {
+        this.id = id == null ? "" : id;
+        this.name = name == null ? "" : name.trim();
+        this.phone = phone == null ? "" : phone.trim();
+        this.trusted = trusted;
+        this.loanEnabled = loanEnabled;
+        this.loanLimit = Math.max(0, loanLimit);
+        this.debt = Math.max(0, debt);
+        this.active = active;
+        this.notes = notes == null ? "" : notes.trim();
+        this.createdAt = createdAt;
+    }
+
+    int remainingLoan() {
+        return Math.max(0, loanLimit - debt);
+    }
+}
+
+class LedgerEntry {
+    String id;
+    String customerId;
+    String customerName;
+    String customerPhone;
+    String type;
+    int debit;
+    int credit;
+    int balanceAfter;
+    String description;
+    String reference;
+    String createdAt;
+
+    LedgerEntry(String id, String customerId, String customerName, String customerPhone, String type, int debit, int credit, int balanceAfter, String description, String reference, String createdAt) {
+        this.id = id == null ? "" : id;
+        this.customerId = customerId == null ? "" : customerId;
+        this.customerName = customerName == null ? "" : customerName.trim();
+        this.customerPhone = customerPhone == null ? "" : customerPhone.trim();
+        this.type = type == null ? "" : type.trim();
+        this.debit = Math.max(0, debit);
+        this.credit = Math.max(0, credit);
+        this.balanceAfter = Math.max(0, balanceAfter);
+        this.description = description == null ? "" : description.trim();
+        this.reference = reference == null ? "" : reference.trim();
+        this.createdAt = createdAt == null ? "" : createdAt.trim();
+    }
+}

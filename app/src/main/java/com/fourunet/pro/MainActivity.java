@@ -663,6 +663,7 @@ public class MainActivity extends Activity {
     private void rebuildNav() {
         nav.removeAllViews();
         nav.addView(navButton("الإعدادات", "settings", "⚙", v -> showSettings()));
+        nav.addView(navButton("دفتر", "ledger", "▤", v -> showSmartLedger()));
         nav.addView(navButton("السجل", "logs", "◷", v -> showLogs()));
         nav.addView(navButton("استيراد", "import", "⇧", v -> showImport()));
         nav.addView(navButton("بيع مباشر", "direct", "✉", v -> showDirectSale()));
@@ -2286,6 +2287,16 @@ public class MainActivity extends Activity {
         auto.addView(small("الرسائل الموثوقة: Jawali / Jaib / ONE Cash + أي محفظة تضيفها من إدارة المحافظ والأسماء الموثوقة."));
         content.addView(auto);
 
+        LinearLayout ledger = cardBox();
+        ledger.addView(tv("الدفتر المحاسبي الذكي", 17, text, true));
+        ledger.addView(small("نافذة عريضة لإدارة حسابات الزبائن، السلف، القيود اليومية، وكشوفات الحساب. يمكن للزبون الموثوق إرسال: سلفني 100، كما يقوم السداد الآلي بخصم الدين أولاً ثم صرف كرت بالباقي عند وجود مبلغ مطابق."));
+        ledger.addView(separator());
+        ledger.addView(small("الحالة: " + (AppStore.isSmartLedgerEnabled(this) ? "مفعّل" : "متوقف")
+                + "\nإجمالي الديون: " + AppStore.ledgerTotalDebt(this) + " ريال"
+                + "\nالزبائن الموثوقون: " + AppStore.ledgerTrustedCount(this)));
+        ledger.addView(goldAnimatedAction("▤ فتح الدفتر المحاسبي الذكي", v -> showSmartLedger()), new LinearLayout.LayoutParams(-1, dp(58)));
+        content.addView(ledger);
+
         LinearLayout messages = cardBox();
         messages.addView(tv("مركز رسائل الزبائن", 17, text, true));
         messages.addView(small("من هنا تعدّل رسالة الكرت ورسالة نفاد الفئة بشكل واضح، وتضيف العروض أو الملاحظات قبل الإرسال."));
@@ -2335,6 +2346,205 @@ public class MainActivity extends Activity {
         content.addView(danger);
     }
 
+
+
+    private void showSmartLedger() {
+        setTab("ledger");
+        clear();
+        content.addView(title("الدفتر المحاسبي الذكي"));
+
+        LinearLayout head = cardBox();
+        head.addView(tv("نظام الدفتر الآلي", 18, text, true));
+        head.addView(small("يقيد الحوالات والسلف والسداد في حسابات الزبائن. عند تفعيل السداد الآلي: أي حوالة من زبون عليه دين تُخصم من دينه أولاً، وإذا بقي مبلغ مطابق لفئة كرت يتم صرف الكرت بالباقي."));
+        head.addView(separator());
+        head.addView(small("الحالة: " + (AppStore.isSmartLedgerEnabled(this) ? "مفعّل" : "متوقف")
+                + "\nالسلفة: " + (AppStore.isLedgerLoanEnabled(this) ? "مفعلة" : "متوقفة")
+                + "\nالسداد الآلي: " + (AppStore.isLedgerAutoSettleEnabled(this) ? "مفعل" : "متوقف")
+                + "\nإجمالي الديون: " + AppStore.ledgerTotalDebt(this) + " ريال"));
+        LinearLayout actions = new LinearLayout(this);
+        actions.setOrientation(LinearLayout.HORIZONTAL);
+        actions.addView(action("إعدادات", purple, Color.WHITE, v -> showSmartLedgerSettings()), new LinearLayout.LayoutParams(0, dp(50), 1));
+        actions.addView(action("زبون جديد", gold, Color.rgb(35,24,8), v -> showLedgerCustomerDialog(null)), new LinearLayout.LayoutParams(0, dp(50), 1));
+        head.addView(actions);
+        LinearLayout actions2 = new LinearLayout(this);
+        actions2.setOrientation(LinearLayout.HORIZONTAL);
+        actions2.addView(action("قيد يومي", card2, text, v -> showLedgerEntryDialog()), new LinearLayout.LayoutParams(0, dp(50), 1));
+        actions2.addView(action("رجوع للضبط", card2, text, v -> showSettings()), new LinearLayout.LayoutParams(0, dp(50), 1));
+        head.addView(actions2);
+        content.addView(head);
+
+        LinearLayout help = cardBox();
+        help.addView(tv("طريقة الرسائل", 17, text, true));
+        help.addView(small("طلب السلفة من الزبون الموثوق:\nسلفني 100\n\nالسداد الآلي:\nعند وصول حوالة من زبون عليه دين، يخصم النظام دينه أولاً. إذا بقي من الحوالة مبلغ يساوي فئة كرت موجودة، يرسل الكرت بالباقي. إذا لم يبق شيء، يرسل رسالة سداد فقط."));
+        content.addView(help);
+
+        LinearLayout customers = cardBox();
+        customers.addView(tv("حسابات الزبائن", 17, text, true));
+        ArrayList<LedgerCustomer> list = AppStore.loadLedgerCustomers(this);
+        if (list.isEmpty()) {
+            customers.addView(small("لا توجد حسابات زبائن بعد. أضف زبوناً موثوقاً لتفعيل سلفني والسداد الآلي."));
+        } else {
+            for (LedgerCustomer c : list) customers.addView(ledgerCustomerRow(c));
+        }
+        content.addView(customers);
+
+        LinearLayout entries = cardBox();
+        entries.addView(tv("آخر القيود", 17, text, true));
+        ArrayList<LedgerEntry> es = AppStore.loadLedgerEntries(this);
+        if (es.isEmpty()) entries.addView(small("لا توجد قيود محاسبية حتى الآن."));
+        int max = Math.min(8, es.size());
+        for (int i = 0; i < max; i++) entries.addView(ledgerEntryRow(es.get(i)));
+        content.addView(entries);
+    }
+
+    private View ledgerCustomerRow(LedgerCustomer c) {
+        LinearLayout box = new LinearLayout(this);
+        box.setOrientation(LinearLayout.VERTICAL);
+        box.setPadding(dp(12), dp(10), dp(12), dp(10));
+        box.setBackground(round(card2, dp(16), c.debt > 0 ? orange : Color.argb(70, 255,255,255), dp(1)));
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, -2);
+        lp.setMargins(0, dp(8), 0, 0);
+        box.setLayoutParams(lp);
+        box.addView(tv((c.name == null || c.name.isEmpty() ? c.phone : c.name) + "  —  " + c.phone, 15, text, true));
+        box.addView(small("الدين الحالي: " + c.debt + " ريال | حد السلفة: " + c.loanLimit + " | المتبقي من الحد: " + c.remainingLoan()
+                + "\nموثوق: " + (c.trusted ? "نعم" : "لا") + " | السلفة: " + (c.loanEnabled ? "مفعلة" : "متوقفة") + " | الحساب: " + (c.active ? "مفعل" : "متوقف")));
+        LinearLayout row = new LinearLayout(this);
+        row.setOrientation(LinearLayout.HORIZONTAL);
+        row.addView(action("كشف", purple, Color.WHITE, v -> showLedgerStatementDialog(c)), new LinearLayout.LayoutParams(0, dp(46), 1));
+        row.addView(action("تعديل", card, text, v -> showLedgerCustomerDialog(c)), new LinearLayout.LayoutParams(0, dp(46), 1));
+        row.addView(action("حذف", Color.rgb(82,30,42), Color.WHITE, v -> confirmDeleteLedgerCustomer(c)), new LinearLayout.LayoutParams(0, dp(46), 1));
+        box.addView(row);
+        return box;
+    }
+
+    private View ledgerEntryRow(LedgerEntry e) {
+        LinearLayout box = new LinearLayout(this);
+        box.setOrientation(LinearLayout.VERTICAL);
+        box.setPadding(dp(10), dp(8), dp(10), dp(8));
+        box.setBackground(round(Color.rgb(34, 31, 48), dp(14), Color.argb(45,255,255,255), dp(1)));
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, -2);
+        lp.setMargins(0, dp(7), 0, 0);
+        box.setLayoutParams(lp);
+        box.addView(tv(e.type + " — " + e.customerName, 14, text, true));
+        box.addView(small(e.createdAt + "\n" + e.description + "\nمدين: " + e.debit + " | دائن: " + e.credit + " | الرصيد: " + e.balanceAfter));
+        return box;
+    }
+
+    private void showSmartLedgerSettings() {
+        setTab("ledger");
+        clear();
+        content.addView(title("ضبط الدفتر المحاسبي الذكي"));
+        LinearLayout box = cardBox();
+        box.addView(tv("نافذة الضبط العريضة", 18, text, true));
+        box.addView(small("هذه الإعدادات لا تغيّر منطق نقاط البيع الحالي. الدفتر يعمل كطبقة مستقلة للسلف والقيود والسداد الآلي."));
+        Switch enabled = new Switch(this);
+        enabled.setText("تشغيل الدفتر المحاسبي الذكي");
+        enabled.setTextColor(text); enabled.setTextSize(16); enabled.setTypeface(appTypeface(true));
+        enabled.setChecked(AppStore.isSmartLedgerEnabled(this));
+        box.addView(enabled);
+        Switch loans = new Switch(this);
+        loans.setText("تشغيل ميزة سلفني للزبائن الموثوقين");
+        loans.setTextColor(text); loans.setTextSize(16); loans.setTypeface(appTypeface(true));
+        loans.setChecked(AppStore.isLedgerLoanEnabled(this));
+        box.addView(loans);
+        Switch settle = new Switch(this);
+        settle.setText("تشغيل السداد الآلي: خصم الدين أولاً ثم صرف كرت بالباقي");
+        settle.setTextColor(text); settle.setTextSize(16); settle.setTypeface(appTypeface(true));
+        settle.setChecked(AppStore.isLedgerAutoSettleEnabled(this));
+        box.addView(settle);
+        box.addView(action("حفظ إعدادات الدفتر", gold, Color.rgb(35,24,8), v -> {
+            AppStore.saveLedgerSettings(this, enabled.isChecked(), loans.isChecked(), settle.isChecked());
+            toast("تم حفظ إعدادات الدفتر المحاسبي");
+            showSmartLedger();
+        }), new LinearLayout.LayoutParams(-1, dp(54)));
+        box.addView(action("رجوع للدفتر", card2, text, v -> showSmartLedger()), new LinearLayout.LayoutParams(-1, dp(50)));
+        content.addView(box);
+    }
+
+    private EditText ledgerEdit(String hint, String value, int inputType) {
+        EditText e = new EditText(this);
+        e.setHint(hint);
+        e.setText(value == null ? "" : value);
+        e.setGravity(Gravity.RIGHT);
+        e.setInputType(inputType);
+        e.setTextColor(text);
+        e.setHintTextColor(muted);
+        return e;
+    }
+
+    private void showLedgerCustomerDialog(LedgerCustomer old) {
+        LinearLayout layout = new LinearLayout(this);
+        layout.setOrientation(LinearLayout.VERTICAL);
+        layout.setPadding(dp(14), dp(8), dp(14), dp(4));
+        EditText name = ledgerEdit("اسم الزبون", old == null ? "" : old.name, InputType.TYPE_CLASS_TEXT);
+        EditText phone = ledgerEdit("رقم الزبون 7xxxxxxxx", old == null ? "" : old.phone, InputType.TYPE_CLASS_PHONE);
+        EditText limit = ledgerEdit("حد السلفة", old == null ? "500" : String.valueOf(old.loanLimit), InputType.TYPE_CLASS_NUMBER);
+        EditText debt = ledgerEdit("الدين الحالي", old == null ? "0" : String.valueOf(old.debt), InputType.TYPE_CLASS_NUMBER);
+        EditText notes = ledgerEdit("ملاحظات", old == null ? "" : old.notes, InputType.TYPE_CLASS_TEXT);
+        CheckBox trusted = new CheckBox(this); trusted.setText("زبون موثوق"); trusted.setTextColor(text); trusted.setChecked(old != null && old.trusted);
+        CheckBox loanEnabled = new CheckBox(this); loanEnabled.setText("السلفة مفعلة له"); loanEnabled.setTextColor(text); loanEnabled.setChecked(old != null && old.loanEnabled);
+        CheckBox active = new CheckBox(this); active.setText("الحساب مفعل"); active.setTextColor(text); active.setChecked(old == null || old.active);
+        layout.addView(name); layout.addView(phone); layout.addView(limit); layout.addView(debt); layout.addView(notes); layout.addView(trusted); layout.addView(loanEnabled); layout.addView(active);
+        new AlertDialog.Builder(this)
+                .setTitle(old == null ? "إضافة زبون للدفتر" : "تعديل زبون")
+                .setView(layout)
+                .setPositiveButton("حفظ", (d,w) -> {
+                    int lim = safeInt(limit.getText().toString());
+                    int deb = safeInt(debt.getText().toString());
+                    AppStore.addOrUpdateLedgerCustomer(this, old == null ? "" : old.id, name.getText().toString(), phone.getText().toString(), trusted.isChecked(), loanEnabled.isChecked(), lim, deb, active.isChecked(), notes.getText().toString());
+                    toast("تم حفظ حساب الزبون");
+                    showSmartLedger();
+                })
+                .setNegativeButton("إلغاء", null)
+                .show();
+    }
+
+    private int safeInt(String value) {
+        try { return Math.max(0, Integer.parseInt(value == null ? "0" : value.trim())); } catch(Exception e) { return 0; }
+    }
+
+    private void showLedgerEntryDialog() {
+        LinearLayout layout = new LinearLayout(this);
+        layout.setOrientation(LinearLayout.VERTICAL);
+        layout.setPadding(dp(14), dp(8), dp(14), dp(4));
+        EditText phone = ledgerEdit("رقم الزبون", "", InputType.TYPE_CLASS_PHONE);
+        EditText desc = ledgerEdit("البيان / الوصف", "قيد يومي", InputType.TYPE_CLASS_TEXT);
+        EditText debit = ledgerEdit("مدين: يزيد الدين على الزبون", "0", InputType.TYPE_CLASS_NUMBER);
+        EditText credit = ledgerEdit("دائن: ينقص الدين من الزبون", "0", InputType.TYPE_CLASS_NUMBER);
+        layout.addView(phone); layout.addView(desc); layout.addView(debit); layout.addView(credit);
+        new AlertDialog.Builder(this)
+                .setTitle("إضافة قيد يومي")
+                .setView(layout)
+                .setPositiveButton("حفظ القيد", (d,w) -> {
+                    String ph = phone.getText().toString();
+                    if (!AppStore.isValidLocalMobile(ph)) { toast("رقم الزبون غير صحيح"); return; }
+                    LedgerCustomer c = AppStore.changeLedgerDebtByPhone(this, ph, safeInt(debit.getText().toString()), safeInt(credit.getText().toString()), "قيد يومي", desc.getText().toString(), "manual");
+                    toast("تم حفظ القيد. الرصيد الحالي: " + c.debt);
+                    showSmartLedger();
+                })
+                .setNegativeButton("إلغاء", null)
+                .show();
+    }
+
+    private void showLedgerStatementDialog(LedgerCustomer c) {
+        String statement = AppStore.buildLedgerCustomerStatement(this, c);
+        TextView view = messagePreviewText(statement);
+        new AlertDialog.Builder(this)
+                .setTitle("كشف حساب")
+                .setView(view)
+                .setPositiveButton("واتساب", (d,w) -> openWhatsAppBusinessMessage(c.phone, statement))
+                .setNegativeButton("إغلاق", null)
+                .show();
+    }
+
+    private void confirmDeleteLedgerCustomer(LedgerCustomer c) {
+        new AlertDialog.Builder(this)
+                .setTitle("حذف حساب زبون")
+                .setMessage("هل تريد حذف حساب: " + c.name + "؟\nلن تُحذف القيود القديمة من السجل المحاسبي.")
+                .setPositiveButton("حذف", (d,w) -> { AppStore.deleteLedgerCustomer(this, c.id); showSmartLedger(); })
+                .setNegativeButton("إلغاء", null)
+                .show();
+    }
 
     private void showSecuritySettings() {
         setTab("settings");

@@ -30,6 +30,11 @@ class AppStore {
     private static final String KEY_CATEGORIES = "categories";
     private static final String KEY_CARDS = "cards";
     private static final String KEY_LOGS = "logs";
+    private static final String KEY_LEDGER_CUSTOMERS = "ledger_customers_v12";
+    private static final String KEY_LEDGER_ENTRIES = "ledger_entries_v12";
+    private static final String KEY_LEDGER_ENABLED = "ledger_enabled_v12";
+    private static final String KEY_LEDGER_LOAN_ENABLED = "ledger_loan_enabled_v12";
+    private static final String KEY_LEDGER_AUTO_SETTLE_ENABLED = "ledger_auto_settle_enabled_v12";
     private static final String KEY_PROCESSED = "processed";
     private static final String KEY_EXACT_PAYMENT_TEXTS = "exact_payment_texts_v44";
     private static final String KEY_TRUSTED_REQUEST_LOCKS = "trusted_request_locks_v48";
@@ -2292,6 +2297,243 @@ class AppStore {
         if (changed) saveLogs(c, logs);
     }
 
+
+
+    static boolean isSmartLedgerEnabled(Context c) {
+        return prefs(c).getBoolean(KEY_LEDGER_ENABLED, false);
+    }
+
+    static boolean isLedgerLoanEnabled(Context c) {
+        return prefs(c).getBoolean(KEY_LEDGER_LOAN_ENABLED, true);
+    }
+
+    static boolean isLedgerAutoSettleEnabled(Context c) {
+        return prefs(c).getBoolean(KEY_LEDGER_AUTO_SETTLE_ENABLED, true);
+    }
+
+    static void saveLedgerSettings(Context c, boolean enabled, boolean loanEnabled, boolean autoSettleEnabled) {
+        prefs(c).edit()
+                .putBoolean(KEY_LEDGER_ENABLED, enabled)
+                .putBoolean(KEY_LEDGER_LOAN_ENABLED, loanEnabled)
+                .putBoolean(KEY_LEDGER_AUTO_SETTLE_ENABLED, autoSettleEnabled)
+                .apply();
+    }
+
+    static ArrayList<LedgerCustomer> loadLedgerCustomers(Context c) {
+        ArrayList<LedgerCustomer> list = new ArrayList<>();
+        try {
+            JSONArray arr = new JSONArray(prefs(c).getString(KEY_LEDGER_CUSTOMERS, "[]"));
+            for (int i = 0; i < arr.length(); i++) {
+                JSONObject o = arr.getJSONObject(i);
+                list.add(new LedgerCustomer(
+                        o.optString("id"),
+                        o.optString("name"),
+                        normalizeLocalPhone(o.optString("phone")),
+                        o.optBoolean("trusted", false),
+                        o.optBoolean("loanEnabled", false),
+                        o.optInt("loanLimit", 0),
+                        o.optInt("debt", 0),
+                        o.optBoolean("active", true),
+                        o.optString("notes"),
+                        o.optLong("createdAt", System.currentTimeMillis())
+                ));
+            }
+        } catch (Exception ignored) {}
+        return list;
+    }
+
+    static void saveLedgerCustomers(Context c, ArrayList<LedgerCustomer> list) {
+        try {
+            JSONArray arr = new JSONArray();
+            for (LedgerCustomer it : list) {
+                JSONObject o = new JSONObject();
+                o.put("id", it.id);
+                o.put("name", it.name);
+                o.put("phone", normalizeLocalPhone(it.phone));
+                o.put("trusted", it.trusted);
+                o.put("loanEnabled", it.loanEnabled);
+                o.put("loanLimit", Math.max(0, it.loanLimit));
+                o.put("debt", Math.max(0, it.debt));
+                o.put("active", it.active);
+                o.put("notes", it.notes == null ? "" : it.notes);
+                o.put("createdAt", it.createdAt);
+                arr.put(o);
+            }
+            prefs(c).edit().putString(KEY_LEDGER_CUSTOMERS, arr.toString()).apply();
+        } catch (Exception ignored) {}
+    }
+
+    static LedgerCustomer findLedgerCustomerByPhone(Context c, String phone) {
+        String clean = normalizeLocalPhone(phone);
+        if (clean.isEmpty()) return null;
+        for (LedgerCustomer it : loadLedgerCustomers(c)) {
+            if (it.active && normalizeLocalPhone(it.phone).equals(clean)) return it;
+        }
+        return null;
+    }
+
+    static void addOrUpdateLedgerCustomer(Context c, String id, String name, String phone, boolean trusted, boolean loanEnabled, int loanLimit, int debt, boolean active, String notes) {
+        ArrayList<LedgerCustomer> list = loadLedgerCustomers(c);
+        String cleanPhone = normalizeLocalPhone(phone);
+        String cleanId = id == null ? "" : id.trim();
+        boolean updated = false;
+        for (LedgerCustomer it : list) {
+            if ((!cleanId.isEmpty() && it.id.equals(cleanId)) || (!cleanPhone.isEmpty() && normalizeLocalPhone(it.phone).equals(cleanPhone))) {
+                it.name = name == null ? "" : name.trim();
+                it.phone = cleanPhone;
+                it.trusted = trusted;
+                it.loanEnabled = loanEnabled;
+                it.loanLimit = Math.max(0, loanLimit);
+                it.debt = Math.max(0, debt);
+                it.active = active;
+                it.notes = notes == null ? "" : notes.trim();
+                updated = true;
+                break;
+            }
+        }
+        if (!updated) {
+            list.add(0, new LedgerCustomer(UUID.randomUUID().toString(), name, cleanPhone, trusted, loanEnabled, loanLimit, debt, active, notes, System.currentTimeMillis()));
+        }
+        saveLedgerCustomers(c, list);
+    }
+
+    static void deleteLedgerCustomer(Context c, String id) {
+        ArrayList<LedgerCustomer> list = loadLedgerCustomers(c);
+        ArrayList<LedgerCustomer> next = new ArrayList<>();
+        for (LedgerCustomer it : list) if (!it.id.equals(id)) next.add(it);
+        saveLedgerCustomers(c, next);
+    }
+
+    static int ledgerTotalDebt(Context c) {
+        int total = 0;
+        for (LedgerCustomer it : loadLedgerCustomers(c)) if (it.active) total += Math.max(0, it.debt);
+        return total;
+    }
+
+    static int ledgerTrustedCount(Context c) {
+        int total = 0;
+        for (LedgerCustomer it : loadLedgerCustomers(c)) if (it.active && it.trusted) total++;
+        return total;
+    }
+
+    static ArrayList<LedgerEntry> loadLedgerEntries(Context c) {
+        ArrayList<LedgerEntry> list = new ArrayList<>();
+        try {
+            JSONArray arr = new JSONArray(prefs(c).getString(KEY_LEDGER_ENTRIES, "[]"));
+            for (int i = 0; i < arr.length(); i++) {
+                JSONObject o = arr.getJSONObject(i);
+                list.add(new LedgerEntry(
+                        o.optString("id"), o.optString("customerId"), o.optString("customerName"), normalizeLocalPhone(o.optString("customerPhone")),
+                        o.optString("type"), o.optInt("debit"), o.optInt("credit"), o.optInt("balanceAfter"),
+                        o.optString("description"), o.optString("reference"), o.optString("createdAt")
+                ));
+            }
+        } catch (Exception ignored) {}
+        return list;
+    }
+
+    static void saveLedgerEntries(Context c, ArrayList<LedgerEntry> list) {
+        try {
+            JSONArray arr = new JSONArray();
+            for (LedgerEntry e : list) {
+                JSONObject o = new JSONObject();
+                o.put("id", e.id);
+                o.put("customerId", e.customerId);
+                o.put("customerName", e.customerName);
+                o.put("customerPhone", normalizeLocalPhone(e.customerPhone));
+                o.put("type", e.type);
+                o.put("debit", Math.max(0, e.debit));
+                o.put("credit", Math.max(0, e.credit));
+                o.put("balanceAfter", Math.max(0, e.balanceAfter));
+                o.put("description", e.description == null ? "" : e.description);
+                o.put("reference", e.reference == null ? "" : e.reference);
+                o.put("createdAt", e.createdAt == null ? now() : e.createdAt);
+                arr.put(o);
+            }
+            prefs(c).edit().putString(KEY_LEDGER_ENTRIES, arr.toString()).apply();
+        } catch (Exception ignored) {}
+    }
+
+    static void addLedgerEntry(Context c, LedgerEntry entry) {
+        ArrayList<LedgerEntry> list = loadLedgerEntries(c);
+        list.add(0, entry);
+        while (list.size() > 2000) list.remove(list.size() - 1);
+        saveLedgerEntries(c, list);
+    }
+
+    static LedgerCustomer changeLedgerDebtByPhone(Context c, String phone, int debitAdd, int creditSubtract, String type, String description, String reference) {
+        ArrayList<LedgerCustomer> list = loadLedgerCustomers(c);
+        String clean = normalizeLocalPhone(phone);
+        LedgerCustomer target = null;
+        for (LedgerCustomer it : list) {
+            if (normalizeLocalPhone(it.phone).equals(clean)) { target = it; break; }
+        }
+        if (target == null) {
+            target = new LedgerCustomer(UUID.randomUUID().toString(), clean, clean, false, false, 0, 0, true, "تم إنشاؤه تلقائياً من الدفتر المحاسبي", System.currentTimeMillis());
+            list.add(0, target);
+        }
+        int before = Math.max(0, target.debt);
+        int after = Math.max(0, before + Math.max(0, debitAdd) - Math.max(0, creditSubtract));
+        target.debt = after;
+        saveLedgerCustomers(c, list);
+        addLedgerEntry(c, new LedgerEntry(UUID.randomUUID().toString(), target.id, target.name, target.phone, type,
+                Math.max(0, debitAdd), Math.max(0, creditSubtract), after,
+                description == null ? "" : description, reference == null ? "" : reference, now()));
+        return target;
+    }
+
+    static String buildLedgerCustomerStatement(Context c, LedgerCustomer customer) {
+        if (customer == null) return "";
+        String clean = normalizeLocalPhone(customer.phone);
+        StringBuilder sb = new StringBuilder();
+        sb.append("كشف حساب الزبون\n");
+        sb.append("الاسم: ").append(customer.name).append("\n");
+        sb.append("الرقم: ").append(clean).append("\n");
+        sb.append("الحالة: ").append(customer.active ? "مفعل" : "متوقف").append("\n");
+        sb.append("موثوق للسلفة: ").append(customer.trusted && customer.loanEnabled ? "نعم" : "لا").append("\n");
+        sb.append("حد السلفة: ").append(customer.loanLimit).append(" ريال\n");
+        sb.append("الرصيد الحالي عليه: ").append(customer.debt).append(" ريال\n");
+        sb.append("------------------------------\n");
+        sb.append("التاريخ | البيان | مدين | دائن | الرصيد\n");
+        int count = 0;
+        for (LedgerEntry e : loadLedgerEntries(c)) {
+            if (!normalizeLocalPhone(e.customerPhone).equals(clean)) continue;
+            sb.append(e.createdAt).append(" | ")
+                    .append(e.description).append(" | ")
+                    .append(e.debit).append(" | ")
+                    .append(e.credit).append(" | ")
+                    .append(e.balanceAfter).append("\n");
+            count++;
+            if (count >= 80) break;
+        }
+        if (count == 0) sb.append("لا توجد قيود لهذا الزبون حتى الآن.\n");
+        sb.append("------------------------------\n");
+        sb.append(SYSTEM_SIGNATURE);
+        return sb.toString();
+    }
+
+    static boolean isLoanRequestText(String body) {
+        String v = normalizeArabicDigits(body == null ? "" : body).trim().toLowerCase(Locale.US);
+        return v.startsWith("سلفني") || v.startsWith("سلفة") || v.startsWith("سلفه");
+    }
+
+    static int extractLoanAmount(String body) {
+        String v = normalizeArabicDigits(body == null ? "" : body);
+        try {
+            java.util.regex.Matcher m = java.util.regex.Pattern.compile("(\\d{2,5})").matcher(v);
+            if (m.find()) return Integer.parseInt(m.group(1));
+        } catch (Exception ignored) {}
+        return 0;
+    }
+
+    private static String normalizeArabicDigits(String value) {
+        if (value == null) return "";
+        return value.replace('٠','0').replace('١','1').replace('٢','2').replace('٣','3').replace('٤','4')
+                .replace('٥','5').replace('٦','6').replace('٧','7').replace('٨','8').replace('٩','9')
+                .replace('۰','0').replace('۱','1').replace('۲','2').replace('۳','3').replace('۴','4')
+                .replace('۵','5').replace('۶','6').replace('۷','7').replace('۸','8').replace('۹','9');
+    }
+
     private static String sha256(String value) {
         try {
             MessageDigest digest = MessageDigest.getInstance("SHA-256");
@@ -2618,6 +2860,9 @@ class AppStore {
         settings.put(KEY_POS_INVALID_CATEGORY_TEMPLATE, getPosInvalidCategoryTemplate(c));
         settings.put(KEY_POS_AMBIGUOUS_TEMPLATE, getPosAmbiguousTemplate(c));
         settings.put(KEY_UPDATE_MANIFEST_URL, getUpdateManifestUrl(c));
+        settings.put(KEY_LEDGER_ENABLED, isSmartLedgerEnabled(c));
+        settings.put(KEY_LEDGER_LOAN_ENABLED, isLedgerLoanEnabled(c));
+        settings.put(KEY_LEDGER_AUTO_SETTLE_ENABLED, isLedgerAutoSettleEnabled(c));
         root.put("settings", settings);
 
         root.put(KEY_CATEGORIES, new JSONArray(prefs(c).getString(KEY_CATEGORIES, "[]")));
@@ -2626,6 +2871,8 @@ class AppStore {
         root.put(KEY_TRUSTED, new JSONArray(prefs(c).getString(KEY_TRUSTED, "[]")));
         root.put(KEY_TRUSTED_CREDIT_AGENTS, new JSONArray(prefs(c).getString(KEY_TRUSTED_CREDIT_AGENTS, "[]")));
         root.put(KEY_POS_OUTLETS, new JSONArray(prefs(c).getString(KEY_POS_OUTLETS, "[]")));
+        root.put(KEY_LEDGER_CUSTOMERS, new JSONArray(prefs(c).getString(KEY_LEDGER_CUSTOMERS, "[]")));
+        root.put(KEY_LEDGER_ENTRIES, new JSONArray(prefs(c).getString(KEY_LEDGER_ENTRIES, "[]")));
 
         JSONArray processed = new JSONArray();
         for (String item : loadProcessed(c)) processed.put(item);
@@ -3045,6 +3292,9 @@ class AppStore {
             if (settings.has(KEY_REWARD_EXPIRY_ENABLED)) editor.putBoolean(KEY_REWARD_EXPIRY_ENABLED, settings.optBoolean(KEY_REWARD_EXPIRY_ENABLED, false));
             if (settings.has(KEY_REWARD_EXPIRY_DAYS)) editor.putInt(KEY_REWARD_EXPIRY_DAYS, Math.max(1, settings.optInt(KEY_REWARD_EXPIRY_DAYS, DEFAULT_REWARD_EXPIRY_DAYS)));
             if (settings.has(KEY_UPDATE_MANIFEST_URL)) editor.putString(KEY_UPDATE_MANIFEST_URL, settings.optString(KEY_UPDATE_MANIFEST_URL, DEFAULT_UPDATE_MANIFEST_URL));
+            if (settings.has(KEY_LEDGER_ENABLED)) editor.putBoolean(KEY_LEDGER_ENABLED, settings.optBoolean(KEY_LEDGER_ENABLED, false));
+            if (settings.has(KEY_LEDGER_LOAN_ENABLED)) editor.putBoolean(KEY_LEDGER_LOAN_ENABLED, settings.optBoolean(KEY_LEDGER_LOAN_ENABLED, true));
+            if (settings.has(KEY_LEDGER_AUTO_SETTLE_ENABLED)) editor.putBoolean(KEY_LEDGER_AUTO_SETTLE_ENABLED, settings.optBoolean(KEY_LEDGER_AUTO_SETTLE_ENABLED, true));
         }
 
         JSONArray categories = root.optJSONArray(KEY_CATEGORIES);
@@ -3057,6 +3307,8 @@ class AppStore {
         JSONArray importedBatches = root.optJSONArray(KEY_IMPORTED_BATCHES);
         JSONArray restoreHistory = root.optJSONArray(KEY_RESTORE_HISTORY);
         JSONArray customerRewards = root.optJSONArray(KEY_CUSTOMER_REWARDS);
+        JSONArray ledgerCustomers = root.optJSONArray(KEY_LEDGER_CUSTOMERS);
+        JSONArray ledgerEntries = root.optJSONArray(KEY_LEDGER_ENTRIES);
         String backupCreatedAt = root.optString("createdAt", "");
 
         if (categories != null) editor.putString(KEY_CATEGORIES, categories.toString());
@@ -3065,6 +3317,8 @@ class AppStore {
         if (trusted != null) editor.putString(KEY_TRUSTED, trusted.toString());
             if (trustedCreditAgents != null) editor.putString(KEY_TRUSTED_CREDIT_AGENTS, trustedCreditAgents.toString());
         if (posOutlets != null) editor.putString(KEY_POS_OUTLETS, posOutlets.toString());
+        if (ledgerCustomers != null) editor.putString(KEY_LEDGER_CUSTOMERS, ledgerCustomers.toString());
+        if (ledgerEntries != null) editor.putString(KEY_LEDGER_ENTRIES, ledgerEntries.toString());
         if (processed != null) {
             HashSet<String> set = new HashSet<>();
             for (int i = 0; i < processed.length(); i++) set.add(processed.optString(i));
