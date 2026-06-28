@@ -228,6 +228,7 @@ class SmsProcessor {
 
         String receiver = cleanPhone(payment.customerPhone);
         String messageNote = "تمت المعالجة تلقائيًا";
+        LedgerCustomer resolvedLedgerCustomer = null;
 
         if (!isValidLocalMobile(receiver)) {
             TrustedContact contact = AppStore.findWalletContact(context, payment.customerName, sender, body);
@@ -238,11 +239,24 @@ class SmsProcessor {
             }
         }
 
+        // FIX STAGE 12.7:
+        // إذا وصلت حوالة/إيداع باسم عميل موجود في الدفتر، نربطها بحسابه حتى لو لم تحمل الرسالة رقم العميل.
+        // أي إيداع مرتبط بحساب دفتر يُرحّل كسداد/رصيد فقط ولا يصرف كرت بسبب الإيداع.
+        if (AppStore.isSmartLedgerEnabled(context) && AppStore.isLedgerAutoSettleEnabled(context)) {
+            if (isValidLocalMobile(receiver)) resolvedLedgerCustomer = AppStore.findLedgerCustomerByPhone(context, receiver);
+            if (resolvedLedgerCustomer == null) resolvedLedgerCustomer = AppStore.findLedgerCustomerByName(context, payment.customerName);
+            if (resolvedLedgerCustomer != null && resolvedLedgerCustomer.active) {
+                receiver = cleanPhone(resolvedLedgerCustomer.phone);
+                if (payment.customerName == null || payment.customerName.trim().isEmpty()) payment.customerName = resolvedLedgerCustomer.name;
+                messageNote = messageNote + "\nتم ربط الإيداع بحساب الدفتر: " + resolvedLedgerCustomer.name + " - " + receiver;
+            }
+        }
+
         if (!isValidLocalMobile(receiver)) {
             String name = payment.customerName == null ? "" : payment.customerName.trim();
             String note = name.isEmpty()
-                    ? "تم التعرف على عملية إيداع صحيحة لكن لا يوجد رقم زبون صحيح مكون من 9 أرقام ويبدأ بـ 7. راجع الرسالة ثم احذفها أو أضف الاسم إلى المحافظ الموثوقة إذا كنت تعرف رقم العميل."
-                    : "تم التعرف على عملية إيداع صحيحة باسم: " + name + "، لكن لا يوجد رقم زبون صحيح مكون من 9 أرقام ويبدأ بـ 7. من السجل يمكنك الضغط على زر إضافة الاسم للمحافظ الموثوقة أو حذف الإشعار.";
+                    ? "تم التعرف على عملية إيداع صحيحة لكن لا يوجد رقم زبون صحيح مكون من 9 أرقام ويبدأ بـ 7، ولم يتم العثور على حساب مطابق في الدفتر. راجع الرسالة ثم أضف الرقم/الاسم."
+                    : "تم التعرف على عملية إيداع صحيحة باسم: " + name + "، لكن لا يوجد رقم زبون صحيح ولم يتم العثور على حساب مطابق في الدفتر. أضف الاسم إلى الدفتر أو المحافظ الموثوقة ثم عالج الإشعار.";
             String pendingLogId = addLog(context, payment.provider, sender, name, "", payment.amount, "إيداع صريح غير منفذ: يحتاج إضافة اسم", note + "\nنص الرسالة الأصلي:\n" + body, "");
             NotifyHelper.notifyExplicitDepositReview(context, pendingLogId, payment.amount, payment.provider, name, "لا يوجد رقم استلام صحيح");
             return;
@@ -256,7 +270,7 @@ class SmsProcessor {
         // أي إيداع من زبون موجود في الدفتر المحاسبي يُعامل كسداد/رصيد فقط.
         // لا يتم صرف كرت بسبب الإيداع نهائياً؛ صرف الكرت يكون فقط عندما يرسل الزبون رقم الفئة بنفسه مثل 100.
         if (AppStore.isSmartLedgerEnabled(context) && AppStore.isLedgerAutoSettleEnabled(context)) {
-            LedgerCustomer debtor = AppStore.findLedgerCustomerByPhone(context, receiver);
+            LedgerCustomer debtor = resolvedLedgerCustomer != null ? resolvedLedgerCustomer : AppStore.findLedgerCustomerByPhone(context, receiver);
             if (debtor != null && debtor.active) {
                 int debtBefore = debtor.debt;
                 int creditBefore = debtor.creditBalance;

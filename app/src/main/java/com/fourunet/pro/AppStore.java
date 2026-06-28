@@ -2383,6 +2383,29 @@ class AppStore {
         return null;
     }
 
+    private static String normalizeLedgerNameKey(String name) {
+        String s = name == null ? "" : name.trim();
+        if (s.isEmpty()) return "";
+        s = s.replace('أ', 'ا').replace('إ', 'ا').replace('آ', 'ا').replace('ى', 'ي').replace('ة', 'ه');
+        s = s.replaceAll("[\\p{Punct}\\u060C\\u061B\\u061F]", " ");
+        s = s.replaceAll("\\s+", " ").trim();
+        return s;
+    }
+
+    static LedgerCustomer findLedgerCustomerByName(Context c, String name) {
+        String key = normalizeLedgerNameKey(name);
+        if (key.length() < 2) return null;
+        LedgerCustomer soft = null;
+        for (LedgerCustomer it : loadLedgerCustomers(c)) {
+            if (it == null) continue;
+            String n = normalizeLedgerNameKey(it.name);
+            if (n.isEmpty()) continue;
+            if (n.equals(key)) return it;
+            if (soft == null && key.length() >= 4 && n.length() >= 4 && (n.contains(key) || key.contains(n))) soft = it;
+        }
+        return soft;
+    }
+
     static String ledgerModeLabel(String mode) {
         String m = LedgerCustomer.sanitizeMode(mode);
         if (LedgerCustomer.MODE_AUTO_FULL.equals(m)) return "آلي كامل";

@@ -5234,6 +5234,12 @@ public class MainActivity extends Activity {
             if (isPdfDividerLine(line)) { st.y += 6; continue; }
             if (line.equals("شبكة فور يو") || line.equals("شبكة لان فور يو") || line.equals("فور يو") || line.equals("لان فور يو")) continue;
             if (isReportTableLine(line)) {
+                boolean headerLine = line.contains("الوقت والتاريخ") || line.contains("طريقة السداد") || line.contains("طريقة الدفع");
+                if (headerLine && st.y + 95 > st.h - 56) {
+                    finishStyledPdfPage(st);
+                    st.pageNo++;
+                    startStyledPdfPage(st, "تفاصيل العمليات");
+                }
                 drawPdfReportTableRow(st, line);
                 inDetails = true;
                 continue;
@@ -5242,6 +5248,7 @@ public class MainActivity extends Activity {
             if (line.equals("الملخص") || line.equals("ملخص الفئات") || line.equals("ملخص الفئة") || line.equals("ملخص نقاط البيع") || line.equals("تفاصيل العمليات") || line.equals("بيانات نقطة البيع") || line.equals("طريقة الشراء") || line.contains("طلبات الرصيد")) {
                 currentTitle = line;
                 inDetails = line.equals("تفاصيل العمليات");
+                if (inDetails) ensurePdfSpace(st, 150, line);
                 drawPdfSectionTitle(st, line);
                 continue;
             }
@@ -5349,15 +5356,22 @@ public class MainActivity extends Activity {
             wrapped.add(w);
             maxLines = Math.max(maxLines, w.size());
         }
-        int rowH = header ? 30 : Math.max(34, 18 + maxLines * 14);
-        ensurePdfSpace(st, rowH + 4, "تفاصيل العمليات");
+        int rowH = header ? 30 : Math.max(38, 20 + maxLines * 15);
+        if (st.y + rowH + 4 > st.h - 56) {
+            finishStyledPdfPage(st);
+            st.pageNo++;
+            startStyledPdfPage(st, "تفاصيل العمليات");
+            if (!header) {
+                drawPdfReportTableRow(st, REPORT_TABLE_HEADER);
+            }
+        }
         Paint fill = new Paint(Paint.ANTI_ALIAS_FLAG);
         fill.setColor(header ? Color.rgb(80, 55, 132) : Color.rgb(253, 252, 255));
         Paint border = new Paint(Paint.ANTI_ALIAS_FLAG);
         border.setStyle(Paint.Style.STROKE);
         border.setStrokeWidth(0.8f);
         border.setColor(Color.rgb(222, 216, 234));
-        Paint textPaint = pdfPaint(header ? Color.WHITE : Color.rgb(40, 38, 48), header ? 8.3f : 8.0f, header, Paint.Align.RIGHT);
+        Paint textPaint = pdfPaint(header ? Color.WHITE : Color.rgb(40, 38, 48), header ? 9.0f : 8.6f, header, Paint.Align.RIGHT);
         int right = st.w - st.margin;
         for (int i = 0; i < 6; i++) {
             int left = right - widths[i];
@@ -5369,8 +5383,8 @@ public class MainActivity extends Activity {
                 if (cellText.length() > 0) cellText.append("\n");
                 cellText.append(txt == null || txt.isEmpty() ? "-" : txt);
             }
-            drawPdfTextBlock(st.canvas, cellText.toString(), left + 4, st.y + (header ? 6 : 7), Math.max(8, widths[i] - 8), rowH - 8,
-                    header ? Color.WHITE : Color.rgb(40, 38, 48), header ? 8.3f : 8.0f, header, Layout.Alignment.ALIGN_OPPOSITE);
+            drawPdfTextBlock(st.canvas, cellText.toString(), left + 4, st.y + (header ? 7 : 8), Math.max(8, widths[i] - 8), rowH - 8,
+                    header ? Color.WHITE : Color.rgb(40, 38, 48), header ? 9.0f : 8.6f, header, Layout.Alignment.ALIGN_OPPOSITE);
             right = left;
         }
         st.y += rowH + 3;
