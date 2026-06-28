@@ -25,6 +25,9 @@ import android.provider.OpenableColumns;
 import android.provider.ContactsContract;
 import android.os.StrictMode;
 import android.text.InputType;
+import android.text.Layout;
+import android.text.StaticLayout;
+import android.text.TextPaint;
 import android.text.Editable;
 import android.text.TextWatcher;
 import android.view.Gravity;
@@ -2360,12 +2363,13 @@ public class MainActivity extends Activity {
 
         LinearLayout head = cardBox();
         head.addView(tv("نظام الدفتر الآلي", 18, text, true));
-        head.addView(small("يقيد الحوالات والسلف والسداد في حسابات الزبائن. عند تفعيل السداد الآلي: أي حوالة من زبون عليه دين تُخصم من دينه أولاً، وإذا بقي مبلغ مطابق لفئة كرت يتم صرف الكرت بالباقي."));
+        head.addView(small("يقيد الإيداعات والسلف والسداد في حسابات الزبائن. التحديث الجديد: أي إيداع من عميل موجود في الدفتر يُرحّل كسداد/رصيد فقط، وصرف الكرت يتم فقط إذا أرسل العميل رقم الفئة مثل 100."));
         head.addView(separator());
         head.addView(small("الحالة: " + (AppStore.isSmartLedgerEnabled(this) ? "مفعّل" : "متوقف")
                 + "\nالسلفة: " + (AppStore.isLedgerLoanEnabled(this) ? "مفعلة" : "متوقفة")
                 + "\nالسداد الآلي: " + (AppStore.isLedgerAutoSettleEnabled(this) ? "مفعل" : "متوقف")
-                + "\nإجمالي الديون: " + AppStore.ledgerTotalDebt(this) + " ريال"));
+                + "\nإجمالي الديون: " + AppStore.ledgerTotalDebt(this) + " ريال"
+                + "\nإجمالي أرصدة العملاء: " + AppStore.ledgerTotalCreditBalance(this) + " ريال"));
         LinearLayout actions = new LinearLayout(this);
         actions.setOrientation(LinearLayout.HORIZONTAL);
         actions.addView(action("إعدادات", purple, Color.WHITE, v -> showSmartLedgerSettings()), new LinearLayout.LayoutParams(0, dp(50), 1));
@@ -2380,7 +2384,7 @@ public class MainActivity extends Activity {
 
         LinearLayout help = cardBox();
         help.addView(tv("طريقة الرسائل", 17, text, true));
-        help.addView(small("طلب السلفة من الزبون الموثوق:\nسلفني 100\n\nالسداد الآلي:\nعند وصول حوالة من زبون عليه دين، يخصم النظام دينه أولاً. إذا بقي من الحوالة مبلغ يساوي فئة كرت موجودة، يرسل الكرت بالباقي. إذا لم يبق شيء، يرسل رسالة سداد فقط."));
+        help.addView(small("طلب السلفة من العميل على وضع آلي كامل:\n100 أو 150 أو 500\n\nالإيداعات:\nأي إيداع من ون كاش/جوالي/جيب/كريمي/فلوسك/المحل يخصم من الدين، والزائد يتحفظ كرصيد للعميل. لا يتم صرف كرت بسبب الإيداع."));
         content.addView(help);
 
         LinearLayout customers = cardBox();
@@ -2406,13 +2410,13 @@ public class MainActivity extends Activity {
         LinearLayout box = new LinearLayout(this);
         box.setOrientation(LinearLayout.VERTICAL);
         box.setPadding(dp(12), dp(10), dp(12), dp(10));
-        box.setBackground(round(card2, dp(16), c.debt > 0 ? orange : Color.argb(70, 255,255,255), dp(1)));
+        box.setBackground(round(card2, dp(16), c.debt > 0 ? orange : (c.creditBalance > 0 ? gold : Color.argb(70, 255,255,255)), dp(1)));
         LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, -2);
         lp.setMargins(0, dp(8), 0, 0);
         box.setLayoutParams(lp);
         box.addView(tv((c.name == null || c.name.isEmpty() ? c.phone : c.name) + "  —  " + c.phone, 15, text, true));
-        box.addView(small("الدين الحالي: " + c.debt + " ريال | حد السلفة: " + c.loanLimit + " | المتبقي من الحد: " + c.remainingLoan()
-                + "\nموثوق: " + (c.trusted ? "نعم" : "لا") + " | السلفة: " + (c.loanEnabled ? "مفعلة" : "متوقفة") + " | الحساب: " + (c.active ? "مفعل" : "متوقف")));
+        box.addView(small("الدين الحالي: " + c.debt + " ريال | الرصيد: " + c.creditBalance + " ريال | حد السلفة: " + c.loanLimit
+                + "\nالمتاح من السقف: " + c.remainingLoan() + " ريال | وضع التعامل: " + AppStore.ledgerModeLabel(c.effectiveMode())));
         LinearLayout row = new LinearLayout(this);
         row.setOrientation(LinearLayout.HORIZONTAL);
         row.addView(action("كشف", purple, Color.WHITE, v -> showLedgerStatementDialog(c)), new LinearLayout.LayoutParams(0, dp(46), 1));
@@ -2430,8 +2434,11 @@ public class MainActivity extends Activity {
         LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, -2);
         lp.setMargins(0, dp(7), 0, 0);
         box.setLayoutParams(lp);
-        box.addView(tv(e.type + " — " + e.customerName, 14, text, true));
-        box.addView(small(e.createdAt + "\n" + e.description + "\nمدين: " + e.debit + " | دائن: " + e.credit + " | الرصيد: " + e.balanceAfter));
+        box.addView(tv((e.status == null ? LedgerEntry.inferStatus(e.type) : e.status) + " — " + e.customerName, 14, text, true));
+        box.addView(small(e.createdAt
+                + "\nالفئة/المبلغ: " + AppStore.ledgerEntryAmount(e) + " | الطريقة: " + (e.paymentMethod == null ? LedgerEntry.inferPaymentMethod(e.type, e.reference) : e.paymentMethod)
+                + "\n" + e.description
+                + "\nمدين: " + e.debit + " | دائن: " + e.credit + " | المتبقي عليه: " + e.balanceAfter));
         return box;
     }
 
@@ -2441,7 +2448,7 @@ public class MainActivity extends Activity {
         content.addView(title("ضبط الدفتر المحاسبي الذكي"));
         LinearLayout box = cardBox();
         box.addView(tv("نافذة الضبط العريضة", 18, text, true));
-        box.addView(small("هذه الإعدادات لا تغيّر منطق نقاط البيع الحالي. الدفتر يعمل كطبقة مستقلة للسلف والقيود والسداد الآلي."));
+        box.addView(small("هذه الإعدادات تضبط الدفتر فقط. الإيداعات من عملاء الدفتر تُحسب كسداد/رصيد، وطلبات الكروت تتم برسالة رقم الفئة من العميل."));
         Switch enabled = new Switch(this);
         enabled.setText("تشغيل الدفتر المحاسبي الذكي");
         enabled.setTextColor(text); enabled.setTextSize(16); enabled.setTypeface(appTypeface(true));
@@ -2453,7 +2460,7 @@ public class MainActivity extends Activity {
         loans.setChecked(AppStore.isLedgerLoanEnabled(this));
         box.addView(loans);
         Switch settle = new Switch(this);
-        settle.setText("تشغيل السداد الآلي: خصم الدين أولاً ثم صرف كرت بالباقي");
+        settle.setText("تشغيل ترحيل الإيداعات كسداد/رصيد لعملاء الدفتر");
         settle.setTextColor(text); settle.setTextSize(16); settle.setTypeface(appTypeface(true));
         settle.setChecked(AppStore.isLedgerAutoSettleEnabled(this));
         box.addView(settle);
@@ -2472,8 +2479,8 @@ public class MainActivity extends Activity {
         e.setText(value == null ? "" : value);
         e.setGravity(Gravity.RIGHT);
         e.setInputType(inputType);
-        e.setTextColor(text);
-        e.setHintTextColor(muted);
+        e.setTextColor(Color.rgb(25,25,30));
+        e.setHintTextColor(Color.rgb(150,150,160));
         return e;
     }
 
@@ -2483,20 +2490,54 @@ public class MainActivity extends Activity {
         layout.setPadding(dp(14), dp(8), dp(14), dp(4));
         EditText name = ledgerEdit("اسم الزبون", old == null ? "" : old.name, InputType.TYPE_CLASS_TEXT);
         EditText phone = ledgerEdit("رقم الزبون 7xxxxxxxx", old == null ? "" : old.phone, InputType.TYPE_CLASS_PHONE);
-        EditText limit = ledgerEdit("حد السلفة", old == null ? "500" : String.valueOf(old.loanLimit), InputType.TYPE_CLASS_NUMBER);
-        EditText debt = ledgerEdit("الدين الحالي", old == null ? "0" : String.valueOf(old.debt), InputType.TYPE_CLASS_NUMBER);
+        EditText limit = ledgerEdit("سقف السلفة", old == null ? "500" : String.valueOf(old.loanLimit), InputType.TYPE_CLASS_NUMBER);
+        EditText debt = ledgerEdit("المتبقي عليه / المديونية", old == null ? "0" : String.valueOf(old.debt), InputType.TYPE_CLASS_NUMBER);
+        EditText credit = ledgerEdit("رصيد العميل", old == null ? "0" : String.valueOf(old.creditBalance), InputType.TYPE_CLASS_NUMBER);
         EditText notes = ledgerEdit("ملاحظات", old == null ? "" : old.notes, InputType.TYPE_CLASS_TEXT);
-        CheckBox trusted = new CheckBox(this); trusted.setText("زبون موثوق"); trusted.setTextColor(text); trusted.setChecked(old != null && old.trusted);
-        CheckBox loanEnabled = new CheckBox(this); loanEnabled.setText("السلفة مفعلة له"); loanEnabled.setTextColor(text); loanEnabled.setChecked(old != null && old.loanEnabled);
-        CheckBox active = new CheckBox(this); active.setText("الحساب مفعل"); active.setTextColor(text); active.setChecked(old == null || old.active);
-        layout.addView(name); layout.addView(phone); layout.addView(limit); layout.addView(debt); layout.addView(notes); layout.addView(trusted); layout.addView(loanEnabled); layout.addView(active);
+
+        TextView modeTitle = tv("طريقة التعامل مع العميل", 15, Color.rgb(25,25,30), true);
+        modeTitle.setPadding(0, dp(8), 0, dp(2));
+        RadioGroup modes = new RadioGroup(this);
+        modes.setOrientation(RadioGroup.VERTICAL);
+        RadioButton autoFull = new RadioButton(this);
+        autoFull.setId(1001);
+        autoFull.setText("آلي كامل: يطلب كرت + يسدد + الزائد رصيد");
+        autoFull.setTextColor(Color.rgb(25,25,30));
+        RadioButton settleOnly = new RadioButton(this);
+        settleOnly.setId(1002);
+        settleOnly.setText("إيقاف السلف / سداد فقط");
+        settleOnly.setTextColor(Color.rgb(25,25,30));
+        RadioButton stopped = new RadioButton(this);
+        stopped.setId(1003);
+        stopped.setText("موقوف: لا صرف ولا سداد تلقائي");
+        stopped.setTextColor(Color.rgb(25,25,30));
+        modes.addView(autoFull);
+        modes.addView(settleOnly);
+        modes.addView(stopped);
+        String oldMode = old == null ? LedgerCustomer.MODE_AUTO_FULL : old.effectiveMode();
+        if (LedgerCustomer.MODE_AUTO_FULL.equals(oldMode)) modes.check(1001);
+        else if (LedgerCustomer.MODE_SETTLE_ONLY.equals(oldMode)) modes.check(1002);
+        else modes.check(1003);
+
+        layout.addView(name);
+        layout.addView(phone);
+        layout.addView(limit);
+        layout.addView(debt);
+        layout.addView(credit);
+        layout.addView(notes);
+        layout.addView(modeTitle);
+        layout.addView(modes);
         new AlertDialog.Builder(this)
                 .setTitle(old == null ? "إضافة زبون للدفتر" : "تعديل زبون")
                 .setView(layout)
                 .setPositiveButton("حفظ", (d,w) -> {
                     int lim = safeInt(limit.getText().toString());
                     int deb = safeInt(debt.getText().toString());
-                    AppStore.addOrUpdateLedgerCustomer(this, old == null ? "" : old.id, name.getText().toString(), phone.getText().toString(), trusted.isChecked(), loanEnabled.isChecked(), lim, deb, active.isChecked(), notes.getText().toString());
+                    int cr = safeInt(credit.getText().toString());
+                    String mode = LedgerCustomer.MODE_AUTO_FULL;
+                    if (modes.getCheckedRadioButtonId() == 1002) mode = LedgerCustomer.MODE_SETTLE_ONLY;
+                    else if (modes.getCheckedRadioButtonId() == 1003) mode = LedgerCustomer.MODE_STOPPED;
+                    AppStore.addOrUpdateLedgerCustomer(this, old == null ? "" : old.id, name.getText().toString(), phone.getText().toString(), lim, deb, cr, mode, notes.getText().toString());
                     toast("تم حفظ حساب الزبون");
                     showSmartLedger();
                 })
@@ -2513,18 +2554,28 @@ public class MainActivity extends Activity {
         layout.setOrientation(LinearLayout.VERTICAL);
         layout.setPadding(dp(14), dp(8), dp(14), dp(4));
         EditText phone = ledgerEdit("رقم الزبون", "", InputType.TYPE_CLASS_PHONE);
-        EditText desc = ledgerEdit("البيان / الوصف", "قيد يومي", InputType.TYPE_CLASS_TEXT);
+        EditText desc = ledgerEdit("الملاحظة / البيان", "قيد يدوي", InputType.TYPE_CLASS_TEXT);
         EditText debit = ledgerEdit("مدين: يزيد الدين على الزبون", "0", InputType.TYPE_CLASS_NUMBER);
-        EditText credit = ledgerEdit("دائن: ينقص الدين من الزبون", "0", InputType.TYPE_CLASS_NUMBER);
-        layout.addView(phone); layout.addView(desc); layout.addView(debit); layout.addView(credit);
+        EditText credit = ledgerEdit("دائن: سداد/ينقص الدين", "0", InputType.TYPE_CLASS_NUMBER);
+        Spinner method = new Spinner(this);
+        String[] methods = new String[]{"قيد يدوي", "ون كاش", "جوالي", "جيب", "كريمي", "فلوسك", "عن طريق المحل", "إدارة"};
+        method.setAdapter(new ArrayAdapter<String>(this, android.R.layout.simple_spinner_dropdown_item, methods));
+        layout.addView(phone);
+        layout.addView(desc);
+        layout.addView(debit);
+        layout.addView(credit);
+        layout.addView(method);
         new AlertDialog.Builder(this)
                 .setTitle("إضافة قيد يومي")
                 .setView(layout)
                 .setPositiveButton("حفظ القيد", (d,w) -> {
                     String ph = phone.getText().toString();
                     if (!AppStore.isValidLocalMobile(ph)) { toast("رقم الزبون غير صحيح"); return; }
-                    LedgerCustomer c = AppStore.changeLedgerDebtByPhone(this, ph, safeInt(debit.getText().toString()), safeInt(credit.getText().toString()), "قيد يومي", desc.getText().toString(), "manual");
-                    toast("تم حفظ القيد. الرصيد الحالي: " + c.debt);
+                    int deb = safeInt(debit.getText().toString());
+                    int cr = safeInt(credit.getText().toString());
+                    String pm = method.getSelectedItem() == null ? "قيد يدوي" : method.getSelectedItem().toString();
+                    LedgerCustomer c = AppStore.changeLedgerDebtByPhone(this, ph, deb, cr, deb > 0 ? "قيد مدين" : "سداد", desc.getText().toString(), pm, pm, deb > 0 ? "سلفة" : "سداد");
+                    toast("تم حفظ القيد. المتبقي عليه: " + c.debt + " | رصيده: " + c.creditBalance);
                     showSmartLedger();
                 })
                 .setNegativeButton("إلغاء", null)
@@ -2533,13 +2584,17 @@ public class MainActivity extends Activity {
 
     private void showLedgerStatementDialog(LedgerCustomer c) {
         String statement = AppStore.buildLedgerCustomerStatement(this, c);
+        String pdfStatement = AppStore.buildLedgerCustomerPdfStatement(this, c);
         TextView view = messagePreviewText(statement);
+        ScrollView scroll = new ScrollView(this);
+        scroll.setPadding(dp(6), dp(6), dp(6), dp(6));
+        scroll.addView(view);
         new AlertDialog.Builder(this)
                 .setTitle("كشف حساب")
-                .setView(view)
+                .setView(scroll)
                 .setPositiveButton("واتساب", (d,w) -> openWhatsAppBusinessMessage(c.phone, statement))
                 .setNeutralButton("PDF", (d,w) -> {
-                    File file = createTextPdfFile("كشف حساب الزبون", statement, "ledger_customer_statement");
+                    File file = createTextPdfFile("تقرير إجراءات العميل", pdfStatement, "ledger_customer_statement");
                     if (file != null) sharePdfFile(file, "كشف حساب: " + (c.name == null ? c.phone : c.name));
                 })
                 .setNegativeButton("إغلاق", null)
@@ -5242,6 +5297,30 @@ public class MainActivity extends Activity {
         return line.contains("الوقت والتاريخ") || line.contains("طريقة السداد") || line.contains("طريقة الدفع") || parts.length >= 6;
     }
 
+    private void drawPdfTextBlock(Canvas canvas, String textValue, float left, float top, float width, float height, int colorValue, float size, boolean bold, Layout.Alignment alignment) {
+        if (canvas == null) return;
+        TextPaint tp = new TextPaint(Paint.ANTI_ALIAS_FLAG);
+        tp.setColor(colorValue);
+        tp.setTextSize(size);
+        tp.setTypeface(Typeface.create(Typeface.SANS_SERIF, bold ? Typeface.BOLD : Typeface.NORMAL));
+        String value = textValue == null || textValue.trim().isEmpty() ? "-" : textValue.trim();
+        int save = canvas.save();
+        canvas.translate(left, top);
+        try {
+            StaticLayout layout = StaticLayout.Builder.obtain(value, 0, value.length(), tp, Math.max(1, (int) width))
+                    .setAlignment(alignment == null ? Layout.Alignment.ALIGN_OPPOSITE : alignment)
+                    .setIncludePad(false)
+                    .setLineSpacing(0, 1.0f)
+                    .build();
+            layout.draw(canvas);
+        } catch (Exception e) {
+            Paint fallback = pdfPaint(colorValue, size, bold, Paint.Align.RIGHT);
+            canvas.drawText(value, width, Math.min(height, size + 2), fallback);
+        } finally {
+            canvas.restoreToCount(save);
+        }
+    }
+
     private void drawPdfReportTableRow(PdfRenderState st, String line) {
         String[] raw = line.split("\\|", -1);
         ArrayList<String> cells = new ArrayList<>();
@@ -5285,11 +5364,13 @@ public class MainActivity extends Activity {
             RectF rect = new RectF(left, st.y, right, st.y + rowH);
             st.canvas.drawRect(rect, fill);
             st.canvas.drawRect(rect, border);
-            int yy = st.y + (header ? 19 : 16);
+            StringBuilder cellText = new StringBuilder();
             for (String txt : wrapped.get(i)) {
-                st.canvas.drawText(txt == null || txt.isEmpty() ? "-" : txt, right - 4, yy, textPaint);
-                yy += 14;
+                if (cellText.length() > 0) cellText.append("\n");
+                cellText.append(txt == null || txt.isEmpty() ? "-" : txt);
             }
+            drawPdfTextBlock(st.canvas, cellText.toString(), left + 4, st.y + (header ? 6 : 7), Math.max(8, widths[i] - 8), rowH - 8,
+                    header ? Color.WHITE : Color.rgb(40, 38, 48), header ? 8.3f : 8.0f, header, Layout.Alignment.ALIGN_OPPOSITE);
             right = left;
         }
         st.y += rowH + 3;
@@ -5313,10 +5394,8 @@ public class MainActivity extends Activity {
         Paint fill = new Paint(Paint.ANTI_ALIAS_FLAG);
         fill.setColor(Color.rgb(245, 242, 251));
         st.canvas.drawRoundRect(new RectF(x, st.y, x + w, st.y + 34), 12, 12, fill);
-        Paint keyPaint = pdfPaint(Color.rgb(80, 55, 132), 10, true, Paint.Align.RIGHT);
-        Paint valPaint = pdfPaint(Color.rgb(35, 35, 42), 10, false, Paint.Align.RIGHT);
-        st.canvas.drawText(key, x + w - 14, st.y + 22, keyPaint);
-        st.canvas.drawText(value == null || value.isEmpty() ? "-" : value, x + w - 205, st.y + 22, valPaint);
+        drawPdfTextBlock(st.canvas, key, x + w - 185, st.y + 10, 170, 20, Color.rgb(80, 55, 132), 10, true, Layout.Alignment.ALIGN_OPPOSITE);
+        drawPdfTextBlock(st.canvas, value == null || value.isEmpty() ? "-" : value, x + 16, st.y + 10, w - 215, 20, Color.rgb(35, 35, 42), 10, false, Layout.Alignment.ALIGN_OPPOSITE);
         st.y += 40;
     }
 
@@ -5344,14 +5423,13 @@ public class MainActivity extends Activity {
         border.setStrokeWidth(0.8f);
         border.setColor(Color.rgb(229, 225, 238));
         st.canvas.drawRoundRect(new RectF(x, st.y, x + w, st.y + rowH), 8, 8, border);
-        Paint keyPaint = pdfPaint(Color.rgb(88, 75, 112), 9.5f, true, Paint.Align.RIGHT);
-        Paint valPaint = pdfPaint(valueColor, 9.5f, false, Paint.Align.RIGHT);
-        st.canvas.drawText(key == null ? "" : key, x + w - 12, st.y + 20, keyPaint);
-        int yy = st.y + 20;
+        drawPdfTextBlock(st.canvas, key == null ? "" : key, x + w - 140, st.y + 10, 128, rowH - 12, Color.rgb(88, 75, 112), 9.5f, true, Layout.Alignment.ALIGN_OPPOSITE);
+        StringBuilder valueText = new StringBuilder();
         for (String line : valueLines) {
-            st.canvas.drawText(line, x + w - 150, yy, valPaint);
-            yy += 15;
+            if (valueText.length() > 0) valueText.append("\n");
+            valueText.append(line);
         }
+        drawPdfTextBlock(st.canvas, valueText.toString(), x + 12, st.y + 10, w - 165, rowH - 12, valueColor, 9.5f, false, Layout.Alignment.ALIGN_OPPOSITE);
         st.y += rowH + 6;
     }
 

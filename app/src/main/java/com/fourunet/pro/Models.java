@@ -279,6 +279,10 @@ class ParsedCreditRequest {
 
 
 class LedgerCustomer {
+    static final String MODE_AUTO_FULL = "auto_full";       // آلي كامل: سلفة + سداد + رصيد
+    static final String MODE_SETTLE_ONLY = "settle_only";   // سداد فقط / إيقاف السلف
+    static final String MODE_STOPPED = "stopped";           // موقوف
+
     String id;
     String name;
     String phone;
@@ -286,11 +290,17 @@ class LedgerCustomer {
     boolean loanEnabled;
     int loanLimit;
     int debt;
+    int creditBalance;
+    String mode;
     boolean active;
     String notes;
     long createdAt;
 
     LedgerCustomer(String id, String name, String phone, boolean trusted, boolean loanEnabled, int loanLimit, int debt, boolean active, String notes, long createdAt) {
+        this(id, name, phone, trusted, loanEnabled, loanLimit, debt, 0, deriveMode(trusted, loanEnabled, active, ""), active, notes, longCreatedAt(createdAt));
+    }
+
+    LedgerCustomer(String id, String name, String phone, boolean trusted, boolean loanEnabled, int loanLimit, int debt, int creditBalance, String mode, boolean active, String notes, long createdAt) {
         this.id = id == null ? "" : id;
         this.name = name == null ? "" : name.trim();
         this.phone = phone == null ? "" : phone.trim();
@@ -298,13 +308,75 @@ class LedgerCustomer {
         this.loanEnabled = loanEnabled;
         this.loanLimit = Math.max(0, loanLimit);
         this.debt = Math.max(0, debt);
+        this.creditBalance = Math.max(0, creditBalance);
+        this.mode = sanitizeMode(deriveMode(trusted, loanEnabled, active, mode));
         this.active = active;
         this.notes = notes == null ? "" : notes.trim();
         this.createdAt = createdAt;
+        syncFlagsFromMode();
+    }
+
+    private static long longCreatedAt(long createdAt) {
+        return createdAt <= 0 ? System.currentTimeMillis() : createdAt;
+    }
+
+    static String sanitizeMode(String value) {
+        String v = value == null ? "" : value.trim();
+        if (MODE_AUTO_FULL.equals(v) || MODE_SETTLE_ONLY.equals(v) || MODE_STOPPED.equals(v)) return v;
+        return MODE_SETTLE_ONLY;
+    }
+
+    static String deriveMode(boolean trusted, boolean loanEnabled, boolean active, String savedMode) {
+        String v = savedMode == null ? "" : savedMode.trim();
+        if (MODE_AUTO_FULL.equals(v) || MODE_SETTLE_ONLY.equals(v) || MODE_STOPPED.equals(v)) return v;
+        if (!active) return MODE_STOPPED;
+        if (trusted && loanEnabled) return MODE_AUTO_FULL;
+        return MODE_SETTLE_ONLY;
+    }
+
+    void syncFlagsFromMode() {
+        String m = effectiveMode();
+        if (MODE_AUTO_FULL.equals(m)) {
+            active = true;
+            trusted = true;
+            loanEnabled = true;
+        } else if (MODE_SETTLE_ONLY.equals(m)) {
+            active = true;
+            trusted = true;
+            loanEnabled = false;
+        } else {
+            active = false;
+            trusted = false;
+            loanEnabled = false;
+        }
+    }
+
+    String effectiveMode() {
+        return sanitizeMode(mode);
+    }
+
+    boolean isAutoFull() {
+        return active && MODE_AUTO_FULL.equals(effectiveMode());
+    }
+
+    boolean isSettleOnly() {
+        return active && MODE_SETTLE_ONLY.equals(effectiveMode());
+    }
+
+    boolean isStopped() {
+        return !active || MODE_STOPPED.equals(effectiveMode());
+    }
+
+    boolean canAutoLoan() {
+        return active && trusted && loanEnabled && MODE_AUTO_FULL.equals(effectiveMode());
     }
 
     int remainingLoan() {
         return Math.max(0, loanLimit - debt);
+    }
+
+    int availableForRequest() {
+        return remainingLoan() + Math.max(0, creditBalance);
     }
 }
 
@@ -320,8 +392,16 @@ class LedgerEntry {
     String description;
     String reference;
     String createdAt;
+    String status;
+    String paymentMethod;
+    int count;
 
     LedgerEntry(String id, String customerId, String customerName, String customerPhone, String type, int debit, int credit, int balanceAfter, String description, String reference, String createdAt) {
+        this(id, customerId, customerName, customerPhone, type, debit, credit, balanceAfter, description, reference, createdAt,
+                inferStatus(type), inferPaymentMethod(type, reference), 1);
+    }
+
+    LedgerEntry(String id, String customerId, String customerName, String customerPhone, String type, int debit, int credit, int balanceAfter, String description, String reference, String createdAt, String status, String paymentMethod, int count) {
         this.id = id == null ? "" : id;
         this.customerId = customerId == null ? "" : customerId;
         this.customerName = customerName == null ? "" : customerName.trim();
@@ -333,5 +413,32 @@ class LedgerEntry {
         this.description = description == null ? "" : description.trim();
         this.reference = reference == null ? "" : reference.trim();
         this.createdAt = createdAt == null ? "" : createdAt.trim();
+        this.status = status == null || status.trim().isEmpty() ? inferStatus(this.type) : status.trim();
+        this.paymentMethod = paymentMethod == null || paymentMethod.trim().isEmpty() ? inferPaymentMethod(this.type, this.reference) : paymentMethod.trim();
+        this.count = Math.max(1, count);
+    }
+
+    static String inferStatus(String type) {
+        String t = type == null ? "" : type;
+        if (t.contains("رفض") || t.contains("مرفوض") || t.contains("فشل")) return "مرفوض";
+        if (t.contains("معلق") || t.contains("مراجعة")) return "معلق";
+        if (t.contains("سداد")) return "سداد";
+        if (t.contains("سلفة")) return "سلفة";
+        return "تم";
+    }
+
+    static String inferPaymentMethod(String type, String reference) {
+        String r = reference == null ? "" : reference.trim();
+        String t = type == null ? "" : type;
+        if (r.contains("ون") || r.toLowerCase().contains("one")) return "ون كاش";
+        if (r.contains("جوالي")) return "جوالي";
+        if (r.contains("كريمي")) return "كريمي";
+        if (r.contains("فلوسك")) return "فلوسك";
+        if (r.contains("جيب")) return "جيب";
+        if (r.contains("المحل")) return "عن طريق المحل";
+        if (t.contains("سلفة")) return "كرت سلف";
+        if (t.contains("سداد")) return r.isEmpty() ? "سداد" : r;
+        if (t.contains("قيد")) return r.isEmpty() ? "قيد يدوي" : r;
+        return r.isEmpty() ? t : r;
     }
 }

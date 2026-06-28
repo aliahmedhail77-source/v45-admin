@@ -87,7 +87,7 @@ class SmsProcessor {
         // كزبون نشط وموثوق والسلفة مفعلة له، ثم تتابع المعالجة داخل processSmartLoanRequest.
         if (AppStore.isSmartLedgerEnabled(context) && AppStore.isLedgerLoanEnabled(context) && AppStore.isLoanRequestText(body)) {
             LedgerCustomer loanCustomer = AppStore.findLedgerCustomerByPhone(context, sender);
-            if (loanCustomer != null && loanCustomer.active && loanCustomer.trusted && loanCustomer.loanEnabled) return true;
+            if (loanCustomer != null) return true;
         }
 
         TrustedCreditAgent queueAgent = AppStore.findTrustedCreditSender(context, sender);
@@ -251,35 +251,49 @@ class SmsProcessor {
         int saleAmount = payment.amount;
         String settlementCustomerPart = "";
         String settlementInternalNote = "";
+
+        // STAGE 12.6 REAL FIX:
+        // أي إيداع من زبون موجود في الدفتر المحاسبي يُعامل كسداد/رصيد فقط.
+        // لا يتم صرف كرت بسبب الإيداع نهائياً؛ صرف الكرت يكون فقط عندما يرسل الزبون رقم الفئة بنفسه مثل 100.
         if (AppStore.isSmartLedgerEnabled(context) && AppStore.isLedgerAutoSettleEnabled(context)) {
             LedgerCustomer debtor = AppStore.findLedgerCustomerByPhone(context, receiver);
-            if (debtor != null && debtor.debt > 0) {
+            if (debtor != null && debtor.active) {
                 int debtBefore = debtor.debt;
-                int paidToDebt = Math.min(payment.amount, debtBefore);
-                int remainingAfterDebt = Math.max(0, payment.amount - paidToDebt);
-                LedgerCustomer updated = AppStore.changeLedgerDebtByPhone(context, receiver, 0, paidToDebt, "سداد آلي",
-                        "سداد آلي من حوالة " + payment.provider + " بمبلغ " + payment.amount + " ريال", payment.provider);
-                settlementInternalNote = "سداد آلي للدفتر: الدين السابق " + debtBefore + "، المسدد " + paidToDebt + "، المتبقي عليه " + updated.debt + ".";
-                if (remainingAfterDebt <= 0) {
-                    String msg = "تم استلام حوالتك بمبلغ " + payment.amount + " ريال.\n\n"
-                            + "تم خصمها من الدين السابق.\n"
-                            + "الدين السابق: " + debtBefore + " ريال\n"
-                            + "المبلغ المسدد: " + paidToDebt + " ريال\n"
-                            + "المتبقي عليك: " + updated.debt + " ريال\n\n"
+                int creditBefore = debtor.creditBalance;
+                String method = friendlyPaymentMethod(payment.provider, sender, body);
+                LedgerCustomer updated = AppStore.applyLedgerPaymentByPhone(context, receiver, payment.amount, method,
+                        "سداد من " + method + " بمبلغ " + payment.amount + " ر.ي. المتبقي بعد السداد: " + Math.max(0, debtBefore - Math.min(debtBefore, payment.amount)) + " ر.ي", method);
+                int paidToDebt = Math.min(debtBefore, payment.amount);
+                int addedCredit = Math.max(0, payment.amount - paidToDebt);
+                String displayName = updated.name == null || updated.name.trim().isEmpty() ? "عميلنا" : updated.name.trim();
+                String msg;
+                if (updated.debt <= 0 && addedCredit > 0) {
+                    msg = "مرحبًا " + displayName + "👋\n"
+                            + "✅ وصل " + payment.amount + "ر.ي\n"
+                            + "💰تم السداد كاملًا\n"
+                            + "رصيدك:" + updated.creditBalance + "ر.ي\n"
                             + AppStore.SYSTEM_SIGNATURE;
-                    String logId = addLog(context, payment.provider, sender, payment.customerName, receiver, payment.amount,
-                            "جاري إرسال SMS", messageNote + "\n" + settlementInternalNote + "\nلم يتبق مبلغ كافٍ لصرف كرت بعد سداد الدين.", "");
-                    sendSmsWithTracking(context, receiver, msg, logId, payment.amount, "", false,
-                            "تم إرسال رسالة السداد الآلي للزبون",
-                            "فشل إرسال رسالة السداد الآلي؛ راجع سجل الدفتر");
-                    AppStore.performAutoBackupIfDue(context, "سداد آلي للدفتر");
-                    return;
+                } else if (updated.debt <= 0) {
+                    msg = "مرحبًا " + displayName + "👋\n"
+                            + "✅ وصل " + payment.amount + "ر.ي\n"
+                            + "💰تم السداد كاملًا\n"
+                            + "عليك:0ر.ي\n"
+                            + AppStore.SYSTEM_SIGNATURE;
+                } else {
+                    msg = "مرحبًا " + displayName + "👋\n"
+                            + "✅ وصل " + payment.amount + "ر.ي\n"
+                            + "💰المتبقي:" + updated.debt + "ر.ي\n"
+                            + AppStore.SYSTEM_SIGNATURE;
                 }
-                saleAmount = remainingAfterDebt;
-                settlementCustomerPart = "تم استلام حوالتك بمبلغ " + payment.amount + " ريال.\n"
-                        + "تم سداد دين سابق: " + paidToDebt + " ريال\n"
-                        + "المتبقي من الحوالة: " + remainingAfterDebt + " ريال\n"
-                        + "رصيد الدين الحالي عليك: " + updated.debt + " ريال\n\n";
+                String logId = addLog(context, payment.provider, sender, payment.customerName, receiver, payment.amount,
+                        "جاري إرسال SMS", messageNote + "\nتم ترحيل الإيداع كسداد في الدفتر. الدين السابق: " + debtBefore
+                                + " | رصيد سابق: " + creditBefore + " | رصيد حالي: " + updated.creditBalance
+                                + " | المتبقي عليه: " + updated.debt, "");
+                sendSmsWithTracking(context, receiver, msg, logId, payment.amount, "", false,
+                        "تم إرسال رسالة السداد للزبون",
+                        "تم تسجيل السداد لكن فشل إرسال SMS؛ راجع كشف الحساب");
+                AppStore.performAutoBackupIfDue(context, "سداد دفتر محاسبي");
+                return;
             }
         }
 
@@ -336,28 +350,53 @@ class SmsProcessor {
             return;
         }
         LedgerCustomer customer = AppStore.findLedgerCustomerByPhone(context, customerPhone);
-        if (customer == null || !customer.active || !customer.trusted || !customer.loanEnabled) {
-            String logId = addLog(context, "الدفتر المحاسبي", sender, "", customerPhone, amount, "سلفة مرفوضة", "الزبون غير مسجل كموثوق للسلفة أو حسابه متوقف. النص:\n" + body, "");
-            String msg = "تعذر تنفيذ طلب السلفة.\nالرقم غير مفعل ضمن الزبائن الموثوقين للسلفة.\n" + AppStore.SYSTEM_SIGNATURE;
+        if (customer == null) {
+            String logId = addLog(context, "الدفتر المحاسبي", sender, "", customerPhone, amount, "سلفة مرفوضة", "الرقم غير موجود في الدفتر المحاسبي. النص:\n" + body, "");
+            String msg = "تعذر تنفيذ الطلب.\nالرقم غير مسجل في الدفتر.\n" + AppStore.SYSTEM_SIGNATURE;
+            sendSmsWithTracking(context, customerPhone, msg, logId, amount, "", false,
+                    "تم إرسال سبب رفض السلفة", "فشل إرسال سبب رفض السلفة");
+            return;
+        }
+        if (!customer.active || customer.isStopped()) {
+            String logId = addLog(context, "الدفتر المحاسبي", sender, customer.name, customerPhone, amount, "سلفة مرفوضة", "حساب العميل موقوف. النص:\n" + body, "");
+            String msg = "تعذر تنفيذ الطلب.\nحسابك موقوف مؤقتًا.\n" + AppStore.SYSTEM_SIGNATURE;
+            sendSmsWithTracking(context, customerPhone, msg, logId, amount, "", false,
+                    "تم إرسال سبب رفض السلفة", "فشل إرسال سبب رفض السلفة");
+            return;
+        }
+        if (customer.isSettleOnly()) {
+            String logId = addLog(context, "الدفتر المحاسبي", sender, customer.name, customerPhone, amount, "سلفة مرفوضة", "العميل على وضع سداد فقط / إيقاف السلف. النص:\n" + body, "");
+            String msg = "السلفة موقوفة لحسابك.\nيمكن استقبال السداد فقط.\nالمتبقي عليك:" + customer.debt + "ر.ي\n" + AppStore.SYSTEM_SIGNATURE;
+            sendSmsWithTracking(context, customerPhone, msg, logId, amount, "", false,
+                    "تم إرسال تنبيه إيقاف السلف", "فشل إرسال تنبيه إيقاف السلف");
+            return;
+        }
+        if (!customer.canAutoLoan()) {
+            String logId = addLog(context, "الدفتر المحاسبي", sender, customer.name, customerPhone, amount, "سلفة مرفوضة", "العميل ليس في وضع آلي كامل. الوضع الحالي: " + AppStore.ledgerModeLabel(customer.effectiveMode()), "");
+            String msg = "تعذر تنفيذ طلب السلفة.\nوضع حسابك لا يسمح بالسلف.\n" + AppStore.SYSTEM_SIGNATURE;
             sendSmsWithTracking(context, customerPhone, msg, logId, amount, "", false,
                     "تم إرسال سبب رفض السلفة", "فشل إرسال سبب رفض السلفة");
             return;
         }
         if (amount <= 0) {
             String logId = addLog(context, "الدفتر المحاسبي", sender, customer.name, customerPhone, 0, "سلفة مرفوضة", "لم يتم تحديد فئة صحيحة في رسالة السلفة. النص:\n" + body, "");
-            String msg = "صيغة طلب السلفة غير صحيحة.\nاكتب مثلاً: سلفني 100\n" + AppStore.SYSTEM_SIGNATURE;
+            String msg = "صيغة الطلب غير صحيحة.\nاكتب رقم الفئة فقط مثل: 100\n" + AppStore.SYSTEM_SIGNATURE;
             sendSmsWithTracking(context, customerPhone, msg, logId, 0, "", false,
                     "تم إرسال تنبيه صيغة السلفة", "فشل إرسال تنبيه صيغة السلفة");
             return;
         }
-        if (customer.debt + amount > customer.loanLimit) {
-            String logId = addLog(context, "الدفتر المحاسبي", sender, customer.name, customerPhone, amount, "سلفة مرفوضة: تجاوز الحد",
-                    "الدين الحالي: " + customer.debt + " | حد السلفة: " + customer.loanLimit + " | المطلوب: " + amount, "");
-            String msg = "تعذر تنفيذ طلب السلفة.\n"
-                    + "الدين الحالي: " + customer.debt + " ريال\n"
-                    + "الحد المسموح: " + customer.loanLimit + " ريال\n"
-                    + "المطلوب: " + amount + " ريال\n"
-                    + "يرجى السداد أولاً.\n"
+
+        int useCredit = Math.min(Math.max(0, customer.creditBalance), amount);
+        int loanPart = Math.max(0, amount - useCredit);
+        int debtAfter = Math.max(0, customer.debt) + loanPart;
+        if (debtAfter > customer.loanLimit) {
+            String logId = addLog(context, "الدفتر المحاسبي", sender, customer.name, customerPhone, amount, "سلفة مرفوضة: تجاوز السقف",
+                    "الدين الحالي: " + customer.debt + " | رصيد العميل: " + customer.creditBalance + " | سيستخدم من الرصيد: " + useCredit + " | سيسجل كسلفة: " + loanPart + " | السقف: " + customer.loanLimit, "");
+            String msg = "تعذر تنفيذ الطلب.\n"
+                    + "المتاح من السقف:" + customer.remainingLoan() + "ر.ي\n"
+                    + "رصيدك:" + customer.creditBalance + "ر.ي\n"
+                    + "المطلوب:" + amount + "ر.ي\n"
+                    + "العملية تتجاوز السقف.\n"
                     + AppStore.SYSTEM_SIGNATURE;
             sendSmsWithTracking(context, customerPhone, msg, logId, amount, "", false,
                     "تم إرسال تنبيه تجاوز حد السلفة", "فشل إرسال تنبيه تجاوز حد السلفة");
@@ -366,28 +405,33 @@ class SmsProcessor {
         CardItem card = AppStore.takeAvailableCard(context, amount, customerPhone);
         if (card == null) {
             String logId = addLog(context, "الدفتر المحاسبي", sender, customer.name, customerPhone, amount, "سلفة معلقة: نفدت الكمية",
-                    "طلب سلفة صحيح لكن لا توجد كروت متاحة لهذه الفئة. لم يتم زيادة الدين.", "");
+                    "طلب سلفة صحيح لكن لا توجد كروت متاحة لهذه الفئة. لم يتم زيادة الدين ولم يتم استخدام الرصيد.", "");
             NotifyHelper.notifyPendingAction(context, logId, amount, "", "نفدت فئة طلب السلفة");
             String msg = AppStore.buildNoStockMessage(context, amount);
             sendSmsWithTracking(context, customerPhone, msg, logId, amount, "", true,
                     "تم إرسال تنبيه نفاد فئة السلفة", "فشل إرسال تنبيه نفاد فئة السلفة");
             return;
         }
-        LedgerCustomer updated = AppStore.changeLedgerDebtByPhone(context, customerPhone, amount, 0, "سلفة كرت",
-                "صرف كرت كسلفة فئة " + amount + " للزبون " + customer.name, card.code);
+        LedgerCustomer updated = AppStore.applyLedgerLoanWithCredit(context, customerPhone, amount, card.code);
+        if (updated == null) {
+            String logId = addLog(context, "الدفتر المحاسبي", sender, customer.name, customerPhone, amount, "سلفة مرفوضة: تجاوز السقف",
+                    "فشل تحديث الدفتر بعد حجز الكرت؛ راجع العملية يدويًا. الكرت المحجوز: " + card.code, card.code);
+            NotifyHelper.notifyPendingAction(context, logId, amount, card.code, "مراجعة عاجلة: كرت حُجز ولم تسجل السلفة");
+            return;
+        }
         String displayName = customer.name == null || customer.name.trim().isEmpty() ? "عميلنا" : customer.name.trim();
-        String msg = "مرحبا " + displayName + " 👋\n\n"
-                + "كرتك فئة " + amount + " ريال\n\n"
-                + card.code + "\n\n"
-                + "تم تقييدها كسلفة على حسابك.\n"
-                + "المتبقي عليك: " + updated.debt + " ريال\n"
-                + "المتاح لك من السقف: " + Math.max(0, updated.loanLimit - updated.debt) + " ريال\n"
+        int actualUseCredit = Math.max(0, amount - Math.max(0, updated.debt - customer.debt));
+        String msg = "مرحبًا " + displayName + "👋\n"
+                + "🎫 كرت " + amount + "ر.ي\n"
+                + card.code + "\n"
+                + "💰عليك:" + updated.debt + "ر.ي\n"
+                + (actualUseCredit > 0 ? "رصيد مستخدم:" + actualUseCredit + "ر.ي\n" : "")
                 + AppStore.SYSTEM_SIGNATURE;
         String logId = addLog(context, "الدفتر المحاسبي", sender, customer.name, customerPhone, amount, "جاري إرسال SMS",
-                "تم صرف كرت كسلفة وتقييده ديناً في الدفتر. المتبقي على الزبون: " + updated.debt, card.code);
+                "تم صرف كرت كسلفة. استخدم من الرصيد: " + actualUseCredit + " | المتبقي على الزبون: " + updated.debt + " | رصيد العميل الحالي: " + updated.creditBalance, card.code);
         sendSmsWithTracking(context, customerPhone, msg, logId, amount, card.code, false,
-                "تم إرسال كرت السلفة وتقييده في الدفتر",
-                "تم تقييد السلفة لكن فشل إرسال SMS؛ استخدم إعادة الإرسال أو واتساب");
+                "تم إرسال كرت السلفة وتحديث الدفتر",
+                "تم تحديث الدفتر لكن فشل إرسال SMS؛ استخدم إعادة الإرسال أو واتساب");
         AppStore.performAutoBackupIfDue(context, "سلفة ذكية من الدفتر");
     }
 
@@ -570,6 +614,19 @@ class SmsProcessor {
         sendSmsWithTracking(context, receiver, msg, log.id, log.amount, log.cardCode, noStock,
                 noStock ? "تم إرسال تنبيه النفاد للزبون بعد إعادة المحاولة" : "تم إرسال رسالة الكرت للزبون بعد إعادة المحاولة",
                 noStock ? "فشل إعادة إرسال تنبيه النفاد؛ جرّب واتساب أو افحص الرصيد والشريحة" : "فشل إعادة إرسال SMS؛ جرّب واتساب أو افحص الرصيد والشريحة");
+    }
+
+
+    private static String friendlyPaymentMethod(String provider, String sender, String body) {
+        String src = ((provider == null ? "" : provider) + " " + (sender == null ? "" : sender) + " " + (body == null ? "" : body)).toLowerCase();
+        if (src.contains("one") || src.contains("ون") || src.contains("1cash")) return "ون كاش";
+        if (src.contains("jawali") || src.contains("جوالي")) return "جوالي";
+        if (src.contains("jaib") || src.contains("جيب")) return "جيب";
+        if (src.contains("kuraimi") || src.contains("كريمي")) return "كريمي";
+        if (src.contains("floosk") || src.contains("فلوسك")) return "فلوسك";
+        if (src.contains("محل") || src.contains("نقد")) return "عن طريق المحل";
+        String p = provider == null ? "" : provider.trim();
+        return p.isEmpty() ? "إيداع" : p;
     }
 
     static String cleanPhone(String phone) {

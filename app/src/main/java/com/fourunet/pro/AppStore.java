@@ -2325,15 +2325,21 @@ class AppStore {
             JSONArray arr = new JSONArray(prefs(c).getString(KEY_LEDGER_CUSTOMERS, "[]"));
             for (int i = 0; i < arr.length(); i++) {
                 JSONObject o = arr.getJSONObject(i);
+                boolean active = o.optBoolean("active", true);
+                boolean trusted = o.optBoolean("trusted", false);
+                boolean loanEnabled = o.optBoolean("loanEnabled", false);
+                String savedMode = o.optString("mode", "");
                 list.add(new LedgerCustomer(
                         o.optString("id"),
                         o.optString("name"),
                         normalizeLocalPhone(o.optString("phone")),
-                        o.optBoolean("trusted", false),
-                        o.optBoolean("loanEnabled", false),
+                        trusted,
+                        loanEnabled,
                         o.optInt("loanLimit", 0),
                         o.optInt("debt", 0),
-                        o.optBoolean("active", true),
+                        o.optInt("creditBalance", o.optInt("balance", 0)),
+                        LedgerCustomer.deriveMode(trusted, loanEnabled, active, savedMode),
+                        active,
                         o.optString("notes"),
                         o.optLong("createdAt", System.currentTimeMillis())
                 ));
@@ -2346,6 +2352,9 @@ class AppStore {
         try {
             JSONArray arr = new JSONArray();
             for (LedgerCustomer it : list) {
+                if (it == null) continue;
+                it.mode = LedgerCustomer.sanitizeMode(it.effectiveMode());
+                it.syncFlagsFromMode();
                 JSONObject o = new JSONObject();
                 o.put("id", it.id);
                 o.put("name", it.name);
@@ -2354,6 +2363,8 @@ class AppStore {
                 o.put("loanEnabled", it.loanEnabled);
                 o.put("loanLimit", Math.max(0, it.loanLimit));
                 o.put("debt", Math.max(0, it.debt));
+                o.put("creditBalance", Math.max(0, it.creditBalance));
+                o.put("mode", it.effectiveMode());
                 o.put("active", it.active);
                 o.put("notes", it.notes == null ? "" : it.notes);
                 o.put("createdAt", it.createdAt);
@@ -2367,32 +2378,63 @@ class AppStore {
         String clean = normalizeLocalPhone(phone);
         if (clean.isEmpty()) return null;
         for (LedgerCustomer it : loadLedgerCustomers(c)) {
-            if (it.active && normalizeLocalPhone(it.phone).equals(clean)) return it;
+            if (normalizeLocalPhone(it.phone).equals(clean)) return it;
         }
         return null;
     }
 
+    static String ledgerModeLabel(String mode) {
+        String m = LedgerCustomer.sanitizeMode(mode);
+        if (LedgerCustomer.MODE_AUTO_FULL.equals(m)) return "آلي كامل";
+        if (LedgerCustomer.MODE_SETTLE_ONLY.equals(m)) return "إيقاف السلف / سداد فقط";
+        return "موقوف";
+    }
+
+    static boolean ledgerCustomerCanLoan(LedgerCustomer customer) {
+        return customer != null && customer.canAutoLoan();
+    }
+
+    static boolean canLedgerCustomerTakeLoan(LedgerCustomer customer, int cardAmount) {
+        if (!ledgerCustomerCanLoan(customer)) return false;
+        int amount = Math.max(0, cardAmount);
+        int fromCredit = Math.min(Math.max(0, customer.creditBalance), amount);
+        int loanPart = Math.max(0, amount - fromCredit);
+        return Math.max(0, customer.debt) + loanPart <= Math.max(0, customer.loanLimit);
+    }
+
     static void addOrUpdateLedgerCustomer(Context c, String id, String name, String phone, boolean trusted, boolean loanEnabled, int loanLimit, int debt, boolean active, String notes) {
+        String mode = LedgerCustomer.deriveMode(trusted, loanEnabled, active, "");
+        addOrUpdateLedgerCustomer(c, id, name, phone, loanLimit, debt, 0, mode, notes);
+    }
+
+    static void addOrUpdateLedgerCustomer(Context c, String id, String name, String phone, int loanLimit, int debt, int creditBalance, String mode, String notes) {
         ArrayList<LedgerCustomer> list = loadLedgerCustomers(c);
         String cleanPhone = normalizeLocalPhone(phone);
         String cleanId = id == null ? "" : id.trim();
+        String cleanMode = LedgerCustomer.sanitizeMode(mode);
+        boolean active = !LedgerCustomer.MODE_STOPPED.equals(cleanMode);
+        boolean trusted = active;
+        boolean loanEnabled = LedgerCustomer.MODE_AUTO_FULL.equals(cleanMode);
         boolean updated = false;
         for (LedgerCustomer it : list) {
             if ((!cleanId.isEmpty() && it.id.equals(cleanId)) || (!cleanPhone.isEmpty() && normalizeLocalPhone(it.phone).equals(cleanPhone))) {
                 it.name = name == null ? "" : name.trim();
                 it.phone = cleanPhone;
-                it.trusted = trusted;
-                it.loanEnabled = loanEnabled;
                 it.loanLimit = Math.max(0, loanLimit);
                 it.debt = Math.max(0, debt);
+                it.creditBalance = Math.max(0, creditBalance);
+                it.mode = cleanMode;
                 it.active = active;
+                it.trusted = trusted;
+                it.loanEnabled = loanEnabled;
                 it.notes = notes == null ? "" : notes.trim();
+                it.syncFlagsFromMode();
                 updated = true;
                 break;
             }
         }
         if (!updated) {
-            list.add(0, new LedgerCustomer(UUID.randomUUID().toString(), name, cleanPhone, trusted, loanEnabled, loanLimit, debt, active, notes, System.currentTimeMillis()));
+            list.add(0, new LedgerCustomer(UUID.randomUUID().toString(), name, cleanPhone, trusted, loanEnabled, loanLimit, debt, creditBalance, cleanMode, active, notes, System.currentTimeMillis()));
         }
         saveLedgerCustomers(c, list);
     }
@@ -2407,6 +2449,12 @@ class AppStore {
     static int ledgerTotalDebt(Context c) {
         int total = 0;
         for (LedgerCustomer it : loadLedgerCustomers(c)) if (it.active) total += Math.max(0, it.debt);
+        return total;
+    }
+
+    static int ledgerTotalCreditBalance(Context c) {
+        int total = 0;
+        for (LedgerCustomer it : loadLedgerCustomers(c)) if (it.active) total += Math.max(0, it.creditBalance);
         return total;
     }
 
@@ -2425,7 +2473,8 @@ class AppStore {
                 list.add(new LedgerEntry(
                         o.optString("id"), o.optString("customerId"), o.optString("customerName"), normalizeLocalPhone(o.optString("customerPhone")),
                         o.optString("type"), o.optInt("debit"), o.optInt("credit"), o.optInt("balanceAfter"),
-                        o.optString("description"), o.optString("reference"), o.optString("createdAt")
+                        o.optString("description"), o.optString("reference"), o.optString("createdAt"),
+                        o.optString("status", ""), o.optString("paymentMethod", ""), o.optInt("count", 1)
                 ));
             }
         } catch (Exception ignored) {}
@@ -2436,6 +2485,7 @@ class AppStore {
         try {
             JSONArray arr = new JSONArray();
             for (LedgerEntry e : list) {
+                if (e == null) continue;
                 JSONObject o = new JSONObject();
                 o.put("id", e.id);
                 o.put("customerId", e.customerId);
@@ -2448,6 +2498,9 @@ class AppStore {
                 o.put("description", e.description == null ? "" : e.description);
                 o.put("reference", e.reference == null ? "" : e.reference);
                 o.put("createdAt", e.createdAt == null ? now() : e.createdAt);
+                o.put("status", e.status == null ? LedgerEntry.inferStatus(e.type) : e.status);
+                o.put("paymentMethod", e.paymentMethod == null ? LedgerEntry.inferPaymentMethod(e.type, e.reference) : e.paymentMethod);
+                o.put("count", Math.max(1, e.count));
                 arr.put(o);
             }
             prefs(c).edit().putString(KEY_LEDGER_ENTRIES, arr.toString()).apply();
@@ -2462,6 +2515,10 @@ class AppStore {
     }
 
     static LedgerCustomer changeLedgerDebtByPhone(Context c, String phone, int debitAdd, int creditSubtract, String type, String description, String reference) {
+        return changeLedgerDebtByPhone(c, phone, debitAdd, creditSubtract, type, description, reference, LedgerEntry.inferPaymentMethod(type, reference), LedgerEntry.inferStatus(type));
+    }
+
+    static LedgerCustomer changeLedgerDebtByPhone(Context c, String phone, int debitAdd, int creditSubtract, String type, String description, String reference, String paymentMethod, String status) {
         ArrayList<LedgerCustomer> list = loadLedgerCustomers(c);
         String clean = normalizeLocalPhone(phone);
         LedgerCustomer target = null;
@@ -2469,17 +2526,68 @@ class AppStore {
             if (normalizeLocalPhone(it.phone).equals(clean)) { target = it; break; }
         }
         if (target == null) {
-            target = new LedgerCustomer(UUID.randomUUID().toString(), clean, clean, false, false, 0, 0, true, "تم إنشاؤه تلقائياً من الدفتر المحاسبي", System.currentTimeMillis());
+            target = new LedgerCustomer(UUID.randomUUID().toString(), clean, clean, false, false, 0, 0, 0, LedgerCustomer.MODE_SETTLE_ONLY, true, "تم إنشاؤه تلقائياً من الدفتر المحاسبي", System.currentTimeMillis());
             list.add(0, target);
         }
-        int before = Math.max(0, target.debt);
-        int after = Math.max(0, before + Math.max(0, debitAdd) - Math.max(0, creditSubtract));
-        target.debt = after;
+        int debit = Math.max(0, debitAdd);
+        int credit = Math.max(0, creditSubtract);
+        int beforeDebt = Math.max(0, target.debt);
+        int beforeCreditBalance = Math.max(0, target.creditBalance);
+        int paidToDebt = Math.min(beforeDebt, credit);
+        int overPayment = Math.max(0, credit - paidToDebt);
+        target.debt = Math.max(0, beforeDebt + debit - paidToDebt);
+        target.creditBalance = beforeCreditBalance + overPayment;
         saveLedgerCustomers(c, list);
+        String note = description == null ? "" : description;
+        if (overPayment > 0) note += (note.isEmpty() ? "" : " | ") + "زائد محفوظ كرصيد: " + overPayment + " ريال";
         addLedgerEntry(c, new LedgerEntry(UUID.randomUUID().toString(), target.id, target.name, target.phone, type,
-                Math.max(0, debitAdd), Math.max(0, creditSubtract), after,
-                description == null ? "" : description, reference == null ? "" : reference, now()));
+                debit, credit, target.debt,
+                note, reference == null ? "" : reference, now(), status, paymentMethod, 1));
         return target;
+    }
+
+    static LedgerCustomer applyLedgerPaymentByPhone(Context c, String phone, int amount, String paymentMethod, String description, String reference) {
+        int paid = Math.max(0, amount);
+        if (paid <= 0) return findLedgerCustomerByPhone(c, phone);
+        String method = paymentMethod == null || paymentMethod.trim().isEmpty() ? "سداد" : paymentMethod.trim();
+        return changeLedgerDebtByPhone(c, phone, 0, paid, "سداد", description, reference, method, "سداد");
+    }
+
+    static LedgerCustomer applyLedgerLoanWithCredit(Context c, String phone, int cardAmount, String cardCode) {
+        ArrayList<LedgerCustomer> list = loadLedgerCustomers(c);
+        String clean = normalizeLocalPhone(phone);
+        LedgerCustomer target = null;
+        for (LedgerCustomer it : list) {
+            if (normalizeLocalPhone(it.phone).equals(clean)) { target = it; break; }
+        }
+        if (target == null || !target.canAutoLoan()) return null;
+        int amount = Math.max(0, cardAmount);
+        int usedCredit = Math.min(Math.max(0, target.creditBalance), amount);
+        int loanPart = Math.max(0, amount - usedCredit);
+        if (target.debt + loanPart > target.loanLimit) return null;
+        target.creditBalance = Math.max(0, target.creditBalance - usedCredit);
+        target.debt = Math.max(0, target.debt + loanPart);
+        saveLedgerCustomers(c, list);
+        String method = usedCredit > 0 && loanPart > 0 ? "رصيد + سلفة" : (usedCredit > 0 ? "رصيد العميل" : "كرت سلف");
+        String note = "تم صرف كرت فئة " + amount + " ريال";
+        if (usedCredit > 0) note += " | استخدم من الرصيد: " + usedCredit + " ريال";
+        if (loanPart > 0) note += " | سجل كسلفة: " + loanPart + " ريال";
+        if (cardCode != null && !cardCode.trim().isEmpty()) note += " | الكرت: " + cardCode.trim();
+        addLedgerEntry(c, new LedgerEntry(UUID.randomUUID().toString(), target.id, target.name, target.phone, "سلفة كرت",
+                amount, usedCredit, target.debt,
+                note, cardCode == null ? "" : cardCode, now(), "سلفة", method, 1));
+        return target;
+    }
+
+    static ArrayList<LedgerEntry> ledgerEntriesForCustomer(Context c, String phone, int max) {
+        String clean = normalizeLocalPhone(phone);
+        ArrayList<LedgerEntry> out = new ArrayList<>();
+        for (LedgerEntry e : loadLedgerEntries(c)) {
+            if (!normalizeLocalPhone(e.customerPhone).equals(clean)) continue;
+            out.add(e);
+            if (max > 0 && out.size() >= max) break;
+        }
+        return out;
     }
 
     static String buildLedgerCustomerStatement(Context c, LedgerCustomer customer) {
@@ -2487,45 +2595,90 @@ class AppStore {
         String clean = normalizeLocalPhone(customer.phone);
         String name = (customer.name == null || customer.name.trim().isEmpty()) ? clean : customer.name.trim();
         StringBuilder sb = new StringBuilder();
-        sb.append("مرحبا ").append(name).append(" 👋\n\n");
-        sb.append("تقرير إجراءات العميل - شبكة لان فور يو\n");
+        sb.append("تقرير إجراءات العميل - شبكة لان فور يو\n\n");
+        sb.append("العميل: ").append(name).append("\n");
         sb.append("الرقم: ").append(clean).append("\n");
-        sb.append("سقف السلفة: ").append(customer.loanLimit).append(" ريال\n");
-        sb.append("المتبقي عليك: ").append(customer.debt).append(" ريال\n");
-        sb.append("المتاح من السقف: ").append(customer.remainingLoan()).append(" ريال\n");
-        sb.append("\n");
-        sb.append("الوقت والتاريخ | الفئة | الحالة | طريقة السداد | العدد | ملاحظة\n");
-        sb.append("------------------------------------------------------------\n");
-        int count = 0, totalDebit = 0, totalCredit = 0, failed = 0;
-        for (LedgerEntry e : loadLedgerEntries(c)) {
-            if (!normalizeLocalPhone(e.customerPhone).equals(clean)) continue;
-            String status = "نجاح";
-            String type = e.type == null ? "" : e.type;
-            if (type.contains("مرفوض") || type.contains("فشل")) { status = "فشل"; failed++; }
-            String category = e.debit > 0 ? String.valueOf(e.debit) : (e.credit > 0 ? String.valueOf(e.credit) : "-");
-            String payMethod = type.contains("سداد") ? "سداد" : (type.contains("سلفة") ? "سلفة SMS " + maskPhone(clean) : type);
-            sb.append(e.createdAt).append(" | ")
-                    .append(category).append(" | ")
-                    .append(status).append(" | ")
-                    .append(payMethod).append(" | ")
-                    .append("1").append(" | ")
-                    .append(e.description == null ? "" : e.description).append("\n");
-            totalDebit += Math.max(0, e.debit);
-            totalCredit += Math.max(0, e.credit);
-            count++;
-            if (count >= 120) break;
+        sb.append("وضع التعامل: ").append(ledgerModeLabel(customer.effectiveMode())).append("\n");
+        sb.append("سقف السلفة: ").append(customer.loanLimit).append(" ر.ي\n");
+        sb.append("المتبقي عليه: ").append(customer.debt).append(" ر.ي\n");
+        sb.append("رصيد العميل: ").append(customer.creditBalance).append(" ر.ي\n");
+        sb.append("المتاح من السقف: ").append(customer.remainingLoan()).append(" ر.ي\n\n");
+        ArrayList<LedgerEntry> entries = ledgerEntriesForCustomer(c, clean, 50);
+        if (entries.isEmpty()) {
+            sb.append("لا توجد عمليات لهذا الزبون حتى الآن.\n");
+        } else {
+            int i = 1;
+            for (LedgerEntry e : entries) {
+                sb.append("عملية ").append(i++).append("\n");
+                sb.append("الوقت: ").append(e.createdAt).append("\n");
+                sb.append("الفئة/المبلغ: ").append(ledgerEntryAmount(e)).append(" ر.ي\n");
+                sb.append("الحالة: ").append(e.status == null ? LedgerEntry.inferStatus(e.type) : e.status).append("\n");
+                sb.append("طريقة السداد: ").append(e.paymentMethod == null ? LedgerEntry.inferPaymentMethod(e.type, e.reference) : e.paymentMethod).append("\n");
+                sb.append("العدد: ").append(Math.max(1, e.count)).append("\n");
+                sb.append("المتبقي عليه بعد العملية: ").append(e.balanceAfter).append(" ر.ي\n");
+                if (e.description != null && !e.description.trim().isEmpty()) sb.append("ملاحظة: ").append(e.description.trim()).append("\n");
+                sb.append("------------------------------\n");
+            }
         }
-        if (count == 0) sb.append("لا توجد عمليات لهذا الزبون حتى الآن.\n");
-        sb.append("------------------------------------------------------------\n");
-        sb.append("الإجمالي\n");
-        sb.append("عدد العمليات: ").append(count).append("\n");
-        sb.append("إجمالي السلف: ").append(totalDebit).append(" ريال\n");
-        sb.append("إجمالي السداد: ").append(totalCredit).append(" ريال\n");
-        sb.append("عمليات فاشلة: ").append(failed).append("\n");
-        sb.append("المتبقي عليك: ").append(customer.debt).append(" ريال\n");
-        sb.append("المتاح من السقف: ").append(customer.remainingLoan()).append(" ريال\n\n");
-        sb.append(NETWORK_SIGNATURE);
+        sb.append("\n").append(NETWORK_SIGNATURE);
         return sb.toString();
+    }
+
+    static String buildLedgerCustomerPdfStatement(Context c, LedgerCustomer customer) {
+        if (customer == null) return "";
+        String clean = normalizeLocalPhone(customer.phone);
+        String name = (customer.name == null || customer.name.trim().isEmpty()) ? clean : customer.name.trim();
+        StringBuilder sb = new StringBuilder();
+        sb.append("بيانات العميل\n");
+        sb.append("اسم العميل: ").append(name).append("\n");
+        sb.append("رقم الهاتف: ").append(clean).append("\n");
+        sb.append("وضع التعامل: ").append(ledgerModeLabel(customer.effectiveMode())).append("\n");
+        sb.append("السقف: ").append(customer.loanLimit).append(" ر.ي\n");
+        sb.append("المتبقي عليه: ").append(customer.debt).append(" ر.ي\n");
+        sb.append("رصيد العميل: ").append(customer.creditBalance).append(" ر.ي\n");
+        sb.append("المتاح من السقف: ").append(customer.remainingLoan()).append(" ر.ي\n");
+        sb.append("\nملخص سريع\n");
+        ArrayList<LedgerEntry> entries = ledgerEntriesForCustomer(c, clean, 200);
+        int totalLoans = 0, totalPayments = 0, failed = 0;
+        for (LedgerEntry e : entries) {
+            String st = e.status == null ? LedgerEntry.inferStatus(e.type) : e.status;
+            if (st.contains("مرفوض") || st.contains("فشل")) failed++;
+            if (st.contains("سلفة")) totalLoans += Math.max(0, e.debit);
+            if (st.contains("سداد")) totalPayments += Math.max(0, e.credit);
+        }
+        sb.append("عدد العمليات: ").append(entries.size()).append("\n");
+        sb.append("إجمالي السلف: ").append(totalLoans).append(" ر.ي\n");
+        sb.append("إجمالي السداد: ").append(totalPayments).append(" ر.ي\n");
+        sb.append("عمليات فاشلة: ").append(failed).append("\n");
+        sb.append("\nتفاصيل العمليات\n");
+        sb.append("الوقت والتاريخ | الفئة | الحالة | طريقة السداد | العدد | ملاحظة\n");
+        if (entries.isEmpty()) {
+            sb.append("لا توجد عمليات لهذا الزبون حتى الآن.\n");
+        } else {
+            for (LedgerEntry e : entries) {
+                String status = e.status == null ? LedgerEntry.inferStatus(e.type) : e.status;
+                String method = e.paymentMethod == null ? LedgerEntry.inferPaymentMethod(e.type, e.reference) : e.paymentMethod;
+                String note = e.description == null ? "" : e.description.replace("|", "-").replace("\n", " ").trim();
+                sb.append(e.createdAt).append(" | ")
+                        .append(ledgerEntryAmount(e)).append(" | ")
+                        .append(status).append(" | ")
+                        .append(method).append(" | ")
+                        .append(Math.max(1, e.count)).append(" | ")
+                        .append(note).append("\n");
+            }
+        }
+        sb.append("\nالإجمالي\n");
+        sb.append("المتبقي عليه: ").append(customer.debt).append(" ر.ي\n");
+        sb.append("رصيد العميل: ").append(customer.creditBalance).append(" ر.ي\n");
+        sb.append("المتاح من السقف: ").append(customer.remainingLoan()).append(" ر.ي\n");
+        return sb.toString();
+    }
+
+    static int ledgerEntryAmount(LedgerEntry e) {
+        if (e == null) return 0;
+        if (e.debit > 0) return e.debit;
+        if (e.credit > 0) return e.credit;
+        return 0;
     }
 
     private static String maskPhone(String phone) {
