@@ -1919,6 +1919,38 @@ public class MainActivity extends Activity {
         startActivityForResult(intent, REQ_PDF);
     }
 
+    private static final String REPORT_TABLE_HEADER = "الوقت والتاريخ | الفئة | الحالة | طريقة السداد | العدد | ملاحظة";
+
+    private String reportTableRow(String dateTime, String category, String status, String paymentMethod, String count, String note) {
+        return safe(dateTime) + " | "
+                + safe(category) + " | "
+                + safe(status) + " | "
+                + safe(paymentMethod) + " | "
+                + safe(count) + " | "
+                + shortText(note == null ? "" : note, 220);
+    }
+
+    private String paymentMethodForReport(OperationLog log) {
+        if (log == null) return "-";
+        String provider = log.provider == null ? "" : log.provider.trim();
+        String msg = log.message == null ? "" : log.message.trim();
+        String sender = log.sender == null ? "" : log.sender.trim();
+        String hay = (provider + " " + msg + " " + sender).toLowerCase(Locale.ROOT);
+        if (hay.contains("one cash") || hay.contains("onecash") || hay.contains("ون كاش")) return "ون كاش";
+        if (hay.contains("jawali") || hay.contains("جوالي")) return "جوالي";
+        if (hay.contains("jaib") || hay.contains("جيب")) return "جيب";
+        if (hay.contains("كريمي") || hay.contains("alkuraimi") || hay.contains("kuraimi")) return "كريمي";
+        if (hay.contains("فلوسك") || hay.contains("floosk") || hay.contains("flousak")) return "فلوسك";
+        if (hay.contains("عن طريق المحل") || hay.contains("المحل") || hay.contains("نقد") || provider.contains("بيع مباشر")) return "عن طريق المحل";
+        if (hay.contains("سلفة") || hay.contains("تسليف") || hay.contains("دفتر")) return "كرت سلف";
+        if (provider.contains("تعبئة رصيد")) return "تعبئة من الإدارة";
+        if (provider.contains("طلب رصيد")) return "طلب رصيد";
+        if (provider.contains("نقطة") || provider.contains("موثوق") || msg.contains("بصمة")) return "نقطة بيع";
+        if (provider.toLowerCase(Locale.US).contains("sms") || msg.toLowerCase(Locale.US).contains("sms")) return "SMS";
+        if ("admin".equalsIgnoreCase(sender) || provider.contains("إدارة") || provider.contains("ادارة")) return "إدارة";
+        return provider.isEmpty() ? "-" : provider;
+    }
+
     private void confirmDeleteLog(OperationLog log) {
         new AlertDialog.Builder(this)
                 .setTitle("حذف إشعار السداد")
@@ -2017,13 +2049,13 @@ public class MainActivity extends Activity {
 
         if (summaryOnly) {
             out.append("ملاحظة: اختر التقرير المفصل لعرض بيانات العمليات والكروت والرسائل.\n");
-            out.append("شبكة فور يو\n");
+            out.append("شبكة لان فور يو\n");
             return out.toString();
         }
 
         out.append("تفاصيل العمليات\n");
         out.append("==============================\n");
-        out.append("الحالة | الوقت والتاريخ | الفئة | طريقة الدفع | العدد | الملاحظات\n");
+        out.append(REPORT_TABLE_HEADER).append("\n");
         out.append("------------------------------\n");
         if (logs.isEmpty()) out.append("لا توجد عمليات ضمن هذا النطاق.\n");
         for (OperationLog log : logs) {
@@ -2032,14 +2064,16 @@ public class MainActivity extends Activity {
                     + "، الشراء: " + purchaseMethodForLog(log)
                     + "، الكرت: " + displayCardCode(log.cardCode)
                     + "، الرسالة: " + shortText(log.message, 180);
-            out.append(safe(log.status)).append(" | ")
-                    .append(safe(log.createdAt)).append(" | ")
-                    .append(log.amount).append(" ريال | ")
-                    .append(safe(log.provider)).append(" | ")
-                    .append("1").append(" | ")
-                    .append(note).append("\n");
+            out.append(reportTableRow(
+                    safe(log.createdAt),
+                    log.amount + " ريال",
+                    safe(log.status),
+                    paymentMethodForReport(log),
+                    "1",
+                    note
+            )).append("\n");
         }
-        out.append("شبكة فور يو\n");
+        out.append("شبكة لان فور يو\n");
         return out.toString();
     }
 
@@ -4906,7 +4940,7 @@ public class MainActivity extends Activity {
         out.append("ملاحظة النظام:\n").append(safe(log.message)).append("\n");
         out.append("==============================\n");
         out.append("تم إنشاء التقرير: ").append(AppStore.now()).append("\n");
-        out.append("شبكة فور يو\n");
+        out.append("شبكة لان فور يو\n");
         return out.toString();
     }
 
@@ -4946,12 +4980,14 @@ public class MainActivity extends Activity {
                     + "، الرقم/العميل: " + safe(log.customerPhone)
                     + "، طريقة الشراء: " + purchaseMethodForLog(log)
                     + "، الرسالة: " + shortText(log.message, 180);
-            details.append(safe(st)).append(" | ")
-                    .append(safe(log.createdAt)).append(" | ")
-                    .append(log.amount).append(" ريال | ")
-                    .append(safe(provider)).append(" | ")
-                    .append("1").append(" | ")
-                    .append(note).append("\n");
+            details.append(reportTableRow(
+                    safe(log.createdAt),
+                    log.amount + " ريال",
+                    safe(st),
+                    paymentMethodForReport(log),
+                    "1",
+                    note
+            )).append("\n");
         }
         int remainingAll = 0;
         for (TrustedCreditAgent a : agents) remainingAll += AppStore.remainingTrustedCredit(a);
@@ -4981,11 +5017,11 @@ public class MainActivity extends Activity {
         }
         out.append("تفاصيل العمليات\n");
         out.append("==============================\n");
-        out.append("الحالة | الوقت والتاريخ | الفئة | طريقة الدفع | العدد | الملاحظات\n");
+        out.append(REPORT_TABLE_HEADER).append("\n");
         out.append("------------------------------\n");
         if (count == 0) out.append("لا توجد عمليات ضمن الفترة المحددة.\n");
         else out.append(details);
-        out.append("شبكة فور يو\n");
+        out.append("شبكة لان فور يو\n");
         return out.toString();
     }
 
@@ -5092,9 +5128,9 @@ public class MainActivity extends Activity {
         c.drawText("4U", st.w - st.margin - 38, st.y + 48, logoText);
 
         Paint titlePaint = pdfPaint(Color.WHITE, 20, true, Paint.Align.RIGHT);
-        c.drawText("فور يو", st.w - st.margin - 76, st.y + 31, titlePaint);
+        c.drawText("لان فور يو", st.w - st.margin - 76, st.y + 31, titlePaint);
         Paint subPaint = pdfPaint(Color.rgb(238, 230, 255), 10, false, Paint.Align.RIGHT);
-        c.drawText("إدارة وبيع كروت الإنترنت تلقائياً", st.w - st.margin - 76, st.y + 50, subPaint);
+        c.drawText("شبكة لان فور يو - إدارة وبيع كروت الإنترنت تلقائياً", st.w - st.margin - 76, st.y + 50, subPaint);
         c.drawText(title == null || title.trim().isEmpty() ? "تقرير" : title, st.w - st.margin - 76, st.y + 68, subPaint);
 
         Paint datePaint = pdfPaint(Color.WHITE, 9, false, Paint.Align.LEFT);
@@ -5110,7 +5146,7 @@ public class MainActivity extends Activity {
         linePaint.setStrokeWidth(1f);
         c.drawLine(st.margin, st.h - 42, st.w - st.margin, st.h - 42, linePaint);
         Paint p = pdfPaint(Color.rgb(90, 88, 96), 9, false, Paint.Align.RIGHT);
-        c.drawText("فور يو - تقرير صادر من النظام", st.w - st.margin, st.h - 24, p);
+        c.drawText("شبكة لان فور يو - تقرير صادر من النظام", st.w - st.margin, st.h - 24, p);
         Paint pagePaint = pdfPaint(Color.rgb(90, 88, 96), 9, false, Paint.Align.LEFT);
         c.drawText("صفحة " + st.pageNo, st.margin, st.h - 24, pagePaint);
     }
@@ -5141,7 +5177,12 @@ public class MainActivity extends Activity {
             String line = rawLine == null ? "" : rawLine.trim();
             if (line.isEmpty()) { st.y += 4; continue; }
             if (isPdfDividerLine(line)) { st.y += 6; continue; }
-            if (line.equals("شبكة فور يو") || line.equals("فور يو")) continue;
+            if (line.equals("شبكة فور يو") || line.equals("شبكة لان فور يو") || line.equals("فور يو") || line.equals("لان فور يو")) continue;
+            if (isReportTableLine(line)) {
+                drawPdfReportTableRow(st, line);
+                inDetails = true;
+                continue;
+            }
 
             if (line.equals("الملخص") || line.equals("ملخص الفئات") || line.equals("ملخص الفئة") || line.equals("ملخص نقاط البيع") || line.equals("تفاصيل العمليات") || line.equals("بيانات نقطة البيع") || line.equals("طريقة الشراء") || line.contains("طلبات الرصيد")) {
                 currentTitle = line;
@@ -5167,7 +5208,7 @@ public class MainActivity extends Activity {
             }
         }
         drawPdfSectionTitle(st, "التوقيع");
-        drawPdfInfoRow(st, "توقيع النظام", "فور يو", Color.rgb(80, 55, 132));
+        drawPdfInfoRow(st, "توقيع النظام", "شبكة لان فور يو", Color.rgb(80, 55, 132));
     }
 
     private boolean isPdfDividerLine(String line) {
@@ -5192,6 +5233,66 @@ public class MainActivity extends Activity {
         if (v.contains("مراجعة") || v.contains("معلق") || v.contains("قيد")) return Color.rgb(188, 128, 22);
         if (v.contains("تم") || v.contains("نجاح") || v.contains("إرسال")) return Color.rgb(38, 124, 82);
         return Color.rgb(45, 43, 52);
+    }
+
+    private boolean isReportTableLine(String line) {
+        if (line == null || !line.contains("|")) return false;
+        String[] parts = line.split("\\|", -1);
+        if (parts.length < 6) return false;
+        return line.contains("الوقت والتاريخ") || line.contains("طريقة السداد") || line.contains("طريقة الدفع") || parts.length >= 6;
+    }
+
+    private void drawPdfReportTableRow(PdfRenderState st, String line) {
+        String[] raw = line.split("\\|", -1);
+        ArrayList<String> cells = new ArrayList<>();
+        for (String part : raw) cells.add(part == null ? "" : part.trim());
+        while (cells.size() < 6) cells.add("");
+        if (cells.size() > 6) {
+            StringBuilder note = new StringBuilder(cells.get(5));
+            for (int i = 6; i < cells.size(); i++) note.append(" | ").append(cells.get(i));
+            while (cells.size() > 6) cells.remove(cells.size() - 1);
+            cells.set(5, note.toString());
+        }
+        boolean header = cells.get(0).contains("الوقت") || cells.get(1).contains("الفئة") || cells.get(2).contains("الحالة");
+        int[] widths = new int[]{95, 52, 66, 78, 38, 194};
+        int[] chars = new int[]{18, 8, 12, 14, 5, 38};
+        ArrayList<ArrayList<String>> wrapped = new ArrayList<>();
+        int maxLines = 1;
+        for (int i = 0; i < 6; i++) {
+            ArrayList<String> w = wrapPdfLine(cells.get(i), chars[i]);
+            if (!header && w.size() > 3) {
+                ArrayList<String> cut = new ArrayList<>();
+                cut.add(w.get(0));
+                cut.add(w.get(1));
+                cut.add(w.get(2) + "...");
+                w = cut;
+            }
+            wrapped.add(w);
+            maxLines = Math.max(maxLines, w.size());
+        }
+        int rowH = header ? 30 : Math.max(34, 18 + maxLines * 14);
+        ensurePdfSpace(st, rowH + 4, "تفاصيل العمليات");
+        Paint fill = new Paint(Paint.ANTI_ALIAS_FLAG);
+        fill.setColor(header ? Color.rgb(80, 55, 132) : Color.rgb(253, 252, 255));
+        Paint border = new Paint(Paint.ANTI_ALIAS_FLAG);
+        border.setStyle(Paint.Style.STROKE);
+        border.setStrokeWidth(0.8f);
+        border.setColor(Color.rgb(222, 216, 234));
+        Paint textPaint = pdfPaint(header ? Color.WHITE : Color.rgb(40, 38, 48), header ? 8.3f : 8.0f, header, Paint.Align.RIGHT);
+        int right = st.w - st.margin;
+        for (int i = 0; i < 6; i++) {
+            int left = right - widths[i];
+            RectF rect = new RectF(left, st.y, right, st.y + rowH);
+            st.canvas.drawRect(rect, fill);
+            st.canvas.drawRect(rect, border);
+            int yy = st.y + (header ? 19 : 16);
+            for (String txt : wrapped.get(i)) {
+                st.canvas.drawText(txt == null || txt.isEmpty() ? "-" : txt, right - 4, yy, textPaint);
+                yy += 14;
+            }
+            right = left;
+        }
+        st.y += rowH + 3;
     }
 
     private void drawPdfSectionTitle(PdfRenderState st, String title) {
@@ -5422,15 +5523,18 @@ public class MainActivity extends Activity {
             if (AppStore.isPendingCriticalLog(log) || st.contains("معلق") || st.contains("مراجعة")) pending++;
             else if (st.contains("رفض") || st.contains("مرفوض") || st.contains("تجاوز") || st.contains("فشل")) rejected++;
             else if (st.contains("تم") || st.contains("جاري إرسال")) { success++; if (!isTopup) total += Math.max(0, log.amount); }
-            rows.append("\n").append(count).append(") ").append(log.createdAt == null ? "" : log.createdAt).append("\n")
-                    .append("الحالة: ").append(st.isEmpty() ? "غير محدد" : st).append("\n")
-                    .append("طريقة الشراء: ").append(purchaseMethodForLog(log)).append("\n")
-                    .append("المصدر: ").append(sourceLabelForTrustedLog(log, a)).append("\n")
-                    .append("العميل: ").append((log.customerPhone == null || log.customerPhone.isEmpty()) ? "-" : log.customerPhone).append("\n")
-                    .append("المبلغ: ").append(log.amount).append("\n")
-                    .append("الكرت: ").append(displayCardCode(log.cardCode)).append("\n")
-                    .append("ملاحظة: ").append(log.message == null ? "" : log.message).append("\n")
-                    .append("--------------------------------\n");
+            String note = "المصدر: " + sourceLabelForTrustedLog(log, a)
+                    + "، العميل: " + ((log.customerPhone == null || log.customerPhone.isEmpty()) ? "-" : log.customerPhone)
+                    + "، الكرت: " + displayCardCode(log.cardCode)
+                    + "، الرسالة: " + shortText(log.message, 160);
+            rows.append(reportTableRow(
+                    safe(log.createdAt),
+                    log.amount + " ريال",
+                    st.isEmpty() ? "غير محدد" : st,
+                    paymentMethodForReport(log),
+                    "1",
+                    note
+            )).append("\n");
         }
         out.append("عدد العمليات: ").append(count).append("\n");
         out.append("عمليات ناجحة/قيد الإرسال: ").append(success).append("\n");
@@ -5440,8 +5544,13 @@ public class MainActivity extends Activity {
         out.append("إجمالي تعبئة الرصيد بالفترة: ").append(topups).append(" ريال\n");
         out.append("المتبقي الحالي: ").append(AppStore.remainingTrustedCredit(a)).append(" ريال\n");
         out.append("================================\n");
+        out.append("تفاصيل العمليات\n");
+        out.append("--------------------------------\n");
+        out.append(REPORT_TABLE_HEADER).append("\n");
+        out.append("--------------------------------\n");
         if (count == 0) out.append("لا توجد عمليات مطابقة لهذه النقطة ضمن التاريخ المحدد.");
         else out.append(rows);
+        out.append("شبكة لان فور يو\n");
         return out.toString();
     }
 
@@ -5450,7 +5559,7 @@ public class MainActivity extends Activity {
         LinearLayout layout = new LinearLayout(this);
         layout.setOrientation(LinearLayout.VERTICAL);
         layout.setPadding(dp(8), dp(8), dp(8), dp(8));
-        layout.addView(small("سيتم إضافة المبلغ فوق السقف/الرصيد السابق لنقطة البيع، ولن يتم تصفير المستخدم السابق. ستصل رسالة إلى نقطة البيع بتوقيع شبكة فور يو."));
+        layout.addView(small("سيتم إضافة المبلغ فوق السقف/الرصيد السابق لنقطة البيع، ولن يتم تصفير المستخدم السابق. ستصل رسالة إلى نقطة البيع بتوقيع شبكة لان فور يو."));
         EditText amount = new EditText(this);
         amount.setHint("مبلغ التعبئة مثل 5000");
         amount.setGravity(Gravity.RIGHT);

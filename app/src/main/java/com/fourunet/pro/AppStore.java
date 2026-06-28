@@ -108,7 +108,7 @@ class AppStore {
     static final String LOCK_METHOD_PIN = "pin";
     static final String LOCK_METHOD_FINGERPRINT_PIN = "fingerprint_pin";
 
-    private static final String DEFAULT_NETWORK_NAME = "فور يو اونلاين";
+    private static final String DEFAULT_NETWORK_NAME = "لان فور يو";
     private static final String DEFAULT_ADMIN_PHONE = "776901570";
     private static final String OFFLINE_LIFETIME_SECRET = "ONLINE_V14_PRIVATE_LIFETIME_SECRET_776901570";
     private static final String OFFLINE_TRIAL_SECRET = "ONLINE_V29_PRIVATE_TRIAL_30_DAYS_SECRET_776901570";
@@ -135,7 +135,7 @@ class AppStore {
     };
 
     static final String SYSTEM_SIGNATURE = "فور يو";
-    static final String NETWORK_SIGNATURE = "شبكة فور يو";
+    static final String NETWORK_SIGNATURE = "شبكة لان فور يو";
 
     static final String DEFAULT_SUCCESS_TEMPLATE = "كرتك فئة {amount}:\n"
             + "{card}\n"
@@ -2488,13 +2488,13 @@ class AppStore {
         String name = (customer.name == null || customer.name.trim().isEmpty()) ? clean : customer.name.trim();
         StringBuilder sb = new StringBuilder();
         sb.append("مرحبا ").append(name).append(" 👋\n\n");
-        sb.append("تقرير حسابك في الفترة الحالية\n");
+        sb.append("تقرير إجراءات العميل - شبكة لان فور يو\n");
         sb.append("الرقم: ").append(clean).append("\n");
         sb.append("سقف السلفة: ").append(customer.loanLimit).append(" ريال\n");
         sb.append("المتبقي عليك: ").append(customer.debt).append(" ريال\n");
         sb.append("المتاح من السقف: ").append(customer.remainingLoan()).append(" ريال\n");
         sb.append("\n");
-        sb.append("الحالة | الوقت والتاريخ | الفئة | طريقة الدفع | العدد | الملاحظات\n");
+        sb.append("الوقت والتاريخ | الفئة | الحالة | طريقة السداد | العدد | ملاحظة\n");
         sb.append("------------------------------------------------------------\n");
         int count = 0, totalDebit = 0, totalCredit = 0, failed = 0;
         for (LedgerEntry e : loadLedgerEntries(c)) {
@@ -2504,9 +2504,9 @@ class AppStore {
             if (type.contains("مرفوض") || type.contains("فشل")) { status = "فشل"; failed++; }
             String category = e.debit > 0 ? String.valueOf(e.debit) : (e.credit > 0 ? String.valueOf(e.credit) : "-");
             String payMethod = type.contains("سداد") ? "سداد" : (type.contains("سلفة") ? "سلفة SMS " + maskPhone(clean) : type);
-            sb.append(status).append(" | ")
-                    .append(e.createdAt).append(" | ")
+            sb.append(e.createdAt).append(" | ")
                     .append(category).append(" | ")
+                    .append(status).append(" | ")
                     .append(payMethod).append(" | ")
                     .append("1").append(" | ")
                     .append(e.description == null ? "" : e.description).append("\n");
@@ -2524,7 +2524,7 @@ class AppStore {
         sb.append("عمليات فاشلة: ").append(failed).append("\n");
         sb.append("المتبقي عليك: ").append(customer.debt).append(" ريال\n");
         sb.append("المتاح من السقف: ").append(customer.remainingLoan()).append(" ريال\n\n");
-        sb.append(SYSTEM_SIGNATURE);
+        sb.append(NETWORK_SIGNATURE);
         return sb.toString();
     }
 
