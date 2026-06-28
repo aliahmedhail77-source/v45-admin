@@ -2086,8 +2086,7 @@ public class MainActivity extends Activity {
         st.pageNo = 1;
         try {
             startStyledPdfPage(st, title);
-            drawReportMetaCard(st, title, report);
-            drawParsedProfessionalReport(st, report == null ? "" : report);
+            drawHtmlStyleProfessionalReport(st, title, report == null ? "" : report);
             finishStyledPdfPage(st);
             OutputStream out = getContentResolver().openOutputStream(uri);
             st.pdf.writeTo(out);
@@ -5106,9 +5105,16 @@ public class MainActivity extends Activity {
         Canvas canvas;
         int pageNo;
         int y;
-        final int w = 595;
-        final int h = 842;
+        final int w = 842;
+        final int h = 595;
         final int margin = 36;
+    }
+
+    private static class PdfReportData {
+        ArrayList<String[]> info = new ArrayList<>();
+        ArrayList<String[]> summary = new ArrayList<>();
+        ArrayList<String[]> rows = new ArrayList<>();
+        ArrayList<String> notes = new ArrayList<>();
     }
 
     private File createTextPdfFile(String title, String report, String prefix) {
@@ -5117,8 +5123,7 @@ public class MainActivity extends Activity {
         st.pageNo = 1;
         try {
             startStyledPdfPage(st, title);
-            drawReportMetaCard(st, title, report);
-            drawParsedProfessionalReport(st, report == null ? "" : report);
+            drawHtmlStyleProfessionalReport(st, title, report == null ? "" : report);
             finishStyledPdfPage(st);
 
             File dir = new File(getCacheDir(), "reports_pdf");
@@ -5204,6 +5209,282 @@ public class MainActivity extends Activity {
         c.drawText("شبكة لان فور يو - تقرير صادر من النظام", st.w - st.margin, st.h - 24, p);
         Paint pagePaint = pdfPaint(Color.rgb(90, 88, 96), 9, false, Paint.Align.LEFT);
         c.drawText("صفحة " + st.pageNo, st.margin, st.h - 24, pagePaint);
+    }
+
+
+    private String cleanPdfText(String value) {
+        if (value == null) return "-";
+        String v = value.replace("📊", "").replace("🕒", "").replace("📂", "")
+                .replace("🚦", "").replace("💳", "").replace("🔢", "").replace("📝", "")
+                .replace("✔", "تم").replace("✖", "رفض").replace("⏳", "معلق").replace("🔄", "قيد")
+                .replace("🎫", "").replace("💰", "").replace("✅", "").replace("👋", "")
+                .replace("🏦", "").replace("💵", "").replace("📱", "").replace("🟢", "")
+                .replace("🟡", "").replace("🔴", "").replace("🔵", "").replace("🏆", "")
+                .replace("📌", "").replace("🛍️", "").replace("🛒", "").replace("🧾", "")
+                .replace("👨‍💼", "").replace("🚫", "");
+        v = v.replace("\uFE0F", "").replaceAll("[\\uD800-\\uDFFF]", "");
+        return v.trim().isEmpty() ? "-" : v.trim();
+    }
+
+    private String[] normalizedReportCells(String line) {
+        String[] raw = line == null ? new String[0] : line.split("\\|", -1);
+        String[] cells = new String[]{"", "", "", "", "", ""};
+        for (int i = 0; i < Math.min(6, raw.length); i++) cells[i] = cleanPdfText(raw[i]);
+        if (raw.length > 6) {
+            StringBuilder note = new StringBuilder(cells[5]);
+            for (int i = 6; i < raw.length; i++) note.append(" | ").append(cleanPdfText(raw[i]));
+            cells[5] = note.toString();
+        }
+        return cells;
+    }
+
+    private PdfReportData parseProfessionalReportData(String report) {
+        PdfReportData data = new PdfReportData();
+        String[] lines = (report == null ? "" : report.replace("\r", "")).split("\n");
+        int section = 0; // 0 info, 1 summary, 2 table, 3 notes
+        for (String raw : lines) {
+            String line = cleanPdfText(raw == null ? "" : raw.trim());
+            if (line.isEmpty() || "-".equals(line) || isPdfDividerLine(line)) continue;
+            if (line.equals("شبكة فور يو") || line.equals("شبكة لان فور يو") || line.equals("فور يو") || line.equals("لان فور يو")) continue;
+            if (line.contains("تفاصيل العمليات")) { section = 2; continue; }
+            if (line.contains("ملخص") || line.equals("الإجمالي") || line.equals("الخلاصة")) { section = 1; continue; }
+            if (line.contains("بيانات العميل") || line.contains("بيانات نقطة البيع")) { section = 0; continue; }
+            if (isReportTableLine(line)) {
+                String[] cells = normalizedReportCells(line);
+                boolean header = cells[0].contains("الوقت") || cells[1].contains("الفئة") || cells[2].contains("الحالة");
+                if (!header) data.rows.add(cells);
+                section = 2;
+                continue;
+            }
+            int sep = line.indexOf(':');
+            if (sep > 0 && sep < 40) {
+                String key = cleanPdfText(line.substring(0, sep));
+                String val = cleanPdfText(line.substring(sep + 1));
+                if (section == 1 || isSummaryKey(key)) data.summary.add(new String[]{key, val});
+                else if (section == 2) data.notes.add(key + ": " + val);
+                else data.info.add(new String[]{key, val});
+            } else {
+                if (!line.contains("لا توجد عمليات")) data.notes.add(line);
+            }
+        }
+        if (data.summary.isEmpty()) data.summary.add(new String[]{"عدد العمليات", String.valueOf(data.rows.size())});
+        return data;
+    }
+
+    private void drawHtmlStyleProfessionalReport(PdfRenderState st, String title, String report) {
+        PdfReportData data = parseProfessionalReportData(report);
+        drawHtmlStyleMetaCard(st, title);
+        drawHtmlLegend(st);
+        if (!data.info.isEmpty()) drawHtmlKeyValueGrid(st, "بيانات التقرير", data.info);
+        drawHtmlSummaryBox(st, data.summary, data.rows.size());
+        drawPdfSectionTitle(st, "تفاصيل العمليات");
+        if (data.rows.isEmpty()) {
+            drawEmptyOperationsBox(st);
+        } else {
+            drawHtmlReportTableHeader(st);
+            for (String[] row : data.rows) drawHtmlReportTableRow(st, row, false);
+        }
+        if (!data.notes.isEmpty()) {
+            drawPdfSectionTitle(st, "ملاحظات");
+            int max = Math.min(6, data.notes.size());
+            for (int i = 0; i < max; i++) drawPdfParagraph(st, data.notes.get(i), "ملاحظات");
+        }
+    }
+
+    private void drawHtmlStyleMetaCard(PdfRenderState st, String title) {
+        ensurePdfSpace(st, 92, title);
+        int x = st.margin;
+        int w = st.w - st.margin * 2;
+        Paint fill = new Paint(Paint.ANTI_ALIAS_FLAG);
+        fill.setColor(Color.rgb(238, 242, 247));
+        st.canvas.drawRoundRect(new RectF(x, st.y, x + w, st.y + 72), 14, 14, fill);
+        Paint accent = new Paint(Paint.ANTI_ALIAS_FLAG);
+        accent.setColor(Color.rgb(52, 152, 219));
+        st.canvas.drawRoundRect(new RectF(x + w - 6, st.y, x + w, st.y + 72), 8, 8, accent);
+        Paint label = pdfPaint(Color.rgb(30, 42, 74), 15, true, Paint.Align.RIGHT);
+        Paint val = pdfPaint(Color.rgb(45, 53, 68), 10, false, Paint.Align.RIGHT);
+        st.canvas.drawText(cleanPdfText(title == null || title.trim().isEmpty() ? "تقرير المعاملات" : title), x + w - 18, st.y + 25, label);
+        st.canvas.drawText("شبكة لان فور يو - تقرير منظم بالأعمدة المعتمدة", x + w - 18, st.y + 44, val);
+        st.canvas.drawText("التاريخ: " + AppStore.now(), x + w - 18, st.y + 61, val);
+        st.y += 88;
+    }
+
+    private void drawHtmlLegend(PdfRenderState st) {
+        ensurePdfSpace(st, 50, "دليل التقرير");
+        int x = st.margin;
+        int w = st.w - st.margin * 2;
+        Paint fill = new Paint(Paint.ANTI_ALIAS_FLAG);
+        fill.setColor(Color.rgb(238, 242, 247));
+        st.canvas.drawRoundRect(new RectF(x, st.y, x + w, st.y + 36), 10, 10, fill);
+        drawLegendItem(st, x + w - 18, "مكتمل", Color.rgb(40, 167, 69));
+        drawLegendItem(st, x + w - 110, "معلق", Color.rgb(255, 193, 7));
+        drawLegendItem(st, x + w - 200, "مرفوض", Color.rgb(220, 53, 69));
+        drawLegendItem(st, x + w - 300, "قيد التنفيذ", Color.rgb(0, 123, 255));
+        Paint p = pdfPaint(Color.rgb(45, 53, 68), 9.5f, false, Paint.Align.LEFT);
+        st.canvas.drawText("طرق السداد: ون كاش | جوالي | جيب | كريمي | فلوسك | عن طريق المحل | كرت سلف | رصيد العميل", x + 14, st.y + 23, p);
+        st.y += 50;
+    }
+
+    private void drawLegendItem(PdfRenderState st, int right, String label, int colorValue) {
+        Paint dot = new Paint(Paint.ANTI_ALIAS_FLAG);
+        dot.setColor(colorValue);
+        st.canvas.drawCircle(right - 7, st.y + 18, 5, dot);
+        Paint p = pdfPaint(Color.rgb(45, 53, 68), 9.5f, false, Paint.Align.RIGHT);
+        st.canvas.drawText(label, right - 18, st.y + 22, p);
+    }
+
+    private void drawHtmlKeyValueGrid(PdfRenderState st, String title, ArrayList<String[]> pairs) {
+        if (pairs == null || pairs.isEmpty()) return;
+        drawPdfSectionTitle(st, title);
+        int x = st.margin;
+        int gap = 8;
+        int cols = 3;
+        int totalW = st.w - st.margin * 2;
+        int cellW = (totalW - gap * (cols - 1)) / cols;
+        int cellH = 42;
+        for (int i = 0; i < pairs.size(); i++) {
+            if (i % cols == 0) ensurePdfSpace(st, cellH + 8, title);
+            int col = i % cols;
+            int left = x + col * (cellW + gap);
+            int top = st.y;
+            Paint fill = new Paint(Paint.ANTI_ALIAS_FLAG);
+            fill.setColor(Color.WHITE);
+            st.canvas.drawRoundRect(new RectF(left, top, left + cellW, top + cellH), 8, 8, fill);
+            Paint border = new Paint(Paint.ANTI_ALIAS_FLAG);
+            border.setStyle(Paint.Style.STROKE);
+            border.setStrokeWidth(0.8f);
+            border.setColor(Color.rgb(221, 225, 232));
+            st.canvas.drawRoundRect(new RectF(left, top, left + cellW, top + cellH), 8, 8, border);
+            String key = pairs.get(i)[0];
+            String val = pairs.get(i)[1];
+            drawPdfTextBlock(st.canvas, key, left + 8, top + 8, cellW - 16, 14, Color.rgb(90, 88, 110), 8.5f, true, Layout.Alignment.ALIGN_OPPOSITE);
+            drawPdfTextBlock(st.canvas, val, left + 8, top + 23, cellW - 16, 16, Color.rgb(30, 36, 48), 9.5f, false, Layout.Alignment.ALIGN_OPPOSITE);
+            if (col == cols - 1 || i == pairs.size() - 1) st.y += cellH + 8;
+        }
+    }
+
+    private void drawHtmlSummaryBox(PdfRenderState st, ArrayList<String[]> summary, int rowCount) {
+        ensurePdfSpace(st, 72, "الخلاصة");
+        int x = st.margin;
+        int w = st.w - st.margin * 2;
+        Paint fill = new Paint(Paint.ANTI_ALIAS_FLAG);
+        fill.setColor(Color.rgb(232, 240, 254));
+        st.canvas.drawRoundRect(new RectF(x, st.y, x + w, st.y + 56), 10, 10, fill);
+        Paint accent = new Paint(Paint.ANTI_ALIAS_FLAG);
+        accent.setColor(Color.rgb(52, 152, 219));
+        st.canvas.drawRoundRect(new RectF(x + w - 6, st.y, x + w, st.y + 56), 7, 7, accent);
+        Paint titlePaint = pdfPaint(Color.rgb(30, 42, 74), 11, true, Paint.Align.RIGHT);
+        st.canvas.drawText("الخلاصة", x + w - 18, st.y + 20, titlePaint);
+        StringBuilder line = new StringBuilder();
+        line.append("إجمالي العمليات: ").append(rowCount);
+        if (summary != null) {
+            int added = 0;
+            for (String[] p : summary) {
+                if (p == null || p.length < 2) continue;
+                String k = cleanPdfText(p[0]);
+                String v = cleanPdfText(p[1]);
+                if (k.contains("عدد العمليات")) continue;
+                if (added < 5) {
+                    line.append(" | ").append(k).append(": ").append(v);
+                    added++;
+                }
+            }
+        }
+        drawPdfTextBlock(st.canvas, line.toString(), x + 16, st.y + 30, w - 34, 20, Color.rgb(45, 53, 68), 9.5f, false, Layout.Alignment.ALIGN_OPPOSITE);
+        st.y += 72;
+    }
+
+    private void drawEmptyOperationsBox(PdfRenderState st) {
+        ensurePdfSpace(st, 50, "تفاصيل العمليات");
+        int x = st.margin;
+        int w = st.w - st.margin * 2;
+        Paint fill = new Paint(Paint.ANTI_ALIAS_FLAG);
+        fill.setColor(Color.rgb(253, 252, 255));
+        st.canvas.drawRoundRect(new RectF(x, st.y, x + w, st.y + 36), 8, 8, fill);
+        drawPdfTextBlock(st.canvas, "لا توجد عمليات لهذا التقرير حتى الآن.", x + 12, st.y + 11, w - 24, 16, Color.rgb(90, 88, 96), 10, false, Layout.Alignment.ALIGN_CENTER);
+        st.y += 48;
+    }
+
+    private void drawHtmlReportTableHeader(PdfRenderState st) {
+        drawHtmlReportTableRow(st, new String[]{"الوقت والتاريخ", "الفئة", "الحالة", "طريقة السداد", "العدد", "ملاحظة"}, true);
+    }
+
+    private int htmlStatusBg(String status) {
+        String v = status == null ? "" : status;
+        if (v.contains("رفض") || v.contains("فشل") || v.contains("ملغي") || v.contains("مرفوض")) return Color.rgb(248, 215, 218);
+        if (v.contains("معلق") || v.contains("مراجعة") || v.contains("نفدت")) return Color.rgb(255, 243, 205);
+        if (v.contains("قيد") || v.contains("جاري")) return Color.rgb(204, 229, 255);
+        return Color.rgb(212, 237, 218);
+    }
+
+    private int htmlStatusText(String status) {
+        String v = status == null ? "" : status;
+        if (v.contains("رفض") || v.contains("فشل") || v.contains("ملغي") || v.contains("مرفوض")) return Color.rgb(114, 28, 36);
+        if (v.contains("معلق") || v.contains("مراجعة") || v.contains("نفدت")) return Color.rgb(133, 100, 4);
+        if (v.contains("قيد") || v.contains("جاري")) return Color.rgb(0, 64, 133);
+        return Color.rgb(21, 87, 36);
+    }
+
+    private void drawHtmlReportTableRow(PdfRenderState st, String[] cells, boolean header) {
+        if (cells == null) cells = new String[]{"", "", "", "", "", ""};
+        while (cells.length < 6) cells = new String[]{safe(cells.length>0?cells[0]:""), safe(cells.length>1?cells[1]:""), safe(cells.length>2?cells[2]:""), safe(cells.length>3?cells[3]:""), safe(cells.length>4?cells[4]:""), ""};
+        int[] widths = new int[]{125, 70, 90, 110, 45, 330};
+        int[] chars = new int[]{19, 10, 13, 16, 5, 58};
+        ArrayList<ArrayList<String>> wrapped = new ArrayList<>();
+        int maxLines = 1;
+        for (int i = 0; i < 6; i++) {
+            ArrayList<String> w = wrapPdfLine(cleanPdfText(cells[i]), chars[i]);
+            if (!header && i == 5 && w.size() > 3) {
+                ArrayList<String> cut = new ArrayList<>();
+                cut.add(w.get(0));
+                cut.add(w.get(1));
+                cut.add(w.get(2) + "...");
+                w = cut;
+            }
+            wrapped.add(w);
+            maxLines = Math.max(maxLines, w.size());
+        }
+        int rowH = header ? 34 : Math.max(38, 18 + maxLines * 13);
+        if (st.y + rowH + 4 > st.h - 56) {
+            finishStyledPdfPage(st);
+            st.pageNo++;
+            startStyledPdfPage(st, "تفاصيل العمليات");
+            if (!header) drawHtmlReportTableHeader(st);
+        }
+        Paint fill = new Paint(Paint.ANTI_ALIAS_FLAG);
+        fill.setColor(header ? Color.rgb(30, 42, 74) : Color.WHITE);
+        Paint border = new Paint(Paint.ANTI_ALIAS_FLAG);
+        border.setStyle(Paint.Style.STROKE);
+        border.setStrokeWidth(0.8f);
+        border.setColor(Color.rgb(221, 225, 232));
+        int right = st.w - st.margin;
+        for (int i = 0; i < 6; i++) {
+            int left = right - widths[i];
+            RectF rect = new RectF(left, st.y, right, st.y + rowH);
+            st.canvas.drawRect(rect, fill);
+            st.canvas.drawRect(rect, border);
+            if (!header && i == 2) {
+                Paint pill = new Paint(Paint.ANTI_ALIAS_FLAG);
+                pill.setColor(htmlStatusBg(cells[i]));
+                float pillLeft = left + 8;
+                float pillRight = right - 8;
+                float pillTop = st.y + 8;
+                float pillBottom = Math.min(st.y + rowH - 8, pillTop + 22);
+                st.canvas.drawRoundRect(new RectF(pillLeft, pillTop, pillRight, pillBottom), 12, 12, pill);
+                drawPdfTextBlock(st.canvas, cleanPdfText(cells[i]), pillLeft + 4, pillTop + 5, pillRight - pillLeft - 8, 13,
+                        htmlStatusText(cells[i]), 8.2f, true, Layout.Alignment.ALIGN_CENTER);
+            } else {
+                StringBuilder cellText = new StringBuilder();
+                for (String txt : wrapped.get(i)) {
+                    if (cellText.length() > 0) cellText.append("\n");
+                    cellText.append(txt == null || txt.trim().isEmpty() ? "-" : txt);
+                }
+                drawPdfTextBlock(st.canvas, cellText.toString(), left + 4, st.y + (header ? 9 : 8), Math.max(8, widths[i] - 8), rowH - 8,
+                        header ? Color.WHITE : Color.rgb(40, 38, 48), header ? 9.0f : 8.2f, header, Layout.Alignment.ALIGN_CENTER);
+            }
+            right = left;
+        }
+        st.y += rowH + 3;
     }
 
     private void drawReportMetaCard(PdfRenderState st, String title, String report) {
@@ -5310,7 +5591,7 @@ public class MainActivity extends Activity {
         tp.setColor(colorValue);
         tp.setTextSize(size);
         tp.setTypeface(Typeface.create(Typeface.SANS_SERIF, bold ? Typeface.BOLD : Typeface.NORMAL));
-        String value = textValue == null || textValue.trim().isEmpty() ? "-" : textValue.trim();
+        String value = cleanPdfText(textValue == null || textValue.trim().isEmpty() ? "-" : textValue.trim());
         int save = canvas.save();
         canvas.translate(left, top);
         try {
