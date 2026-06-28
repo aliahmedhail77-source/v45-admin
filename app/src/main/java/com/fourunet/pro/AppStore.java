@@ -2494,7 +2494,7 @@ class AppStore {
         sb.append("المتبقي عليك: ").append(customer.debt).append(" ريال\n");
         sb.append("المتاح من السقف: ").append(customer.remainingLoan()).append(" ريال\n");
         sb.append("\n");
-        sb.append("الحالة | الوقت والتاريخ | الفئة | عبر | طريق الدفع | العدد | الملاحظات\n");
+        sb.append("الحالة | الوقت والتاريخ | الفئة | طريقة الدفع | العدد | الملاحظات\n");
         sb.append("------------------------------------------------------------\n");
         int count = 0, totalDebit = 0, totalCredit = 0, failed = 0;
         for (LedgerEntry e : loadLedgerEntries(c)) {
@@ -2503,12 +2503,10 @@ class AppStore {
             String type = e.type == null ? "" : e.type;
             if (type.contains("مرفوض") || type.contains("فشل")) { status = "فشل"; failed++; }
             String category = e.debit > 0 ? String.valueOf(e.debit) : (e.credit > 0 ? String.valueOf(e.credit) : "-");
-            String route = type.contains("سلفة") ? "SMS " + maskPhone(clean) : "المحافظ";
-            String payMethod = type.contains("سداد") ? "سداد" : (type.contains("سلفة") ? "سلفة" : type);
+            String payMethod = type.contains("سداد") ? "سداد" : (type.contains("سلفة") ? "سلفة SMS " + maskPhone(clean) : type);
             sb.append(status).append(" | ")
                     .append(e.createdAt).append(" | ")
                     .append(category).append(" | ")
-                    .append(route).append(" | ")
                     .append(payMethod).append(" | ")
                     .append("1").append(" | ")
                     .append(e.description == null ? "" : e.description).append("\n");

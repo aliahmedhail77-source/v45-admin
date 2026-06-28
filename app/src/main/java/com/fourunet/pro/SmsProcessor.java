@@ -78,6 +78,18 @@ class SmsProcessor {
         // بهذا يتم تجاهل رسائل المنظمات، العروض، تعبئة الرصيد، الرسائل الخاصة، وأي رسالة مزورة من مرسل غير موجود في المسموح.
         if (PaymentParser.isSystemGeneratedMessage(body) || PaymentParser.isIgnoredNotificationMessage(body)) return false;
         if (PaymentParser.isNonPaymentNoise(body)) return false;
+
+        // HOTFIX STAGE 12.4:
+        // في V45_STAGE12.1 كان طلب السلفة الرقمي مثل "100" لا يدخل الطابور أصلاً،
+        // لأن فحص الطابور كان يقبل رسائل المحافظ أو نقاط البيع فقط.
+        // لذلك كان الزبون الموثوق صاحب السقف يرسل 100 ولا يحدث أي تعامل.
+        // نسمح هنا برسائل السلفة الرقمية/البسيطة فقط إذا كان مرسلها مسجلاً في الدفتر
+        // كزبون نشط وموثوق والسلفة مفعلة له، ثم تتابع المعالجة داخل processSmartLoanRequest.
+        if (AppStore.isSmartLedgerEnabled(context) && AppStore.isLedgerLoanEnabled(context) && AppStore.isLoanRequestText(body)) {
+            LedgerCustomer loanCustomer = AppStore.findLedgerCustomerByPhone(context, sender);
+            if (loanCustomer != null && loanCustomer.active && loanCustomer.trusted && loanCustomer.loanEnabled) return true;
+        }
+
         TrustedCreditAgent queueAgent = AppStore.findTrustedCreditSender(context, sender);
         if (queueAgent != null) {
             String signedBody = AppStore.stripTrustedCreditSignature(queueAgent, body);

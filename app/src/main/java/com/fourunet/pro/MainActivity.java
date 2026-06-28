@@ -1942,70 +1942,59 @@ public class MainActivity extends Activity {
     }
 
     private void writePdfReport(Uri uri, int amountFilter, boolean summaryOnly) {
-        PdfDocument pdf = new PdfDocument();
-        Paint p = new Paint(Paint.ANTI_ALIAS_FLAG);
-        p.setTypeface(Typeface.create(Typeface.SANS_SERIF, Typeface.NORMAL));
-        int w = 595, h = 842, margin = 36, y = 44;
-        PdfDocument.Page page = pdf.startPage(new PdfDocument.PageInfo.Builder(w, h, 1).create());
-        Canvas c = page.getCanvas();
+        String title = amountFilter < 0 ? "تقرير مبيعات كل الفئات" : "تقرير مبيعات فئة " + amountFilter + " ريال";
+        String report = buildCardsSalesPdfReportText(title, amountFilter, summaryOnly);
+        writeStyledPdfToUri(uri, title, report);
+    }
 
+    private String buildCardsSalesPdfReportText(String title, int amountFilter, boolean summaryOnly) {
         ArrayList<OperationLog> all = AppStore.loadLogs(this);
         ArrayList<OperationLog> logs = new ArrayList<>();
         for (OperationLog log : all) if (amountFilter < 0 || log.amount == amountFilter) logs.add(log);
 
-        int soldCards = 0, availableCards = 0, totalCards = 0, totalAmount = 0, sentOps = 0;
+        int soldCards = 0, availableCards = 0, totalCards = 0, totalAmount = 0, sentOps = 0, failedOps = 0, reviewOps = 0;
         for (CardItem cardItem : AppStore.loadCards(this)) {
             if (amountFilter >= 0 && cardItem.amount != amountFilter) continue;
             totalCards++;
             if (cardItem.sold) soldCards++; else availableCards++;
         }
         for (OperationLog log : logs) {
-            if ("تم الإرسال".equals(log.status)) {
+            String st = log.status == null ? "" : log.status;
+            if ("تم الإرسال".equals(st) || st.contains("نجاح") || st.contains("تم")) {
                 sentOps++;
                 totalAmount += log.amount;
+            } else if (st.contains("فشل") || st.contains("رفض")) {
+                failedOps++;
+            } else {
+                reviewOps++;
             }
         }
 
-        p.setTextAlign(Paint.Align.RIGHT);
-        p.setColor(Color.BLACK);
-        p.setTextSize(20); p.setTypeface(Typeface.DEFAULT_BOLD);
-        c.drawText("تقرير مبيعات كروت " + AppStore.getNetworkName(this), w - margin, y, p); y += 28;
-        p.setTextSize(12); p.setTypeface(Typeface.DEFAULT);
         String range = amountFilter < 0 ? "إجمالي كل الفئات" : "فئة " + amountFilter + " ريال";
-        c.drawText("النطاق: " + range, w - margin, y, p); y += 20;
-        c.drawText("نوع التقرير: " + (summaryOnly ? "مختصر" : "مفصل") + " | تاريخ التقرير: " + AppStore.now(), w - margin, y, p); y += 28;
+        StringBuilder out = new StringBuilder();
+        out.append(title == null ? "تقرير مبيعات" : title).append("\n");
+        out.append("==============================\n");
+        out.append("النطاق: ").append(range).append("\n");
+        out.append("نوع التقرير: ").append(summaryOnly ? "مختصر" : "مفصل").append("\n");
+        out.append("تاريخ إنشاء التقرير: ").append(AppStore.now()).append("\n");
+        out.append("طريقة العرض: PDF احترافي منظم بترتيب الأعمدة المطلوب\n");
+        out.append("------------------------------\n");
+        out.append("الملخص\n");
+        out.append("إجمالي الكروت: ").append(totalCards).append("\n");
+        out.append("الكروت المباعة: ").append(soldCards).append("\n");
+        out.append("الكروت المتبقية: ").append(availableCards).append("\n");
+        out.append("عمليات الإرسال الناجحة: ").append(sentOps).append("\n");
+        out.append("عمليات تحتاج مراجعة: ").append(reviewOps).append("\n");
+        out.append("عمليات فاشلة/مرفوضة: ").append(failedOps).append("\n");
+        out.append("إجمالي مبالغ العمليات الناجحة: ").append(totalAmount).append(" ريال\n");
+        out.append("عدد إشعارات السداد في التقرير: ").append(logs.size()).append("\n");
+        out.append("==============================\n");
+        out.append(amountFilter < 0 ? "ملخص الفئات\n" : "ملخص الفئة\n");
+        out.append("------------------------------\n");
 
-        p.setTypeface(Typeface.DEFAULT_BOLD); p.setTextSize(14);
-        c.drawText("الملخص", w - margin, y, p); y += 22;
-        p.setTypeface(Typeface.DEFAULT); p.setTextSize(12);
-        String[] summary = new String[]{
-                "إجمالي الكروت: " + totalCards,
-                "الكروت المباعة: " + soldCards,
-                "الكروت المتبقية: " + availableCards,
-                "عمليات الإرسال الناجحة: " + sentOps,
-                "إجمالي مبالغ العمليات الناجحة: " + totalAmount + " ريال",
-                "عدد إشعارات السداد في التقرير: " + logs.size()
-        };
-        for (String line : summary) { c.drawText(line, w - margin, y, p); y += 18; }
-        y += 12;
-
-        p.setTypeface(Typeface.DEFAULT_BOLD); p.setTextSize(14);
-        c.drawText(amountFilter < 0 ? "ملخص الفئات" : "ملخص الفئة", w - margin, y, p); y += 18;
-        p.setTypeface(Typeface.DEFAULT); p.setTextSize(10);
-        int pageNo = 1;
         ArrayList<CategoryItem> catsForReport = AppStore.loadCategories(this);
         for (CategoryItem cat : catsForReport) {
             if (amountFilter >= 0 && cat.amount != amountFilter) continue;
-            if (y > h - 130) {
-                p.setTextAlign(Paint.Align.CENTER); p.setTextSize(9);
-                c.drawText("صفحة " + pageNo, w/2, h - 24, p);
-                pdf.finishPage(page);
-                pageNo++;
-                page = pdf.startPage(new PdfDocument.PageInfo.Builder(w, h, pageNo).create());
-                c = page.getCanvas();
-                y = 44;
-                p.setTextAlign(Paint.Align.RIGHT); p.setTextSize(10); p.setTypeface(Typeface.DEFAULT);
-            }
             int catTotal = AppStore.cardsByAmount(this, cat.amount).size();
             int catSold = AppStore.soldCount(this, cat.amount);
             int catAvailable = AppStore.availableCount(this, cat.amount);
@@ -2017,82 +2006,64 @@ public class MainActivity extends Activity {
                     catIncome += lg.amount;
                 }
             }
-            float left = margin;
-            float top = y;
-            float right = w - margin;
-            float bottom = y + 88;
-            p.setStyle(Paint.Style.STROKE);
-            p.setColor(Color.rgb(135, 108, 190));
-            p.setStrokeWidth(1.2f);
-            c.drawRoundRect(new RectF(left, top, right, bottom), 10, 10, p);
-            p.setStyle(Paint.Style.FILL);
-            p.setColor(Color.BLACK);
-            p.setTypeface(Typeface.DEFAULT_BOLD); p.setTextSize(12);
-            c.drawText("فئة " + cat.amount + " ريال", w - margin - 12, y + 18, p);
-            p.setTypeface(Typeface.DEFAULT); p.setTextSize(10);
-            c.drawText("إجمالي الكروت: " + catTotal + "   |   المباعة: " + catSold + "   |   المتبقية: " + catAvailable, w - margin - 12, y + 38, p);
-            c.drawText("عمليات الإرسال الناجحة: " + catOps + "   |   إجمالي مبلغ الفئة: " + catIncome + " ريال", w - margin - 12, y + 58, p);
-            c.drawText("ملاحظة: تفاصيل السداد والكروت تظهر أسفل التقرير عند اختيار التقرير المفصل.", w - margin - 12, y + 76, p);
-            y += 104;
+            out.append("فئة: ").append(cat.amount).append(" ريال\n")
+                    .append("إجمالي الكروت: ").append(catTotal).append("\n")
+                    .append("المباعة: ").append(catSold).append("\n")
+                    .append("المتبقية: ").append(catAvailable).append("\n")
+                    .append("عمليات الإرسال الناجحة: ").append(catOps).append("\n")
+                    .append("إجمالي مبلغ الفئة: ").append(catIncome).append(" ريال\n")
+                    .append("------------------------------\n");
         }
 
         if (summaryOnly) {
-            p.setTextAlign(Paint.Align.CENTER); p.setTextSize(9); p.setTypeface(Typeface.DEFAULT);
-            c.drawText("صفحة " + pageNo, w/2, h - 24, p);
-            pdf.finishPage(page);
-            try {
-                OutputStream out = getContentResolver().openOutputStream(uri);
-                pdf.writeTo(out);
-                if (out != null) out.close();
-                toast("تم حفظ تقرير PDF بنجاح");
-            } catch (Exception e) {
-                toast("فشل حفظ التقرير: " + e.getMessage());
-            } finally {
-                pdf.close();
-            }
-            return;
+            out.append("ملاحظة: اختر التقرير المفصل لعرض بيانات العمليات والكروت والرسائل.\n");
+            out.append("شبكة فور يو\n");
+            return out.toString();
         }
 
-        p.setTypeface(Typeface.DEFAULT_BOLD); p.setTextSize(14); p.setColor(Color.BLACK);
-        c.drawText("تفاصيل العمليات", w - margin, y, p); y += 22;
-        p.setTypeface(Typeface.DEFAULT); p.setTextSize(10);
-        if (logs.isEmpty()) {
-            c.drawText("لا توجد عمليات ضمن هذا النطاق.", w - margin, y, p); y += 18;
-        }
-
+        out.append("تفاصيل العمليات\n");
+        out.append("==============================\n");
+        out.append("الحالة | الوقت والتاريخ | الفئة | طريقة الدفع | العدد | الملاحظات\n");
+        out.append("------------------------------\n");
+        if (logs.isEmpty()) out.append("لا توجد عمليات ضمن هذا النطاق.\n");
         for (OperationLog log : logs) {
-            if (y > h - 70) {
-                p.setTextAlign(Paint.Align.CENTER); p.setTextSize(9);
-                c.drawText("صفحة " + pageNo, w/2, h - 24, p);
-                pdf.finishPage(page);
-                pageNo++;
-                page = pdf.startPage(new PdfDocument.PageInfo.Builder(w, h, pageNo).create());
-                c = page.getCanvas();
-                y = 44;
-                p.setTextAlign(Paint.Align.RIGHT); p.setTextSize(10); p.setTypeface(Typeface.DEFAULT);
-            }
-            p.setTypeface(Typeface.DEFAULT_BOLD);
-            c.drawText(log.createdAt + " | " + log.amount + " ريال | " + log.status, w - margin, y, p); y += 16;
-            p.setTypeface(Typeface.DEFAULT);
-            c.drawText("الدفع: " + safe(log.provider) + " | الرقم: " + safe(log.customerPhone), w - margin, y, p); y += 15;
-            c.drawText("الكرت: " + displayCardCode(log.cardCode), w - margin, y, p); y += 15;
-            c.drawText("ملاحظة: " + safe(log.message), w - margin, y, p); y += 22;
+            String note = "العميل: " + safe(log.customerName)
+                    + "، الرقم: " + safe(log.customerPhone)
+                    + "، الشراء: " + purchaseMethodForLog(log)
+                    + "، الكرت: " + displayCardCode(log.cardCode)
+                    + "، الرسالة: " + shortText(log.message, 180);
+            out.append(safe(log.status)).append(" | ")
+                    .append(safe(log.createdAt)).append(" | ")
+                    .append(log.amount).append(" ريال | ")
+                    .append(safe(log.provider)).append(" | ")
+                    .append("1").append(" | ")
+                    .append(note).append("\n");
         }
-        p.setTextAlign(Paint.Align.CENTER); p.setTextSize(9); p.setTypeface(Typeface.DEFAULT);
-        c.drawText("صفحة " + pageNo, w/2, h - 24, p);
-        pdf.finishPage(page);
+        out.append("شبكة فور يو\n");
+        return out.toString();
+    }
 
+    private void writeStyledPdfToUri(Uri uri, String title, String report) {
+        PdfRenderState st = new PdfRenderState();
+        st.pdf = new PdfDocument();
+        st.pageNo = 1;
         try {
+            startStyledPdfPage(st, title);
+            drawReportMetaCard(st, title, report);
+            drawParsedProfessionalReport(st, report == null ? "" : report);
+            finishStyledPdfPage(st);
             OutputStream out = getContentResolver().openOutputStream(uri);
-            pdf.writeTo(out);
+            st.pdf.writeTo(out);
             if (out != null) out.close();
-            toast("تم حفظ تقرير PDF بنجاح");
+            toast("تم حفظ تقرير PDF احترافي بنجاح");
         } catch (Exception e) {
             toast("فشل حفظ التقرير: " + e.getMessage());
+            try { if (st.page != null) st.pdf.finishPage(st.page); } catch (Exception ignored) {}
         } finally {
-            pdf.close();
+            try { st.pdf.close(); } catch (Exception ignored) {}
         }
     }
+
 
     private String safe(String v) {
         return v == null || v.trim().isEmpty() ? "-" : v.trim();
@@ -4971,15 +4942,16 @@ public class MainActivity extends Activity {
             if (AppStore.isPendingCriticalLog(log) || st.contains("معلق") || st.contains("مراجعة")) pending++;
             else if (st.contains("رفض") || st.contains("مرفوض") || st.contains("تجاوز") || st.contains("فشل")) rejected++;
             else if (st.contains("تم") || st.contains("جاري إرسال")) { success++; if (!isTopup && !isBalanceReq) totalSales += Math.max(0, log.amount); }
-            details.append("\n").append(count).append(") ").append(safe(log.createdAt)).append("\n")
-                    .append("النوع: ").append(safe(provider)).append("\n")
-                    .append("الحالة: ").append(safe(st)).append("\n")
-                    .append("طريقة الشراء: ").append(purchaseMethodForLog(log)).append("\n")
-                    .append("الاسم/النقطة: ").append(safe(log.customerName)).append("\n")
-                    .append("الرقم/العميل: ").append(safe(log.customerPhone)).append("\n")
-                    .append("المبلغ: ").append(log.amount).append("\n")
-                    .append("ملاحظة: ").append(shortText(log.message, 260)).append("\n")
-                    .append("------------------------------\n");
+            String note = "الاسم/النقطة: " + safe(log.customerName)
+                    + "، الرقم/العميل: " + safe(log.customerPhone)
+                    + "، طريقة الشراء: " + purchaseMethodForLog(log)
+                    + "، الرسالة: " + shortText(log.message, 180);
+            details.append(safe(st)).append(" | ")
+                    .append(safe(log.createdAt)).append(" | ")
+                    .append(log.amount).append(" ريال | ")
+                    .append(safe(provider)).append(" | ")
+                    .append("1").append(" | ")
+                    .append(note).append("\n");
         }
         int remainingAll = 0;
         for (TrustedCreditAgent a : agents) remainingAll += AppStore.remainingTrustedCredit(a);
@@ -5009,6 +4981,8 @@ public class MainActivity extends Activity {
         }
         out.append("تفاصيل العمليات\n");
         out.append("==============================\n");
+        out.append("الحالة | الوقت والتاريخ | الفئة | طريقة الدفع | العدد | الملاحظات\n");
+        out.append("------------------------------\n");
         if (count == 0) out.append("لا توجد عمليات ضمن الفترة المحددة.\n");
         else out.append(details);
         out.append("شبكة فور يو\n");
@@ -5169,7 +5143,7 @@ public class MainActivity extends Activity {
             if (isPdfDividerLine(line)) { st.y += 6; continue; }
             if (line.equals("شبكة فور يو") || line.equals("فور يو")) continue;
 
-            if (line.equals("ملخص نقاط البيع") || line.equals("تفاصيل العمليات") || line.equals("بيانات نقطة البيع") || line.equals("طريقة الشراء") || line.contains("طلبات الرصيد")) {
+            if (line.equals("الملخص") || line.equals("ملخص الفئات") || line.equals("ملخص الفئة") || line.equals("ملخص نقاط البيع") || line.equals("تفاصيل العمليات") || line.equals("بيانات نقطة البيع") || line.equals("طريقة الشراء") || line.contains("طلبات الرصيد")) {
                 currentTitle = line;
                 inDetails = line.equals("تفاصيل العمليات");
                 drawPdfSectionTitle(st, line);
