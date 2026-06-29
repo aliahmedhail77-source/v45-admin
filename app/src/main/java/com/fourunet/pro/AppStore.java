@@ -31,6 +31,8 @@ import java.io.FileOutputStream;
 import java.io.OutputStreamWriter;
 
 class AppStore {
+    private static volatile boolean autoBackupRunning = false;
+    private static final int AUTO_BACKUP_MAX_CARDS_ON_UI_SAFE = 50000;
     private static final String PREF = "fourunet_pro_clean_store";
     private static final String KEY_CATEGORIES = "categories";
     private static final String KEY_CARDS = "cards";
@@ -1072,14 +1074,47 @@ class AppStore {
 
     static void performAutoBackupIfDue(Context c, String reason) {
         if (!isAutoBackupEnabled(c)) return;
-        long last = prefs(c).getLong("last_auto_backup_millis", 0L);
-        long nowMs = System.currentTimeMillis();
-        long interval = getAutoBackupIntervalHours(c) * 60L * 60L * 1000L;
+        final Context app = c.getApplicationContext();
+        final long last = prefs(app).getLong("last_auto_backup_millis", 0L);
+        final long nowMs = System.currentTimeMillis();
+        final long interval = getAutoBackupIntervalHours(app) * 60L * 60L * 1000L;
         if (last > 0 && nowMs - last < interval) return;
+        if (autoBackupRunning) return;
+
+        // Stage 13.7.2 LOGIN FREEZE FIX:
+        // النسخ التلقائي كان يعمل على نفس مسار فتح التطبيق، ومع مخزون ضخم مثل 300 ألف كرت
+        // قد يعلّق التطبيق بعد نجاح البصمة. لذلك صار النسخ التلقائي يعمل بالخلفية،
+        // ويتم تخطي النسخ التلقائي الكامل إذا كان المخزون ضخمًا. النسخ اليدوي يبقى كاملًا.
+        prefs(app).edit().putLong("last_auto_backup_millis", nowMs).apply();
+        autoBackupRunning = true;
+        new Thread(() -> {
+            try {
+                int totalCards = totalCardRows(app);
+                if (totalCards > AUTO_BACKUP_MAX_CARDS_ON_UI_SAFE) {
+                    String stamp = now();
+                    prefs(app).edit().putString(KEY_LAST_AUTO_BACKUP_AT,
+                            stamp + " | تم تخطي النسخ التلقائي الكامل بسبب كثرة الكروت: " + totalCards + " كرت. استخدم النسخ اليدوي عند الحاجة.")
+                            .apply();
+                    return;
+                }
+                writeAutoBackupNow(app, reason == null ? "تلقائي بالخلفية" : reason + " - بالخلفية");
+            } catch (Exception ignored) {
+            } finally {
+                autoBackupRunning = false;
+            }
+        }, "ONLINE-auto-backup-bg").start();
+    }
+
+    private static int totalCardRows(Context c) {
+        Cursor cur = null;
         try {
-            writeAutoBackupNow(c, reason);
-            prefs(c).edit().putLong("last_auto_backup_millis", nowMs).apply();
-        } catch (Exception ignored) {}
+            cur = cardDb(c).rawQuery("SELECT COUNT(*) FROM cards", null);
+            if (cur.moveToFirst()) return cur.getInt(0);
+        } catch (Exception ignored) {
+        } finally {
+            if (cur != null) cur.close();
+        }
+        return 0;
     }
 
     static JSONArray getRestoreHistoryArray(Context c) {
