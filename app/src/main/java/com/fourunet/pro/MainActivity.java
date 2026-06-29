@@ -87,19 +87,26 @@ public class MainActivity extends Activity {
     String reviewFocusLogId = "";
     boolean appUnlocked = false;
 
-    final int purple = Color.rgb(109, 75, 179);
-    final int purpleLight = Color.rgb(200, 179, 255);
-    final int bg = Color.rgb(17, 16, 22);
-    final int card = Color.rgb(30, 27, 41);
-    final int card2 = Color.rgb(40, 35, 55);
-    final int text = Color.rgb(244, 241, 255);
-    final int muted = Color.rgb(185, 179, 201);
-    final int green = Color.rgb(66, 245, 138);
-    final int orange = Color.rgb(255, 189, 89);
-    final int red = Color.rgb(255, 99, 122);
-    final int gold = Color.rgb(218, 170, 72);
+    // Stage 13.2 UI identity - Dark Neon Purple style.
+    // هذا تغيير شكلي فقط؛ لا يغير منطق السلف أو السداد أو SMS أو قاعدة البيانات.
+    final int purple = Color.rgb(155, 92, 255);          // Neon Purple
+    final int purpleDark = Color.rgb(8, 10, 24);         // Deep app background
+    final int purpleLight = Color.rgb(32, 231, 255);     // Neon Cyan accent
+    final int bg = Color.rgb(4, 6, 16);                  // Near black
+    final int card = Color.rgb(14, 18, 36);              // Dark card
+    final int card2 = Color.rgb(20, 25, 47);             // Dark secondary card
+    final int text = Color.rgb(246, 247, 255);           // Clear white text
+    final int muted = Color.rgb(170, 176, 199);          // Muted readable text
+    final int borderSoft = Color.rgb(43, 55, 92);
+    final int green = Color.rgb(0, 230, 118);
+    final int orange = Color.rgb(255, 193, 7);
+    final int red = Color.rgb(255, 82, 118);
+    final int gold = Color.rgb(224, 174, 65);
     final int goldDark = Color.rgb(94, 64, 18);
-    final int goldSoft = Color.rgb(255, 217, 126);
+    final int goldSoft = Color.rgb(51, 37, 16);
+    final int neonBlue = Color.rgb(42, 109, 255);
+    final int neonCyan = Color.rgb(32, 231, 255);
+    final int neonPink = Color.rgb(255, 56, 176);
 
     private static final String SUPPORT_NAME = "P.P.E.ALI ALSHRABI";
     private static final String SUPPORT_PHONE_LOCAL = "776901570";
@@ -108,7 +115,7 @@ public class MainActivity extends Activity {
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
-        if (Build.VERSION.SDK_INT >= 21) getWindow().setStatusBarColor(purpleLight);
+        if (Build.VERSION.SDK_INT >= 21) getWindow().setStatusBarColor(purpleDark);
         AppStore.ensureDefaultCategories(this);
         if (!AppStore.isLicenseUsable(this)) {
             showActivationScreen();
@@ -610,7 +617,7 @@ public class MainActivity extends Activity {
         input.setTextSize(16);
         input.setTypeface(appTypeface(false));
         input.setPadding(dp(14), 0, dp(14), 0);
-        input.setBackground(round(bg, dp(8), Color.argb(150, 255,255,255), dp(1)));
+        input.setBackground(round(card2, dp(12), borderSoft, dp(1)));
         return input;
     }
 
@@ -629,38 +636,75 @@ public class MainActivity extends Activity {
         root.setOrientation(LinearLayout.VERTICAL);
         root.setBackgroundColor(bg);
         setContentView(root);
+        if (Build.VERSION.SDK_INT >= 21) {
+            getWindow().setStatusBarColor(bg);
+            getWindow().setNavigationBarColor(Color.BLACK);
+        }
 
         root.addView(header(), new LinearLayout.LayoutParams(-1, -2));
 
         ScrollView scroll = new ScrollView(this);
+        scroll.setBackgroundColor(bg);
         content = new LinearLayout(this);
         content.setOrientation(LinearLayout.VERTICAL);
-        content.setPadding(dp(14), dp(14), dp(14), dp(14));
+        content.setPadding(dp(16), dp(18), dp(16), dp(18));
         scroll.addView(content);
         root.addView(scroll, new LinearLayout.LayoutParams(-1, 0, 1));
 
         nav = new LinearLayout(this);
         nav.setOrientation(LinearLayout.HORIZONTAL);
-        nav.setBackgroundColor(card);
-        nav.setPadding(dp(4), dp(6), dp(4), dp(6));
+        nav.setBackgroundColor(Color.rgb(3, 4, 12));
+        nav.setPadding(dp(6), dp(8), dp(6), dp(8));
         root.addView(nav, new LinearLayout.LayoutParams(-1, -2));
         rebuildNav();
     }
 
     private View header() {
+        LinearLayout wrap = new LinearLayout(this);
+        wrap.setOrientation(LinearLayout.VERTICAL);
+        wrap.setPadding(dp(14), dp(16), dp(14), dp(10));
+        wrap.setBackgroundColor(bg);
+
         LinearLayout h = new LinearLayout(this);
         h.setOrientation(LinearLayout.VERTICAL);
-        h.setPadding(dp(16), dp(24), dp(16), dp(14));
-        h.setBackgroundColor(purpleLight);
+        h.setPadding(dp(18), dp(20), dp(18), dp(20));
+        GradientDrawable gd = new GradientDrawable(GradientDrawable.Orientation.LEFT_RIGHT,
+                new int[]{Color.rgb(25, 219, 230), Color.rgb(35, 74, 255), Color.rgb(143, 55, 255)});
+        gd.setCornerRadius(dp(30));
+        gd.setStroke(dp(1), Color.argb(120, 255, 255, 255));
+        h.setBackground(gd);
+        if (Build.VERSION.SDK_INT >= 21) h.setElevation(dp(7));
 
-        TextView title = tv(AppStore.getNetworkName(this), 24, Color.WHITE, true);
+        LinearLayout row = new LinearLayout(this);
+        row.setOrientation(LinearLayout.HORIZONTAL);
+        row.setGravity(Gravity.CENTER_VERTICAL);
+
+        TextView avatar = tv("", 14, Color.WHITE, true);
+        avatar.setGravity(Gravity.CENTER);
+        avatar.setBackground(round(Color.argb(24, 255, 255, 255), dp(20), Color.argb(110, 255, 255, 255), dp(1)));
+        row.addView(avatar, new LinearLayout.LayoutParams(dp(54), dp(54)));
+
+        LinearLayout titleBox = new LinearLayout(this);
+        titleBox.setOrientation(LinearLayout.VERTICAL);
+        titleBox.setGravity(Gravity.RIGHT);
+        titleBox.addView(tv("مرحبًا 👋", 14, Color.argb(235, 255,255,255), false));
+        TextView title = tv(AppStore.getNetworkName(this), 28, Color.WHITE, true);
         title.setGravity(Gravity.RIGHT);
-        h.addView(title);
-
-        TextView sub = tv("إدارة وبيع كروت الإنترنت تلقائيًا", 12, Color.argb(230, 255,255,255), false);
+        titleBox.addView(title);
+        TextView sub = tv("إدارة وبيع كروت الإنترنت تلقائيًا", 11, Color.argb(215, 255,255,255), false);
         sub.setGravity(Gravity.RIGHT);
-        h.addView(sub);
-        return h;
+        titleBox.addView(sub);
+
+        row.addView(titleBox, new LinearLayout.LayoutParams(0, -2, 1));
+
+        TextView badge = tv("4U", 16, Color.rgb(40, 27, 7), true);
+        badge.setGravity(Gravity.CENTER);
+        badge.setBackground(round(gold, dp(24), Color.argb(180, 255, 235, 167), dp(1)));
+        row.addView(badge, new LinearLayout.LayoutParams(dp(52), dp(52)));
+
+        h.addView(row);
+        wrap.addView(h, new LinearLayout.LayoutParams(-1, -2));
+        return wrap;
     }
 
     private void rebuildNav() {
@@ -682,20 +726,21 @@ public class MainActivity extends Activity {
         b.setTypeface(appTypeface(selected));
         b.setAllCaps(false);
         b.setGravity(Gravity.CENTER);
-        b.setTextColor(selected ? Color.WHITE : Color.argb(210, 230, 226, 238));
-        int bgColor = selected ? Color.rgb(82, 62, 140) : Color.rgb(31, 30, 42);
-        int stroke = selected ? purpleLight : Color.argb(45, 255, 255, 255);
-        b.setBackground(round(bgColor, dp(18), stroke, selected ? dp(2) : dp(1)));
+        b.setTextColor(selected ? Color.WHITE : Color.rgb(150, 156, 178));
+        int bgColor = selected ? Color.rgb(31, 24, 62) : Color.rgb(8, 10, 22);
+        int stroke = selected ? neonCyan : Color.rgb(31, 38, 62);
+        b.setBackground(round(bgColor, dp(20), stroke, selected ? dp(2) : dp(1)));
         b.setPadding(dp(2), dp(3), dp(2), dp(3));
         b.setOnClickListener(listener);
-        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0, dp(62), 1);
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0, dp(64), 1);
         lp.setMargins(dp(2), dp(2), dp(2), dp(2));
         b.setLayoutParams(lp);
+        if (Build.VERSION.SDK_INT >= 21) b.setElevation(selected ? dp(5) : dp(1));
         return b;
     }
 
     private void setTab(String key) { activeTab = key; rebuildNav(); }
-    private void clear() { content.removeAllViews(); content.setPadding(dp(14), dp(14), dp(14), dp(14)); }
+    private void clear() { content.removeAllViews(); content.setPadding(dp(18), dp(18), dp(18), dp(18)); content.setBackgroundColor(bg); }
     private int dp(int v) { return (int)(v * getResources().getDisplayMetrics().density + 0.5f); }
 
     private GradientDrawable round(int color, int radius, int strokeColor, int strokeWidth) {
@@ -723,11 +768,12 @@ public class MainActivity extends Activity {
     private LinearLayout cardBox() {
         LinearLayout box = new LinearLayout(this);
         box.setOrientation(LinearLayout.VERTICAL);
-        box.setPadding(dp(14), dp(14), dp(14), dp(14));
-        box.setBackground(round(card, dp(18), Color.argb(35, 255,255,255), dp(1)));
+        box.setPadding(dp(16), dp(16), dp(16), dp(16));
+        box.setBackground(round(card, dp(24), borderSoft, dp(1)));
         LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, -2);
-        lp.setMargins(0, 0, 0, dp(12));
+        lp.setMargins(0, 0, 0, dp(14));
         box.setLayoutParams(lp);
+        if (Build.VERSION.SDK_INT >= 21) box.setElevation(dp(4));
         return box;
     }
 
@@ -745,7 +791,7 @@ public class MainActivity extends Activity {
 
     private View separator() {
         View line = new View(this);
-        line.setBackgroundColor(Color.argb(42, 255,255,255));
+        line.setBackgroundColor(Color.rgb(38, 45, 76));
         LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, dp(1));
         lp.setMargins(0, dp(8), 0, dp(8));
         line.setLayoutParams(lp);
@@ -754,7 +800,7 @@ public class MainActivity extends Activity {
 
     private TextView title(String s) {
         TextView t = tv(s, 20, text, true);
-        t.setPadding(0, 0, 0, dp(12));
+        t.setPadding(0, dp(4), 0, dp(12));
         return t;
     }
 
@@ -768,7 +814,7 @@ public class MainActivity extends Activity {
         TextView b = tv(s, 12, color, true);
         b.setGravity(Gravity.CENTER);
         b.setPadding(dp(10), dp(5), dp(10), dp(5));
-        b.setBackground(round(Color.argb(24, Color.red(color), Color.green(color), Color.blue(color)), dp(18), color, dp(1)));
+        b.setBackground(round(Color.argb(28, Color.red(color), Color.green(color), Color.blue(color)), dp(18), color, dp(1)));
         return b;
     }
 
@@ -778,8 +824,11 @@ public class MainActivity extends Activity {
         b.setTextColor(fgColor);
         b.setTypeface(appTypeface(true));
         b.setAllCaps(false);
-        b.setBackground(round(bgColor, dp(16), Color.TRANSPARENT, 0));
+        b.setPadding(dp(8), dp(8), dp(8), dp(8));
+        int stroke = (bgColor == card || bgColor == card2 || bgColor == Color.TRANSPARENT) ? borderSoft : Color.argb(110, 255,255,255);
+        b.setBackground(round(bgColor, dp(18), stroke, dp(1)));
         b.setOnClickListener(listener);
+        if (Build.VERSION.SDK_INT >= 21) b.setElevation(dp(2));
         return b;
     }
 
@@ -807,36 +856,180 @@ public class MainActivity extends Activity {
         setTab("home");
         clear();
 
-        LinearLayout status = cardBox();
-        status.addView(tv(AppStore.isAutoSendEnabled(this) ? "النظام يعمل تلقائيًا" : "الإرسال التلقائي متوقف", 17, text, true));
-        status.addView(small(AppStore.isAutoSendEnabled(this) ? "يستقبل رسائل Jawali / Jaib / ONE Cash ويرسل الكرت حسب الفئة." : "شغّل الإرسال التلقائي من الإعدادات عند الحاجة."));
-        status.addView(action("بيع كرت مباشر", purple, Color.WHITE, v -> showDirectSale()));
-        content.addView(status);
+        content.addView(dashboardWelcomeCard());
+        content.addView(dashboardStatsGrid());
+        content.addView(title("الخدمات الرئيسية"));
+        content.addView(dashboardServicesGrid());
+        content.addView(title("آخر العمليات"));
+        content.addView(recentTransactionsCard());
+    }
 
-        LinearLayout summary = new LinearLayout(this);
-        summary.setOrientation(LinearLayout.HORIZONTAL);
-        View sent = stat("كروت مباعة", String.valueOf(AppStore.sentOperationsCount(this)));
-        View processed = stat("تمت معالجتها", String.valueOf(AppStore.processedOperationsCount(this)));
-        summary.addView(sent, new LinearLayout.LayoutParams(0, -2, 1));
-        summary.addView(processed, new LinearLayout.LayoutParams(0, -2, 1));
-        content.addView(summary);
+    private View dashboardWelcomeCard() {
+        LinearLayout box = cardBox();
+        box.setPadding(dp(18), dp(18), dp(18), dp(18));
+        GradientDrawable gd = new GradientDrawable(GradientDrawable.Orientation.LEFT_RIGHT,
+                new int[]{Color.rgb(12, 18, 40), Color.rgb(18, 22, 52), Color.rgb(26, 18, 55)});
+        gd.setCornerRadius(dp(28));
+        gd.setStroke(dp(1), Color.rgb(34, 53, 105));
+        box.setBackground(gd);
 
-        content.addView(title("الفئات والكميات"));
-        ArrayList<CategoryItem> cats = AppStore.loadCategories(this);
-        LinearLayout row = null;
-        int col = 0;
-        for (CategoryItem c : cats) {
-            if (col == 0) {
-                row = new LinearLayout(this);
-                row.setOrientation(LinearLayout.HORIZONTAL);
-                content.addView(row);
-            }
-            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0, -2, 1);
-            lp.setMargins(dp(4), dp(4), dp(4), dp(8));
-            row.addView(categorySummary(c), lp);
-            col++;
-            if (col == 2) col = 0;
+        LinearLayout top = new LinearLayout(this);
+        top.setOrientation(LinearLayout.HORIZONTAL);
+        top.setGravity(Gravity.CENTER_VERTICAL);
+
+        TextView state = tv((AppStore.isAutoSendEnabled(this) ? "نشط" : "متوقف") + "  ●", 14, AppStore.isAutoSendEnabled(this) ? green : red, true);
+        state.setGravity(Gravity.CENTER);
+        state.setPadding(dp(14), dp(8), dp(14), dp(8));
+        state.setBackground(round(Color.argb(32, Color.red(AppStore.isAutoSendEnabled(this) ? green : red), Color.green(AppStore.isAutoSendEnabled(this) ? green : red), Color.blue(AppStore.isAutoSendEnabled(this) ? green : red)), dp(24), AppStore.isAutoSendEnabled(this) ? green : red, dp(1)));
+        top.addView(state);
+
+        LinearLayout titleBox = new LinearLayout(this);
+        titleBox.setOrientation(LinearLayout.VERTICAL);
+        titleBox.setGravity(Gravity.RIGHT);
+        titleBox.addView(tv("لوحة التحكم", 15, muted, false));
+        titleBox.addView(tv(AppStore.getNetworkName(this), 25, text, true));
+        top.addView(titleBox, new LinearLayout.LayoutParams(0, -2, 1));
+
+        box.addView(top);
+        box.addView(separator());
+        TextView note = small(AppStore.isAutoSendEnabled(this)
+                ? "النظام يعمل. تم تحديث الشكل فقط بأسلوب داكن متوهج بدون تغيير منطق السلف أو الرسائل."
+                : "الإرسال التلقائي متوقف. يمكنك تشغيله من الإعدادات عند الحاجة.");
+        box.addView(note);
+
+        LinearLayout actions = new LinearLayout(this);
+        actions.setOrientation(LinearLayout.HORIZONTAL);
+        actions.setPadding(0, dp(12), 0, 0);
+        actions.addView(action("بيع كرت", Color.rgb(24, 197, 220), Color.rgb(2, 12, 22), v -> showDirectSale()), new LinearLayout.LayoutParams(0, dp(52), 1));
+        actions.addView(action("الدفتر", Color.rgb(42, 31, 84), Color.WHITE, v -> showSmartLedger()), new LinearLayout.LayoutParams(0, dp(52), 1));
+        box.addView(actions);
+        return box;
+    }
+
+    private View dashboardStatsGrid() {
+        LinearLayout grid = new LinearLayout(this);
+        grid.setOrientation(LinearLayout.VERTICAL);
+        LinearLayout row1 = new LinearLayout(this);
+        row1.setOrientation(LinearLayout.HORIZONTAL);
+        LinearLayout row2 = new LinearLayout(this);
+        row2.setOrientation(LinearLayout.HORIZONTAL);
+
+        row1.addView(dashboardStatCard("كروت مباعة", String.valueOf(AppStore.sentOperationsCount(this)), "💳", purple), new LinearLayout.LayoutParams(0, -2, 1));
+        row1.addView(dashboardStatCard("العمليات", String.valueOf(AppStore.processedOperationsCount(this)), "📊", gold), new LinearLayout.LayoutParams(0, -2, 1));
+        row2.addView(dashboardStatCard("الزبائن", String.valueOf(AppStore.loadLedgerCustomers(this).size()), "👥", purpleDark), new LinearLayout.LayoutParams(0, -2, 1));
+        row2.addView(dashboardStatCard("الديون", AppStore.ledgerTotalDebt(this) + " ر.ي", "📒", orange), new LinearLayout.LayoutParams(0, -2, 1));
+
+        grid.addView(row1);
+        grid.addView(row2);
+        return grid;
+    }
+
+    private View dashboardStatCard(String label, String value, String icon, int accent) {
+        LinearLayout box = cardBox();
+        LinearLayout.LayoutParams blp = new LinearLayout.LayoutParams(-1, -2);
+        blp.setMargins(dp(5), dp(5), dp(5), dp(9));
+        box.setLayoutParams(blp);
+        box.setGravity(Gravity.CENTER);
+        box.setBackground(round(Color.rgb(18, 23, 43), dp(24), Color.argb(145, Color.red(accent), Color.green(accent), Color.blue(accent)), dp(1)));
+        TextView iconView = tv(icon, 22, accent, true);
+        iconView.setGravity(Gravity.CENTER);
+        box.addView(iconView);
+        TextView number = tv(value, 22, text, true);
+        number.setGravity(Gravity.CENTER);
+        box.addView(number);
+        TextView caption = tv(label, 12, muted, false);
+        caption.setGravity(Gravity.CENTER);
+        box.addView(caption);
+        return box;
+    }
+
+    private View dashboardServicesGrid() {
+        LinearLayout grid = new LinearLayout(this);
+        grid.setOrientation(LinearLayout.VERTICAL);
+        LinearLayout row1 = new LinearLayout(this);
+        row1.setOrientation(LinearLayout.HORIZONTAL);
+        LinearLayout row2 = new LinearLayout(this);
+        row2.setOrientation(LinearLayout.HORIZONTAL);
+
+        row1.addView(serviceTile("📒", "الدفتر", "حسابات وسلف", v -> showSmartLedger()), new LinearLayout.LayoutParams(0, -2, 1));
+        row1.addView(serviceTile("💵", "بيع كرت", "بيع سريع", v -> showDirectSale()), new LinearLayout.LayoutParams(0, -2, 1));
+        row1.addView(serviceTile("▦", "الفئات", "مخزون الكروت", v -> showCategories()), new LinearLayout.LayoutParams(0, -2, 1));
+
+        row2.addView(serviceTile("📄", "التقارير", "PDF وإحصاءات", v -> showLogs()), new LinearLayout.LayoutParams(0, -2, 1));
+        row2.addView(serviceTile("⇧", "استيراد", "TXT و Excel", v -> showImport()), new LinearLayout.LayoutParams(0, -2, 1));
+        row2.addView(serviceTile("⚙", "الإعدادات", "تحكم كامل", v -> showSettings()), new LinearLayout.LayoutParams(0, -2, 1));
+
+        grid.addView(row1);
+        grid.addView(row2);
+        return grid;
+    }
+
+    private View serviceTile(String icon, String title, String subtitle, View.OnClickListener listener) {
+        LinearLayout box = cardBox();
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, -2);
+        lp.setMargins(dp(5), dp(5), dp(5), dp(10));
+        box.setLayoutParams(lp);
+        box.setGravity(Gravity.CENTER);
+        box.setPadding(dp(8), dp(16), dp(8), dp(16));
+        int accent = title.contains("بيع") ? neonCyan : (title.contains("تقارير") ? gold : (title.contains("تنبيهات") ? neonPink : purple));
+        box.setBackground(round(Color.rgb(14, 17, 31), dp(26), Color.argb(170, Color.red(accent), Color.green(accent), Color.blue(accent)), dp(title.contains("بيع") ? 2 : 1)));
+        box.setOnClickListener(listener);
+        if (Build.VERSION.SDK_INT >= 21) box.setElevation(title.contains("بيع") ? dp(8) : dp(4));
+        TextView i = tv(icon, 25, accent, true);
+        i.setGravity(Gravity.CENTER);
+        i.setPadding(0, dp(10), 0, dp(10));
+        i.setBackground(round(Color.argb(28, Color.red(accent), Color.green(accent), Color.blue(accent)), dp(40), Color.TRANSPARENT, 0));
+        box.addView(i, new LinearLayout.LayoutParams(dp(58), dp(58)));
+        TextView t = tv(title, 14, text, true);
+        t.setGravity(Gravity.CENTER);
+        box.addView(t);
+        TextView sub = tv(subtitle, 10, muted, false);
+        sub.setGravity(Gravity.CENTER);
+        box.addView(sub);
+        return box;
+    }
+
+    private View recentTransactionsCard() {
+        LinearLayout box = cardBox();
+        ArrayList<OperationLog> logs = AppStore.loadLogs(this);
+        if (logs.isEmpty()) {
+            box.addView(small("لا توجد عمليات حديثة حتى الآن."));
+            return box;
         }
+        int max = Math.min(4, logs.size());
+        for (int i = 0; i < max; i++) {
+            box.addView(recentOperationRow(logs.get(i), i < max - 1));
+        }
+        box.addView(action("عرض السجل كاملًا", purpleLight, purple, v -> showLogs()), new LinearLayout.LayoutParams(-1, dp(48)));
+        return box;
+    }
+
+    private View recentOperationRow(OperationLog log, boolean line) {
+        LinearLayout row = new LinearLayout(this);
+        row.setOrientation(LinearLayout.HORIZONTAL);
+        row.setGravity(Gravity.CENTER_VERTICAL);
+        row.setPadding(0, dp(8), 0, dp(8));
+
+        LinearLayout info = new LinearLayout(this);
+        info.setOrientation(LinearLayout.VERTICAL);
+        info.setGravity(Gravity.RIGHT);
+        String name = (log.customerName == null || log.customerName.trim().isEmpty()) ? (log.customerPhone == null ? "عملية" : log.customerPhone) : log.customerName;
+        info.addView(tv((log.status == null ? "عملية" : log.status) + " - " + name, 14, text, true));
+        info.addView(small((log.createdAt == null ? "" : log.createdAt) + " | " + log.amount + " ر.ي"));
+        row.addView(info, new LinearLayout.LayoutParams(0, -2, 1));
+
+        TextView amount = tv(log.amount + "", 14, green, true);
+        amount.setGravity(Gravity.CENTER);
+        amount.setPadding(dp(8), dp(4), dp(8), dp(4));
+        amount.setBackground(round(Color.rgb(232, 245, 233), dp(16), Color.TRANSPARENT, 0));
+        row.addView(amount);
+
+        if (!line) return row;
+        LinearLayout wrap = new LinearLayout(this);
+        wrap.setOrientation(LinearLayout.VERTICAL);
+        wrap.addView(row);
+        wrap.addView(separator());
+        return wrap;
     }
 
     private View stat(String label, String value) {
@@ -2409,7 +2602,7 @@ public class MainActivity extends Activity {
         LinearLayout box = new LinearLayout(this);
         box.setOrientation(LinearLayout.VERTICAL);
         box.setPadding(dp(12), dp(10), dp(12), dp(10));
-        box.setBackground(round(card2, dp(16), c.debt > 0 ? orange : (c.creditBalance > 0 ? gold : Color.argb(70, 255,255,255)), dp(1)));
+        box.setBackground(round(Color.rgb(17, 22, 40), dp(20), c.debt > 0 ? orange : (c.creditBalance > 0 ? gold : neonCyan), dp(1)));
         LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, -2);
         lp.setMargins(0, dp(8), 0, 0);
         box.setLayoutParams(lp);
@@ -2429,7 +2622,7 @@ public class MainActivity extends Activity {
         LinearLayout box = new LinearLayout(this);
         box.setOrientation(LinearLayout.VERTICAL);
         box.setPadding(dp(10), dp(8), dp(10), dp(8));
-        box.setBackground(round(Color.rgb(34, 31, 48), dp(14), Color.argb(45,255,255,255), dp(1)));
+        box.setBackground(round(Color.rgb(17, 22, 40), dp(18), Color.rgb(39, 50, 84), dp(1)));
         LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, -2);
         lp.setMargins(0, dp(7), 0, 0);
         box.setLayoutParams(lp);
@@ -2478,8 +2671,11 @@ public class MainActivity extends Activity {
         e.setText(value == null ? "" : value);
         e.setGravity(Gravity.RIGHT);
         e.setInputType(inputType);
-        e.setTextColor(Color.rgb(25,25,30));
-        e.setHintTextColor(Color.rgb(150,150,160));
+        e.setTextColor(Color.rgb(20,20,28));
+        e.setHintTextColor(Color.rgb(115,115,130));
+        e.setTextSize(16);
+        e.setPadding(dp(12), 0, dp(12), 0);
+        e.setBackground(round(Color.WHITE, dp(12), Color.rgb(210, 205, 225), dp(1)));
         return e;
     }
 
