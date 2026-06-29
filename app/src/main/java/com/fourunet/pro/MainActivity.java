@@ -13,6 +13,7 @@ import android.graphics.BitmapFactory;
 import android.graphics.Color;
 import android.graphics.Paint;
 import android.graphics.RectF;
+import android.graphics.Path;
 import android.graphics.Typeface;
 import android.graphics.drawable.GradientDrawable;
 import android.graphics.pdf.PdfDocument;
@@ -26,6 +27,8 @@ import android.os.Looper;
 import android.provider.OpenableColumns;
 import android.provider.ContactsContract;
 import android.os.StrictMode;
+import android.media.ToneGenerator;
+import android.media.AudioManager;
 import android.text.InputType;
 import android.text.Layout;
 import android.text.StaticLayout;
@@ -92,8 +95,8 @@ public class MainActivity extends Activity {
     String reviewFocusLogId = "";
     boolean appUnlocked = false;
 
-    // Stage 13.3 FULL UI REDESIGN - Dark Neon Purple style.
-    // هذا تغيير واجهات فقط؛ لا يغير منطق السلف أو السداد أو SMS أو قاعدة البيانات.
+    // Stage 13.5 SMART UI + DIRECT SALE ENHANCEMENT.
+    // تحسينات واجهة آمنة + بيع آجل للزبون الموثق + تنبيهات مخزون منخفض.
     final int purple = Color.rgb(155, 92, 255);          // Neon Purple
     final int purpleDark = Color.rgb(8, 10, 24);         // Deep app background
     final int purpleLight = Color.rgb(32, 231, 255);     // Neon Cyan accent
@@ -713,19 +716,23 @@ public class MainActivity extends Activity {
     }
 
     private View networkLogoView(int sizeDp) {
+        FrameLayout frame = new FrameLayout(this);
+        frame.setPadding(dp(3), dp(3), dp(3), dp(3));
+        frame.setBackground(round(Color.argb(42, 255, 255, 255), dp(sizeDp / 2), neonCyan, dp(1)));
+        if (Build.VERSION.SDK_INT >= 21) frame.setElevation(dp(5));
+
         String path = AppStore.getNetworkLogoPath(this);
         if (path != null && !path.trim().isEmpty()) {
             try {
                 File f = new File(path.trim());
                 if (f.exists()) {
-                    Bitmap bmp = BitmapFactory.decodeFile(f.getAbsolutePath());
-                    if (bmp != null) {
+                    Bitmap raw = BitmapFactory.decodeFile(f.getAbsolutePath());
+                    if (raw != null) {
                         ImageView iv = new ImageView(this);
-                        iv.setScaleType(ImageView.ScaleType.CENTER_CROP);
-                        iv.setImageBitmap(bmp);
-                        iv.setPadding(dp(3), dp(3), dp(3), dp(3));
-                        iv.setBackground(round(Color.argb(28, 255, 255, 255), dp(sizeDp / 2), Color.argb(140, 255, 255, 255), dp(1)));
-                        return iv;
+                        iv.setScaleType(ImageView.ScaleType.FIT_CENTER);
+                        iv.setImageBitmap(makeCircularLogoBitmap(raw, dp(sizeDp - 6)));
+                        frame.addView(iv, new FrameLayout.LayoutParams(-1, -1, Gravity.CENTER));
+                        return frame;
                     }
                 }
             } catch (Exception ignored) {}
@@ -733,7 +740,35 @@ public class MainActivity extends Activity {
         TextView fallback = tv("4U", Math.max(14, sizeDp / 3), Color.rgb(40, 27, 7), true);
         fallback.setGravity(Gravity.CENTER);
         fallback.setBackground(round(gold, dp(sizeDp / 2), Color.argb(180, 255, 235, 167), dp(1)));
-        return fallback;
+        frame.addView(fallback, new FrameLayout.LayoutParams(-1, -1, Gravity.CENTER));
+        return frame;
+    }
+
+    private Bitmap makeCircularLogoBitmap(Bitmap src, int outSizePx) {
+        int size = Math.max(dp(38), outSizePx);
+        Bitmap out = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888);
+        Canvas canvas = new Canvas(out);
+        Paint p = new Paint(Paint.ANTI_ALIAS_FLAG);
+        p.setColor(Color.rgb(12, 16, 30));
+        canvas.drawCircle(size / 2f, size / 2f, size / 2f, p);
+        Path clip = new Path();
+        clip.addCircle(size / 2f, size / 2f, size / 2f - dp(1), Path.Direction.CW);
+        canvas.save();
+        canvas.clipPath(clip);
+        int pad = dp(4);
+        float sw = Math.max(1, src.getWidth());
+        float sh = Math.max(1, src.getHeight());
+        float scale = Math.min((size - pad * 2f) / sw, (size - pad * 2f) / sh);
+        float dw = sw * scale;
+        float dh = sh * scale;
+        RectF dst = new RectF((size - dw) / 2f, (size - dh) / 2f, (size + dw) / 2f, (size + dh) / 2f);
+        canvas.drawBitmap(src, null, dst, p);
+        canvas.restore();
+        p.setStyle(Paint.Style.STROKE);
+        p.setStrokeWidth(dp(1));
+        p.setColor(Color.argb(160, 255, 255, 255));
+        canvas.drawCircle(size / 2f, size / 2f, size / 2f - dp(1), p);
+        return out;
     }
 
     private void rebuildNav() {
@@ -842,8 +877,14 @@ public class MainActivity extends Activity {
     }
 
     private TextView title(String s) {
-        TextView t = tv(s, 20, text, true);
-        t.setPadding(0, dp(4), 0, dp(12));
+        TextView t = tv("✦ " + s, 22, text, true);
+        t.setGravity(Gravity.RIGHT | Gravity.CENTER_VERTICAL);
+        t.setPadding(dp(14), dp(11), dp(14), dp(11));
+        t.setBackground(round(Color.rgb(10, 14, 30), dp(18), Color.argb(145, 32, 231, 255), dp(1)));
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, -2);
+        lp.setMargins(0, dp(4), 0, dp(14));
+        t.setLayoutParams(lp);
+        if (Build.VERSION.SDK_INT >= 21) t.setElevation(dp(3));
         return t;
     }
 
@@ -874,6 +915,47 @@ public class MainActivity extends Activity {
         applyNeonPress(b);
         if (Build.VERSION.SDK_INT >= 21) b.setElevation(dp(2));
         return b;
+    }
+
+    private void styleNeonDialog(AlertDialog dlg, int accentColor) {
+        if (dlg == null) return;
+        dlg.setOnShowListener(d -> {
+            try {
+                if (dlg.getWindow() != null) {
+                    dlg.getWindow().setBackgroundDrawable(round(Color.rgb(28, 31, 48), dp(22), accentColor, dp(1)));
+                }
+                Button pos = dlg.getButton(AlertDialog.BUTTON_POSITIVE);
+                Button neg = dlg.getButton(AlertDialog.BUTTON_NEGATIVE);
+                Button neu = dlg.getButton(AlertDialog.BUTTON_NEUTRAL);
+                if (pos != null) { pos.setTextColor(accentColor); pos.setTypeface(appTypeface(true)); }
+                if (neg != null) { neg.setTextColor(muted); neg.setTypeface(appTypeface(true)); }
+                if (neu != null) { neu.setTextColor(orange); neu.setTypeface(appTypeface(true)); }
+            } catch (Exception ignored) {}
+        });
+    }
+
+    private void showNeonAlert(String title, String message, int accentColor, boolean sound) {
+        AlertDialog dlg = new AlertDialog.Builder(this)
+                .setTitle(title)
+                .setMessage(message)
+                .setPositiveButton("حسنًا", null)
+                .create();
+        styleNeonDialog(dlg, accentColor);
+        dlg.show();
+        if (sound) playAlertSound();
+    }
+
+    private void playAlertSound() {
+        try {
+            ToneGenerator tg = new ToneGenerator(AudioManager.STREAM_NOTIFICATION, 80);
+            tg.startTone(ToneGenerator.TONE_PROP_BEEP, 180);
+        } catch (Exception ignored) {}
+    }
+
+    private void showLowStockWarningIfNeeded(int amount, int remainingAfterSale) {
+        if (remainingAfterSale > 0 && remainingAfterSale < 10) {
+            showNeonAlert("تنبيه مخزون منخفض", "تم البيع بنجاح، لكن المتبقي من فئة " + amount + " هو " + remainingAfterSale + " كروت فقط.\n\nإذا أصبح المخزون 10 أو أكثر ستتوقف هذه التنبيهات تلقائيًا.", orange, true);
+        }
     }
 
     private Button goldAnimatedAction(String label, View.OnClickListener listener) {
@@ -1093,11 +1175,14 @@ public class MainActivity extends Activity {
         TextView amount = tv(String.valueOf(c.amount), 26, purpleLight, true);
         amount.setGravity(Gravity.RIGHT);
         box.addView(amount);
+        int available = AppStore.availableCount(this, c.amount);
+        if (available <= 0) box.addView(badge("نفدت الكمية", red));
+        else if (available < 10) box.addView(badge("⚠ مخزون منخفض: " + available, orange));
         box.addView(small(c.amount + " ر.ي"));
         box.addView(separator());
         box.addView(small("إجمالي الكروت: " + AppStore.cardsByAmount(this, c.amount).size()));
         box.addView(small("كروت مباعة: " + AppStore.soldCount(this, c.amount)));
-        box.addView(small("الكروت المتبقية: " + AppStore.availableCount(this, c.amount)));
+        box.addView(small("الكروت المتبقية: " + available));
 
         LinearLayout actions = new LinearLayout(this);
         actions.setOrientation(LinearLayout.HORIZONTAL);
@@ -1147,8 +1232,16 @@ public class MainActivity extends Activity {
 
         for (CategoryItem c : AppStore.loadCategories(this)) {
             LinearLayout box = cardBox();
-            box.addView(tv(c.name + " - " + c.amount + " ريال", 18, text, true));
-            box.addView(small("الحالة: " + (c.active ? "مفعلة" : "موقفة") + "\nالمتاح: " + AppStore.availableCount(this, c.amount) + " | المباع: " + AppStore.soldCount(this, c.amount)));
+            int available = AppStore.availableCount(this, c.amount);
+            LinearLayout head = new LinearLayout(this);
+            head.setOrientation(LinearLayout.HORIZONTAL);
+            head.setGravity(Gravity.CENTER_VERTICAL);
+            TextView nameTitle = tv(c.name + " - " + c.amount + " ريال", 18, text, true);
+            head.addView(nameTitle, new LinearLayout.LayoutParams(0, -2, 1));
+            if (available <= 0) head.addView(badge("نفدت", red));
+            else if (available < 10) head.addView(badge("⚠ منخفض", orange));
+            box.addView(head);
+            box.addView(small("الحالة: " + (c.active ? "مفعلة" : "موقفة") + "\nالمتاح: " + available + " | المباع: " + AppStore.soldCount(this, c.amount)));
 
             LinearLayout actions = new LinearLayout(this);
             actions.setOrientation(LinearLayout.HORIZONTAL);
@@ -1165,27 +1258,22 @@ public class MainActivity extends Activity {
     private void showCategoryDialog(CategoryItem category) {
         LinearLayout layout = new LinearLayout(this);
         layout.setOrientation(LinearLayout.VERTICAL);
-        layout.setPadding(dp(8), dp(8), dp(8), dp(8));
+        layout.setPadding(dp(14), dp(12), dp(14), dp(6));
+        layout.setBackgroundColor(Color.rgb(28, 31, 48));
 
-        EditText amount = new EditText(this);
-        amount.setHint("قيمة الفئة مثل 100");
-        amount.setInputType(InputType.TYPE_CLASS_NUMBER);
+        EditText amount = neonInput("قيمة الفئة مثل 100", InputType.TYPE_CLASS_NUMBER);
         amount.setText(category == null ? "" : String.valueOf(category.amount));
 
-        EditText name = new EditText(this);
-        name.setHint("اسم الفئة");
-        name.setInputType(InputType.TYPE_CLASS_TEXT);
+        EditText name = neonInput("اسم الفئة", InputType.TYPE_CLASS_TEXT);
         name.setText(category == null ? "" : category.name);
 
-        CheckBox active = new CheckBox(this);
-        active.setText("الفئة مفعلة");
-        active.setChecked(category == null || category.active);
+        CheckBox active = channelCheckBox("الفئة مفعلة", category == null || category.active, neonCyan);
 
         layout.addView(amount);
         layout.addView(name);
         layout.addView(active);
 
-        new AlertDialog.Builder(this)
+        AlertDialog dlg = new AlertDialog.Builder(this)
                 .setTitle(category == null ? "إضافة فئة" : "تعديل فئة")
                 .setView(layout)
                 .setPositiveButton("حفظ", (d, w) -> {
@@ -1203,7 +1291,27 @@ public class MainActivity extends Activity {
                     showCategories();
                 })
                 .setNegativeButton("إلغاء", null)
-                .show();
+                .create();
+        styleNeonDialog(dlg, neonCyan);
+        dlg.show();
+    }
+
+    private EditText neonInput(String hint, int inputType) {
+        EditText e = new EditText(this);
+        e.setHint(hint);
+        e.setInputType(inputType);
+        e.setGravity(Gravity.RIGHT | Gravity.CENTER_VERTICAL);
+        e.setTextColor(text);
+        e.setHintTextColor(muted);
+        e.setTextSize(16);
+        e.setTypeface(appTypeface(false));
+        e.setSingleLine(true);
+        e.setPadding(dp(12), 0, dp(12), 0);
+        e.setBackground(round(Color.rgb(12, 16, 31), dp(14), Color.rgb(61, 73, 112), dp(1)));
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, dp(58));
+        lp.setMargins(0, dp(6), 0, dp(8));
+        e.setLayoutParams(lp);
+        return e;
     }
 
     private void confirmDeleteCategory(CategoryItem c) {
@@ -1449,11 +1557,12 @@ public class MainActivity extends Activity {
         content.addView(title("بيع كرت مباشر"));
 
         LinearLayout info = cardBox();
-        info.addView(tv("إرسال كرت يدويًا للزبون", 17, text, true));
+        info.addView(tv("بيع مباشر منسق", 18, text, true));
+        info.addView(small("اختر الفئة، ثم رقم الزبون، ثم طريقة الإرسال. خيار الآجل يظهر فقط إذا كان الزبون موجودًا في الدفتر ووضعه يسمح بالسلفة."));
         content.addView(info);
 
         LinearLayout picker = cardBox();
-        picker.addView(tv("اختر الفئة", 17, text, true));
+        picker.addView(tv("اختر الفئة", 18, text, true));
         ArrayList<CategoryItem> cats = AppStore.loadCategories(this);
         if (!cats.isEmpty()) {
             boolean foundSelected = false;
@@ -1468,67 +1577,71 @@ public class MainActivity extends Activity {
                 row.setOrientation(LinearLayout.HORIZONTAL);
                 picker.addView(row);
             }
-            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0, dp(58), 1);
+            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0, dp(76), 1);
             lp.setMargins(dp(4), dp(6), dp(4), dp(6));
             row.addView(directSaleCategoryButton(cat), lp);
             col++;
-            if (col == 2) col = 0;
+            if (col == 3) col = 0;
         }
-        TextView chosen = tv("الفئة المختارة: " + selectedAmount + " ريال | المتبقي: " + AppStore.availableCount(this, selectedAmount), 15, purpleLight, true);
+        int selectedAvailable = AppStore.availableCount(this, selectedAmount);
+        TextView chosen = tv("الفئة المختارة: " + selectedAmount + " ريال | المتبقي: " + selectedAvailable, 15, selectedAvailable > 0 && selectedAvailable < 10 ? orange : purpleLight, true);
         chosen.setGravity(Gravity.CENTER);
         chosen.setPadding(0, dp(8), 0, 0);
         picker.addView(chosen);
         content.addView(picker);
 
         LinearLayout form = cardBox();
-        form.addView(tv("بيانات الزبون", 17, text, true));
+        form.addView(tv("بيانات الزبون", 18, text, true));
 
         LinearLayout phoneRow = new LinearLayout(this);
         phoneRow.setOrientation(LinearLayout.HORIZONTAL);
         phoneRow.setGravity(Gravity.CENTER_VERTICAL);
 
-        Button contactBtn = action("🔎 بحث", card2, text, v -> openContactPicker(pendingContactPhone, pendingContactName));
+        Button contactBtn = action("بحث", card2, text, v -> openContactPicker(pendingContactPhone, pendingContactName));
         LinearLayout.LayoutParams contactLp = new LinearLayout.LayoutParams(dp(92), dp(58));
         contactLp.setMargins(0, 0, dp(8), dp(6));
         phoneRow.addView(contactBtn, contactLp);
 
-        EditText phone = new EditText(this);
-        phone.setHint("رقم الزبون الذي سيصله الكرت");
-        phone.setGravity(Gravity.RIGHT | Gravity.CENTER_VERTICAL);
-        phone.setInputType(InputType.TYPE_CLASS_PHONE);
-        phone.setTextColor(text);
-        phone.setHintTextColor(muted);
+        EditText phone = neonInput("رقم الزبون الذي سيصله الكرت", InputType.TYPE_CLASS_PHONE);
         phone.setText(directSalePhoneDraft);
-        phone.setBackground(round(bg, dp(10), Color.argb(90,255,255,255), dp(1)));
-        phone.setPadding(dp(12), 0, dp(12), 0);
         LinearLayout.LayoutParams phoneLp = new LinearLayout.LayoutParams(0, dp(58), 1);
         phoneLp.setMargins(0, 0, 0, dp(6));
         phoneRow.addView(phone, phoneLp);
         form.addView(phoneRow);
 
-        EditText name = new EditText(this);
-        name.setHint("اسم الزبون اختياري");
-        name.setGravity(Gravity.RIGHT);
-        name.setInputType(InputType.TYPE_CLASS_TEXT);
-        name.setTextColor(text);
-        name.setHintTextColor(muted);
+        EditText name = neonInput("اسم الزبون اختياري", InputType.TYPE_CLASS_TEXT);
         name.setText(directSaleNameDraft);
         form.addView(name);
+
+        TextView customerHint = small("إذا كان الزبون موجودًا في الدفتر ومسموح له بالسلفة سيظهر خيار آجل تلقائيًا.");
+        form.addView(customerHint);
 
         pendingContactPhone = phone;
         pendingContactName = name;
         phone.addTextChangedListener(simpleWatcher(value -> directSalePhoneDraft = value));
         name.addTextChangedListener(simpleWatcher(value -> directSaleNameDraft = value));
 
-        TextView methodTitle = tv("اختر طريقة الإرسال", 17, text, true);
+        TextView payTitle = tv("طريقة البيع", 18, text, true);
+        payTitle.setPadding(0, dp(12), 0, dp(4));
+        form.addView(payTitle);
+        RadioGroup payGroup = new RadioGroup(this);
+        payGroup.setOrientation(RadioGroup.HORIZONTAL);
+        RadioButton cash = payRadio("نقدي", true);
+        RadioButton credit = payRadio("آجل", false);
+        credit.setVisibility(View.GONE);
+        payGroup.addView(cash, new RadioGroup.LayoutParams(0, dp(50), 1));
+        payGroup.addView(credit, new RadioGroup.LayoutParams(0, dp(50), 1));
+        form.addView(payGroup);
+
+        TextView methodTitle = tv("اختر طريقة الإرسال", 18, text, true);
         methodTitle.setPadding(0, dp(12), 0, dp(4));
         form.addView(methodTitle);
-        CheckBox sendSms = channelCheckBox("💬 SMS رسائل نصية", true, purpleLight);
-        CheckBox sendWhats = channelCheckBox("🟢 واتساب", true, Color.rgb(37, 211, 102));
+        CheckBox sendSms = channelCheckBox("رسائل SMS", true, purpleLight);
+        CheckBox sendWhats = channelCheckBox("واتساب", true, Color.rgb(37, 211, 102));
         form.addView(sendSms);
         form.addView(sendWhats);
 
-        CheckBox saleRewards = channelCheckBox("🎁 احتساب المكافأة لهذه العملية", directSaleRewardsDraft && AppStore.isRewardsEnabled(this), goldSoft);
+        CheckBox saleRewards = channelCheckBox("احتساب المكافأة لهذه العملية", directSaleRewardsDraft && AppStore.isRewardsEnabled(this), goldSoft);
         saleRewards.setEnabled(AppStore.isRewardsEnabled(this));
         saleRewards.setOnCheckedChangeListener((buttonView, isChecked) -> directSaleRewardsDraft = isChecked);
         form.addView(saleRewards);
@@ -1536,19 +1649,62 @@ public class MainActivity extends Activity {
             form.addView(small("نظام المكافآت متوقف من إعدادات المكافآت العامة، لذلك لن تُحسب مكافأة لهذه العملية."));
         }
 
-        Button primary = action("🚀 بيع وإرسال حسب الاختيار", purple, Color.WHITE, v ->
+        Runnable updateCreditUi = () -> {
+            LedgerCustomer lc = findDirectSaleLedgerCustomer(phone.getText().toString(), name.getText().toString());
+            if (lc != null && lc.canAutoLoan()) {
+                credit.setVisibility(View.VISIBLE);
+                customerHint.setText("الزبون موثق: " + lc.name + " | المتاح للسلفة: " + lc.availableForRequest() + " ر.ي");
+                customerHint.setTextColor(green);
+            } else if (lc != null) {
+                credit.setVisibility(View.GONE);
+                cash.setChecked(true);
+                customerHint.setText("الزبون موجود لكن الآجل غير متاح: " + AppStore.ledgerModeLabel(lc.effectiveMode()));
+                customerHint.setTextColor(orange);
+            } else {
+                credit.setVisibility(View.GONE);
+                cash.setChecked(true);
+                customerHint.setText("إذا كان الزبون موجودًا في الدفتر ومسموح له بالسلفة سيظهر خيار آجل تلقائيًا.");
+                customerHint.setTextColor(muted);
+            }
+        };
+        phone.addTextChangedListener(simpleWatcher(value -> { directSalePhoneDraft = value; updateCreditUi.run(); }));
+        name.addTextChangedListener(simpleWatcher(value -> { directSaleNameDraft = value; updateCreditUi.run(); }));
+        updateCreditUi.run();
+
+        Button primary = action("بيع وإرسال حسب الاختيار", purple, Color.WHITE, v ->
                 performDirectSaleCombined(
                         phone.getText().toString(),
                         name.getText().toString(),
                         sendSms.isChecked(),
                         sendWhats.isChecked(),
-                        saleRewards.isChecked()
+                        saleRewards.isChecked(),
+                        credit.getVisibility() == View.VISIBLE && credit.isChecked()
                 ));
         LinearLayout.LayoutParams primaryLp = new LinearLayout.LayoutParams(-1, dp(58));
         primaryLp.setMargins(0, dp(10), 0, dp(6));
         form.addView(primary, primaryLp);
 
         content.addView(form);
+    }
+
+    private RadioButton payRadio(String label, boolean checked) {
+        RadioButton r = new RadioButton(this);
+        r.setText(label);
+        r.setTextColor(text);
+        r.setTextSize(15);
+        r.setTypeface(appTypeface(true));
+        r.setGravity(Gravity.CENTER);
+        r.setChecked(checked);
+        r.setPadding(dp(8), dp(6), dp(8), dp(6));
+        r.setBackground(round(Color.rgb(12, 16, 31), dp(16), Color.rgb(61, 73, 112), dp(1)));
+        if (Build.VERSION.SDK_INT >= 21) r.setButtonTintList(android.content.res.ColorStateList.valueOf(neonCyan));
+        return r;
+    }
+
+    private LedgerCustomer findDirectSaleLedgerCustomer(String phone, String name) {
+        LedgerCustomer byPhone = AppStore.findLedgerCustomerByPhone(this, phone);
+        if (byPhone != null) return byPhone;
+        return AppStore.findLedgerCustomerByName(this, name);
     }
 
     private interface TextChangeCallback { void onChange(String value); }
@@ -1568,7 +1724,11 @@ public class MainActivity extends Activity {
         cb.setTextSize(15);
         cb.setTypeface(appTypeface(true));
         cb.setChecked(checked);
-        cb.setPadding(dp(8), dp(6), dp(8), dp(6));
+        cb.setPadding(dp(10), dp(7), dp(10), dp(7));
+        cb.setBackground(round(Color.rgb(12, 16, 31), dp(16), Color.argb(150, Color.red(accentColor), Color.green(accentColor), Color.blue(accentColor)), dp(1)));
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, dp(48));
+        lp.setMargins(0, dp(4), 0, dp(4));
+        cb.setLayoutParams(lp);
         if (Build.VERSION.SDK_INT >= 21) cb.setButtonTintList(android.content.res.ColorStateList.valueOf(accentColor));
         return cb;
     }
@@ -1829,6 +1989,10 @@ public class MainActivity extends Activity {
 
 
     private void performDirectSaleCombined(String rawPhone, String rawName, boolean viaSms, boolean viaWhatsApp, boolean rewardsForThisSale) {
+        performDirectSaleCombined(rawPhone, rawName, viaSms, viaWhatsApp, rewardsForThisSale, false);
+    }
+
+    private void performDirectSaleCombined(String rawPhone, String rawName, boolean viaSms, boolean viaWhatsApp, boolean rewardsForThisSale, boolean saleOnCredit) {
         String clean = SmsProcessor.cleanPhone(rawPhone);
         String name = rawName == null ? "" : rawName.trim();
         if (!SmsProcessor.isValidLocalMobile(clean)) { toast("اكتب رقم زبون صحيح: 9 أرقام ويبدأ بـ 7"); return; }
@@ -1836,9 +2000,25 @@ public class MainActivity extends Activity {
 
         String channels = selectedChannelsLabel(viaSms, viaWhatsApp);
         boolean effectiveRewards = rewardsForThisSale && AppStore.isRewardsEnabled(this);
-        new AlertDialog.Builder(this)
+        LedgerCustomer creditCustomer = saleOnCredit ? findDirectSaleLedgerCustomer(clean, name) : null;
+        if (saleOnCredit) {
+            if (creditCustomer == null || !creditCustomer.canAutoLoan()) {
+                showNeonAlert("الآجل غير متاح", "هذا الزبون غير موثق أو السلفة غير مفعلة لحسابه.", orange, true);
+                return;
+            }
+            if (!AppStore.canLedgerCustomerTakeLoan(creditCustomer, selectedAmount)) {
+                showNeonAlert("تجاوز السقف", "لا يمكن البيع بالآجل لأن العملية ستتجاوز سقف العميل.\n\nالمتاح: " + creditCustomer.availableForRequest() + " ر.ي", red, true);
+                return;
+            }
+        }
+
+        AlertDialog dlg = new AlertDialog.Builder(this)
                 .setTitle("تأكيد البيع والإرسال")
-                .setMessage("سيتم حجز كرت واحد فقط من فئة " + selectedAmount + " ريال للرقم:\n" + clean + "\n\nطرق الإرسال المختارة:\n" + channels + "\n\nالمكافأة لهذه العملية: " + (effectiveRewards ? "مفعلة" : "معطلة") + "\n\nتنبيه: واتساب يفتح الرسالة جاهزة، وقد تحتاج الضغط على زر الإرسال داخل واتساب.")
+                .setMessage("سيتم حجز كرت واحد فقط من فئة " + selectedAmount + " ريال للرقم:\n" + clean
+                        + "\n\nطريقة البيع: " + (saleOnCredit ? "آجل" : "نقدي")
+                        + "\nطرق الإرسال المختارة:\n" + channels
+                        + "\n\nالمكافأة لهذه العملية: " + (effectiveRewards ? "مفعلة" : "معطلة")
+                        + "\n\nتنبيه: واتساب يفتح الرسالة جاهزة، وقد تحتاج الضغط على زر الإرسال داخل واتساب.")
                 .setPositiveButton("موافق، بيع وإرسال", (d,w) -> {
                     CardItem reserved = AppStore.takeAvailableCard(this, selectedAmount, clean);
                     if (reserved == null) {
@@ -1848,25 +2028,34 @@ public class MainActivity extends Activity {
                                 "بيع مباشر: لا توجد كروت متاحة من الفئة المختارة. لم يتم إرسال أي رسالة لأن البيع من داخل التطبيق وليس تحويلًا تلقائيًا.",
                                 "", AppStore.now()));
                         AppStore.performAutoBackupIfDue(this, "محاولة بيع مباشر بدون كمية");
-                        new AlertDialog.Builder(this)
-                                .setTitle("انتهت كمية هذه الفئة")
-                                .setMessage("لا توجد كروت متاحة لفئة " + selectedAmount + " ريال.\n\nلم يتم إرسال أي رسالة للزبون. أضف كروتًا جديدة أو اختر فئة أخرى.")
-                                .setPositiveButton("حسنًا", null)
-                                .show();
+                        showNeonAlert("انتهت كمية هذه الفئة", "لا توجد كروت متاحة لفئة " + selectedAmount + " ريال.\n\nلم يتم إرسال أي رسالة للزبون. أضف كروتًا جديدة أو اختر فئة أخرى.", red, true);
                         new Handler(Looper.getMainLooper()).postDelayed(this::showLogs, 900);
                         return;
                     }
                     String code = reserved.code;
+                    LedgerCustomer afterCredit = null;
+                    if (saleOnCredit) {
+                        afterCredit = AppStore.applyLedgerLoanWithCredit(this, clean, selectedAmount, code);
+                        if (afterCredit == null) {
+                            showNeonAlert("تعذر تسجيل الآجل", "تم منع العملية لأن حساب الزبون لا يسمح بالآجل أو السقف غير كافٍ.", red, true);
+                            return;
+                        }
+                    }
                     String msg = AppStore.buildDirectSaleMessage(this, selectedAmount, code);
+                    if (saleOnCredit && afterCredit != null) {
+                        msg = msg + "\nعليك:" + afterCredit.debt + "ر.ي";
+                    }
                     String id = java.util.UUID.randomUUID().toString();
                     String status = viaSms ? "جاري إرسال SMS" : "بانتظار إرسال خارجي";
-                    String note = "بيع مباشر: تم حجز كرت واحد وتم تجهيز الإرسال عبر: " + channels;
-                    if (effectiveRewards) {
+                    String note = "بيع مباشر: تم حجز كرت واحد وتم تجهيز الإرسال عبر: " + channels + (saleOnCredit ? " | بيع آجل" : " | بيع نقدي");
+                    if (effectiveRewards && !saleOnCredit) {
                         RewardResult reward = AppStore.applyRewardsForPaidSale(this, clean, name, selectedAmount, code);
                         if (reward != null) {
                             if (reward.customerMessagePart != null && !reward.customerMessagePart.isEmpty()) msg += reward.customerMessagePart;
                             if (reward.internalNote != null && !reward.internalNote.isEmpty()) note += "\n" + reward.internalNote;
                         }
+                    } else if (saleOnCredit) {
+                        note += "\nلم يتم احتساب مكافأة للآجل حتى يتم السداد.";
                     } else {
                         note += "\nالمكافأة معطلة لهذه العملية؛ لم يتم احتساب نقاط جديدة.";
                     }
@@ -1883,11 +2072,17 @@ public class MainActivity extends Activity {
                     }
 
                     AppStore.performAutoBackupIfDue(this, "بيع مباشر متعدد القنوات");
-                    toast("تم تجهيز البيع عبر: " + channels);
+                    int remainingAfterSale = AppStore.availableCount(this, selectedAmount);
+                    if (!(remainingAfterSale > 0 && remainingAfterSale < 10)) {
+                        toast("تم تجهيز البيع عبر: " + channels);
+                    }
+                    showLowStockWarningIfNeeded(selectedAmount, remainingAfterSale);
                     new Handler(Looper.getMainLooper()).postDelayed(this::showLogs, 1200);
                 })
                 .setNegativeButton("إلغاء", null)
-                .show();
+                .create();
+        styleNeonDialog(dlg, saleOnCredit ? gold : purpleLight);
+        dlg.show();
     }
 
     private String selectedChannelsLabel(boolean sms, boolean whatsapp) {
