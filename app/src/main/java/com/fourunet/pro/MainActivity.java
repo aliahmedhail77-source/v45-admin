@@ -1816,10 +1816,6 @@ public class MainActivity extends Activity {
         reportQuick.addView(action("شهري PDF", card2, text, v -> sharePeriodReportPdf("تقرير شهري", firstDayOfThisMonth(), todayDate())), new LinearLayout.LayoutParams(0, dp(50), 1));
         report.addView(reportQuick);
         report.addView(action("تقرير PDF حسب تاريخ مخصص", purple, Color.WHITE, v -> showCustomPeriodReportDialog()));
-        report.addView(separator());
-        report.addView(tv("إدارة الأداء", 16, text, true));
-        report.addView(small("أرشفة السجل القديم والملخص اليومي يحافظان على سرعة التطبيق بعد شهور من الاستخدام."));
-        report.addView(action("إدارة الأداء والأرشفة", gold, Color.rgb(35,24,8), v -> showPerformanceManagement()));
         report.addView(action("حذف كل إشعارات السداد", Color.rgb(82,30,42), Color.WHITE, v -> confirmClearLogs()));
         content.addView(report);
 
@@ -5700,63 +5696,6 @@ public class MainActivity extends Activity {
                 runOnUiThread(() -> toast("فشل التنفيذ: " + ex.getMessage()));
             }
         });
-    }
-
-    private void showPerformanceManagement() {
-        setTab("logs");
-        clear();
-        content.addView(title("إدارة الأداء والأرشفة"));
-
-        LinearLayout snap = cardBox();
-        snap.addView(tv("حالة النظام الآن", 17, text, true));
-        snap.addView(small(AppStore.performanceSnapshot(this)));
-        snap.addView(action("تحديث الحالة", card2, text, v -> showPerformanceManagement()));
-        content.addView(snap);
-
-        LinearLayout archive = cardBox();
-        archive.addView(tv("أرشفة السجل القديم", 17, text, true));
-        archive.addView(small("ينقل العمليات القديمة إلى الأرشيف بدل حذفها، ويبقي السجل السريع خفيفًا. الإرسال الآلي وبيع الكروت لا يتأثران."));
-        archive.addView(action("أرشفة أقدم من 60 يوم", purple, Color.WHITE, v -> confirmArchiveOldLogs(60)));
-        archive.addView(action("أرشفة أقدم من 30 يوم", card2, text, v -> confirmArchiveOldLogs(30)));
-        archive.addView(action("إعادة بناء الملخص اليومي", card2, text, v -> runPerformanceTask("جاري بناء الملخص اليومي في الخلفية...", () -> {
-            final int count = AppStore.rebuildDailySummaryFromLogs(this);
-            runOnUiThread(() -> {
-                toneOk();
-                toast("تم بناء الملخص من " + count + " عملية");
-                showPerformanceManagement();
-            });
-        })));
-        content.addView(archive);
-
-        LinearLayout summary = cardBox();
-        summary.addView(tv("الملخص اليومي السريع", 17, text, true));
-        ArrayList<String> lines = AppStore.dailySummaryLines(this, 14);
-        if (lines.isEmpty()) {
-            summary.addView(small("لا توجد بيانات ملخص يومي بعد. سيبدأ الملخص بالتحديث تلقائيًا مع العمليات الجديدة."));
-        } else {
-            for (String line : lines) summary.addView(small(line));
-        }
-        content.addView(summary);
-
-        LinearLayout back = cardBox();
-        back.addView(action("رجوع للسجل والتقارير", card2, text, v -> showLogs()));
-        content.addView(back);
-    }
-
-    private void confirmArchiveOldLogs(final int days) {
-        new AlertDialog.Builder(this)
-                .setTitle("أرشفة السجل")
-                .setMessage("سيتم نقل العمليات الأقدم من " + days + " يوم إلى الأرشيف، بدون حذفها نهائيًا. سيبقى السجل السريع أخف. هل تريد المتابعة؟")
-                .setPositiveButton("نعم، أرشفة", (d,w) -> runPerformanceTask("جاري أرشفة السجل في الخلفية...", () -> {
-                    final int moved = AppStore.archiveLogsOlderThanDays(this, days);
-                    runOnUiThread(() -> {
-                        toneOk();
-                        toast("تمت أرشفة " + moved + " عملية");
-                        showPerformanceManagement();
-                    });
-                }))
-                .setNegativeButton("إلغاء", null)
-                .show();
     }
 
     private void showCustomPeriodReportDialog() {

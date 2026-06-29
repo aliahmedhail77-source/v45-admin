@@ -17,7 +17,6 @@ import java.util.ArrayList;
 import java.util.Date;
 import java.util.HashSet;
 import java.util.HashMap;
-import java.util.Collections;
 import java.util.Locale;
 import java.util.UUID;
 import java.security.MessageDigest;
@@ -36,8 +35,6 @@ class AppStore {
     private static final String KEY_CATEGORIES = "categories";
     private static final String KEY_CARDS = "cards";
     private static final String KEY_LOGS = "logs";
-    private static final String KEY_LOGS_ARCHIVE = "logs_archive_v137";
-    private static final String KEY_DAILY_SUMMARY = "daily_summary_v137";
     private static final String KEY_LEDGER_CUSTOMERS = "ledger_customers_v12";
     private static final String KEY_LEDGER_ENTRIES = "ledger_entries_v12";
     private static final String KEY_LEDGER_ENABLED = "ledger_enabled_v12";
@@ -2349,192 +2346,29 @@ class AppStore {
     static void saveLogs(Context c, ArrayList<OperationLog> logs) {
         try {
             JSONArray arr = new JSONArray();
-            for (OperationLog log : logs) arr.put(logToJson(log));
+            for (OperationLog log : logs) {
+                JSONObject o = new JSONObject();
+                o.put("id", log.id);
+                o.put("provider", log.provider);
+                o.put("sender", log.sender);
+                o.put("customerName", log.customerName);
+                o.put("customerPhone", log.customerPhone);
+                o.put("amount", log.amount);
+                o.put("status", log.status);
+                o.put("message", log.message);
+                o.put("cardCode", log.cardCode);
+                o.put("createdAt", log.createdAt);
+                arr.put(o);
+            }
             prefs(c).edit().putString(KEY_LOGS, arr.toString()).apply();
             invalidateLogsCache();
         } catch (Exception ignored) {}
     }
 
-    private static JSONObject logToJson(OperationLog log) throws Exception {
-        JSONObject o = new JSONObject();
-        o.put("id", log.id == null ? "" : log.id);
-        o.put("provider", log.provider == null ? "" : log.provider);
-        o.put("sender", log.sender == null ? "" : log.sender);
-        o.put("customerName", log.customerName == null ? "" : log.customerName);
-        o.put("customerPhone", log.customerPhone == null ? "" : log.customerPhone);
-        o.put("amount", log.amount);
-        o.put("status", log.status == null ? "" : log.status);
-        o.put("message", log.message == null ? "" : log.message);
-        o.put("cardCode", log.cardCode == null ? "" : log.cardCode);
-        o.put("createdAt", log.createdAt == null ? "" : log.createdAt);
-        return o;
-    }
-
-    private static OperationLog logFromJson(JSONObject o) {
-        return new OperationLog(
-                o.optString("id"),
-                o.optString("provider"),
-                o.optString("sender"),
-                o.optString("customerName"),
-                o.optString("customerPhone"),
-                o.optInt("amount"),
-                o.optString("status"),
-                o.optString("message"),
-                o.optString("cardCode"),
-                o.optString("createdAt")
-        );
-    }
-
-    private static ArrayList<OperationLog> loadArchivedLogs(Context c) {
-        ArrayList<OperationLog> list = new ArrayList<>();
-        try {
-            JSONArray arr = new JSONArray(prefs(c).getString(KEY_LOGS_ARCHIVE, "[]"));
-            for (int i = 0; i < arr.length(); i++) list.add(logFromJson(arr.getJSONObject(i)));
-        } catch (Exception ignored) {}
-        return list;
-    }
-
-    private static void saveArchivedLogs(Context c, ArrayList<OperationLog> logs) {
-        try {
-            JSONArray arr = new JSONArray();
-            for (OperationLog log : logs) arr.put(logToJson(log));
-            prefs(c).edit().putString(KEY_LOGS_ARCHIVE, arr.toString()).apply();
-        } catch (Exception ignored) {}
-    }
-
-    private static void appendArchivedLogs(Context c, ArrayList<OperationLog> oldLogs) {
-        if (oldLogs == null || oldLogs.isEmpty()) return;
-        ArrayList<OperationLog> archive = loadArchivedLogs(c);
-        archive.addAll(oldLogs);
-        saveArchivedLogs(c, archive);
-    }
-
-    static int archivedLogsCount(Context c) {
-        return loadArchivedLogs(c).size();
-    }
-
-    private static String dayKey(String createdAt) {
-        String v = createdAt == null || createdAt.trim().isEmpty() ? now() : createdAt.trim();
-        v = v.replace('-', '/');
-        return v.length() >= 10 ? v.substring(0, 10) : now().substring(0, 10);
-    }
-
-    private static long parseLogTimeMs(String createdAt) {
-        if (createdAt == null) return 0;
-        String v = createdAt.trim();
-        if (v.isEmpty()) return 0;
-        String[] formats = new String[]{"yyyy/MM/dd HH:mm:ss", "yyyy/MM/dd HH:mm", "yyyy-MM-dd HH:mm:ss", "yyyy-MM-dd HH:mm", "yyyy/MM/dd", "yyyy-MM-dd"};
-        for (String f : formats) {
-            try { return new SimpleDateFormat(f, Locale.US).parse(v).getTime(); } catch (Exception ignored) {}
-        }
-        return 0;
-    }
-
-    private static void updateDailySummary(Context c, OperationLog log) {
-        if (log == null) return;
-        try {
-            JSONObject root = new JSONObject(prefs(c).getString(KEY_DAILY_SUMMARY, "{}"));
-            String day = dayKey(log.createdAt);
-            JSONObject row = root.optJSONObject(day);
-            if (row == null) row = new JSONObject();
-            int amount = Math.max(0, log.amount);
-            String all = ((log.provider == null ? "" : log.provider) + " " +
-                    (log.sender == null ? "" : log.sender) + " " +
-                    (log.status == null ? "" : log.status) + " " +
-                    (log.message == null ? "" : log.message)).toLowerCase(Locale.US);
-            boolean failed = all.contains("فشل") || all.contains("مرفوض") || all.contains("خطأ") || all.contains("نفد") || all.contains("لم يتم");
-            boolean loan = all.contains("سلف") || all.contains("آجل") || all.contains("دين");
-            boolean settle = all.contains("سداد") || all.contains("تسديد") || all.contains("دفعة");
-            row.put("operations_count", row.optInt("operations_count") + 1);
-            row.put("amount_total", row.optInt("amount_total") + amount);
-            if (failed) row.put("failed_count", row.optInt("failed_count") + 1);
-            else row.put("success_count", row.optInt("success_count") + 1);
-            if (loan) row.put("loan_total", row.optInt("loan_total") + amount);
-            if (settle) row.put("payment_total", row.optInt("payment_total") + amount);
-            if (!loan && !settle && !failed) row.put("sales_total", row.optInt("sales_total") + amount);
-            row.put("last_at", log.createdAt == null ? now() : log.createdAt);
-            root.put(day, row);
-            prefs(c).edit().putString(KEY_DAILY_SUMMARY, root.toString()).apply();
-        } catch (Exception ignored) {}
-    }
-
-    static ArrayList<String> dailySummaryLines(Context c, int limit) {
-        ArrayList<String> out = new ArrayList<>();
-        try {
-            JSONObject root = new JSONObject(prefs(c).getString(KEY_DAILY_SUMMARY, "{}"));
-            JSONArray names = root.names();
-            ArrayList<String> keys = new ArrayList<>();
-            if (names != null) for (int i = 0; i < names.length(); i++) keys.add(names.getString(i));
-            Collections.sort(keys, Collections.reverseOrder());
-            int max = limit <= 0 ? 14 : limit;
-            for (int i = 0; i < keys.size() && i < max; i++) {
-                String day = keys.get(i);
-                JSONObject r = root.optJSONObject(day);
-                if (r == null) continue;
-                out.add(day + " | العمليات: " + r.optInt("operations_count")
-                        + " | ناجحة: " + r.optInt("success_count")
-                        + " | فاشلة: " + r.optInt("failed_count")
-                        + " | مبيعات: " + r.optInt("sales_total")
-                        + " | آجل: " + r.optInt("loan_total")
-                        + " | سداد: " + r.optInt("payment_total"));
-            }
-        } catch (Exception ignored) {}
-        return out;
-    }
-
-    static int archiveLogsOlderThanDays(Context c, int days) {
-        int d = days <= 0 ? 60 : days;
-        long cutoff = System.currentTimeMillis() - (long)d * 24L * 60L * 60L * 1000L;
-        ArrayList<OperationLog> active = loadLogs(c);
-        ArrayList<OperationLog> keep = new ArrayList<>();
-        ArrayList<OperationLog> old = new ArrayList<>();
-        for (OperationLog log : active) {
-            long t = parseLogTimeMs(log.createdAt);
-            if (t > 0 && t < cutoff) old.add(log); else keep.add(log);
-        }
-        if (!old.isEmpty()) {
-            appendArchivedLogs(c, old);
-            saveLogs(c, keep);
-        }
-        return old.size();
-    }
-
-    static int rebuildDailySummaryFromLogs(Context c) {
-        int count = 0;
-        try {
-            prefs(c).edit().remove(KEY_DAILY_SUMMARY).commit();
-            ArrayList<OperationLog> all = new ArrayList<>();
-            all.addAll(loadLogs(c));
-            all.addAll(loadArchivedLogs(c));
-            for (OperationLog log : all) {
-                updateDailySummary(c, log);
-                count++;
-            }
-        } catch (Exception ignored) {}
-        return count;
-    }
-
-    static String performanceSnapshot(Context c) {
-        long dbKb = 0;
-        try {
-            File f = c.getDatabasePath(CARD_DB_NAME);
-            if (f != null && f.exists()) dbKb = Math.max(1, f.length() / 1024);
-        } catch (Exception ignored) {}
-        return "الكروت الإجمالي: " + totalCardsCount(c)
-                + "\nالمتاح: " + totalAvailable(c)
-                + "\nالمباع: " + totalSold(c)
-                + "\nالسجل السريع: " + logsCount(c)
-                + "\nالأرشيف: " + archivedLogsCount(c)
-                + "\nحجم قاعدة الكروت: " + dbKb + " KB";
-    }
-
     static void addLog(Context c, OperationLog log) {
         ArrayList<OperationLog> logs = loadLogs(c);
         logs.add(0, log);
-        ArrayList<OperationLog> overflow = new ArrayList<>();
-        while (logs.size() > MAX_FAST_LOGS) overflow.add(logs.remove(logs.size() - 1));
-        if (!overflow.isEmpty()) appendArchivedLogs(c, overflow);
-        updateDailySummary(c, log);
+        while (logs.size() > MAX_FAST_LOGS) logs.remove(logs.size() - 1);
         saveLogs(c, logs);
     }
 
@@ -3773,8 +3607,6 @@ class AppStore {
         root.put(KEY_CATEGORIES, new JSONArray(prefs(c).getString(KEY_CATEGORIES, "[]")));
         root.put(KEY_CARDS, cardsToJsonArray(c));
         root.put(KEY_LOGS, new JSONArray(prefs(c).getString(KEY_LOGS, "[]")));
-        root.put(KEY_LOGS_ARCHIVE, new JSONArray(prefs(c).getString(KEY_LOGS_ARCHIVE, "[]")));
-        root.put(KEY_DAILY_SUMMARY, new JSONObject(prefs(c).getString(KEY_DAILY_SUMMARY, "{}")));
         root.put(KEY_TRUSTED, new JSONArray(prefs(c).getString(KEY_TRUSTED, "[]")));
         root.put(KEY_TRUSTED_CREDIT_AGENTS, new JSONArray(prefs(c).getString(KEY_TRUSTED_CREDIT_AGENTS, "[]")));
         root.put(KEY_POS_OUTLETS, new JSONArray(prefs(c).getString(KEY_POS_OUTLETS, "[]")));
@@ -4221,8 +4053,6 @@ class AppStore {
         JSONArray categories = root.optJSONArray(KEY_CATEGORIES);
         JSONArray cards = root.optJSONArray(KEY_CARDS);
         JSONArray logs = root.optJSONArray(KEY_LOGS);
-        JSONArray logsArchive = root.optJSONArray(KEY_LOGS_ARCHIVE);
-        JSONObject dailySummary = root.optJSONObject(KEY_DAILY_SUMMARY);
         JSONArray trusted = root.optJSONArray(KEY_TRUSTED);
             JSONArray trustedCreditAgents = root.optJSONArray(KEY_TRUSTED_CREDIT_AGENTS);
         JSONArray posOutlets = root.optJSONArray(KEY_POS_OUTLETS);
@@ -4237,8 +4067,6 @@ class AppStore {
         if (categories != null) editor.putString(KEY_CATEGORIES, categories.toString());
         if (cards != null) editor.remove(KEY_CARDS).putBoolean(KEY_CARDS_DB_READY, true);
         if (logs != null) editor.putString(KEY_LOGS, logs.toString());
-        if (logsArchive != null) editor.putString(KEY_LOGS_ARCHIVE, logsArchive.toString());
-        if (dailySummary != null) editor.putString(KEY_DAILY_SUMMARY, dailySummary.toString());
         if (trusted != null) editor.putString(KEY_TRUSTED, trusted.toString());
             if (trustedCreditAgents != null) editor.putString(KEY_TRUSTED_CREDIT_AGENTS, trustedCreditAgents.toString());
         if (posOutlets != null) editor.putString(KEY_POS_OUTLETS, posOutlets.toString());
