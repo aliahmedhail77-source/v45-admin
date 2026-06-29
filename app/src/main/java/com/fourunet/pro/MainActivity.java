@@ -92,6 +92,7 @@ public class MainActivity extends Activity {
     String routerStudioPasswordDraft = "";
     String routerStudioPasswordMode = "username";
     String rewardsPanelTab = "overview";
+    String uiControlTab = "home";
     boolean pendingRewardImport = false;
     int pendingRewardImportAmount = 100;
     String reviewFocusLogId = "";
@@ -102,6 +103,9 @@ public class MainActivity extends Activity {
     int ledgerEntriesVisibleLimit = 5;
     int cardsVisibleLimit = AppStore.performanceCardPageSize();
     int cardsVisibleAmount = -1;
+
+    // Stage 13.9 MAIN DASHBOARD GRID + DIRECT SALE SMART UI.
+    // قائمة رئيسية 9 خانات، تحكم واجهة بثلاث تبويبات، وبيع مباشر بأيقونات دفع/إرسال وتأكيد مضيء.
 
     // Stage 13.8 REPORTS LOGS WALLET REVIEW CLEANUP.
     // تنظيف التقارير والسجلات، إخفاء سجلات الطابور التقنية، تحسين الدفتر والمراجعة، ورسائل السداد والتعبئة.
@@ -706,9 +710,9 @@ public class MainActivity extends Activity {
         h.setOrientation(LinearLayout.VERTICAL);
         h.setPadding(dp(18), dp(20), dp(18), dp(20));
         GradientDrawable gd = new GradientDrawable(GradientDrawable.Orientation.LEFT_RIGHT,
-                new int[]{Color.rgb(25, 219, 230), Color.rgb(35, 74, 255), Color.rgb(143, 55, 255)});
+                new int[]{Color.rgb(5, 24, 18), Color.rgb(0, 118, 64), Color.rgb(0, 230, 118)});
         gd.setCornerRadius(dp(30));
-        gd.setStroke(dp(1), Color.argb(120, 255, 255, 255));
+        gd.setStroke(dp(2), Color.argb(210, 0, 255, 148));
         h.setBackground(gd);
         if (Build.VERSION.SDK_INT >= 21) h.setElevation(dp(7));
 
@@ -722,21 +726,21 @@ public class MainActivity extends Activity {
         LinearLayout titleBox = new LinearLayout(this);
         titleBox.setOrientation(LinearLayout.VERTICAL);
         titleBox.setGravity(Gravity.RIGHT);
-        titleBox.addView(tv("مرحبًا 👋", 14, Color.argb(235, 255,255,255), false));
-        TextView title = tv(AppStore.getNetworkName(this), 28, Color.WHITE, true);
+        titleBox.addView(tv("4U NET", 14, Color.argb(235, 220, 255, 235), true));
+        TextView title = tv("نحن نتولى المهمة", 28, Color.WHITE, true);
         title.setGravity(Gravity.RIGHT);
         titleBox.addView(title);
         String phone = AppStore.getNetworkPhone(this);
-        String subText = (phone == null || phone.trim().isEmpty()) ? "إدارة وبيع كروت الإنترنت تلقائيًا" : "رقم التواصل: " + phone.trim();
-        TextView sub = tv(subText, 11, Color.argb(215, 255,255,255), false);
+        String subText = AppStore.getNetworkName(this) + ((phone == null || phone.trim().isEmpty()) ? "" : "  |  " + phone.trim());
+        TextView sub = tv(subText, 11, Color.argb(225, 230, 255, 239), false);
         sub.setGravity(Gravity.RIGHT);
         titleBox.addView(sub);
 
         row.addView(titleBox, new LinearLayout.LayoutParams(0, -2, 1));
 
-        TextView badge = tv("4U", 16, Color.rgb(40, 27, 7), true);
+        TextView badge = tv("4U", 16, Color.rgb(4, 26, 15), true);
         badge.setGravity(Gravity.CENTER);
-        badge.setBackground(round(gold, dp(24), Color.argb(180, 255, 235, 167), dp(1)));
+        badge.setBackground(round(Color.rgb(0, 255, 148), dp(24), Color.argb(230, 210, 255, 226), dp(2)));
         row.addView(badge, new LinearLayout.LayoutParams(dp(52), dp(52)));
 
         h.addView(row);
@@ -1034,7 +1038,7 @@ public class MainActivity extends Activity {
 
         content.addView(dashboardWelcomeCard());
         content.addView(dashboardStatsGrid());
-        content.addView(title("الخدمات الرئيسية"));
+        content.addView(title("القائمة الرئيسية"));
         content.addView(dashboardServicesGrid());
         content.addView(title("آخر العمليات"));
         content.addView(recentTransactionsCard());
@@ -1122,47 +1126,81 @@ public class MainActivity extends Activity {
     private View dashboardServicesGrid() {
         LinearLayout grid = new LinearLayout(this);
         grid.setOrientation(LinearLayout.VERTICAL);
-        LinearLayout row1 = new LinearLayout(this);
-        row1.setOrientation(LinearLayout.HORIZONTAL);
-        LinearLayout row2 = new LinearLayout(this);
-        row2.setOrientation(LinearLayout.HORIZONTAL);
+        grid.setPadding(0, dp(2), 0, dp(4));
 
-        row1.addView(serviceTile("📒", "الدفتر", "حسابات وسلف", v -> showSmartLedger()), new LinearLayout.LayoutParams(0, -2, 1));
-        row1.addView(serviceTile("💵", "بيع كرت", "بيع سريع", v -> showDirectSale()), new LinearLayout.LayoutParams(0, -2, 1));
-        row1.addView(serviceTile("▦", "الفئات", "مخزون الكروت", v -> showCategories()), new LinearLayout.LayoutParams(0, -2, 1));
+        LinearLayout row1 = dashboardServiceRow();
+        row1.addView(serviceTile("💵", "البيع المباشر", "بيع سريع", v -> showDirectSale()), serviceCellLp());
+        row1.addView(serviceTile("📒", "دفتر الحسابات", "زبائن وديون", v -> showSmartLedger()), serviceCellLp());
+        row1.addView(serviceTile("▦", "المخزون", "الفئات والكروت", v -> showCategories()), serviceCellLp());
 
-        row2.addView(serviceTile("📄", "التقارير", "PDF وإحصاءات", v -> showLogs()), new LinearLayout.LayoutParams(0, -2, 1));
-        row2.addView(serviceTile("⇧", "استيراد", "TXT و Excel", v -> showImport()), new LinearLayout.LayoutParams(0, -2, 1));
-        row2.addView(serviceTile("⚙", "الإعدادات", "تحكم كامل", v -> showSettings()), new LinearLayout.LayoutParams(0, -2, 1));
+        LinearLayout row2 = dashboardServiceRow();
+        row2.addView(serviceTile("◷", "السجلات", "عمليات فقط", v -> showLogs()), serviceCellLp());
+        row2.addView(serviceTile("🚨", "عمليات المراجعة", "تنبيهات معلقة", v -> { reviewFocusLogId = ""; showLogs(); }), serviceCellLp());
+        row2.addView(serviceTile("📄", "التقارير", "PDF وإجماليات", v -> showLogs()), serviceCellLp());
+
+        LinearLayout row3 = dashboardServiceRow();
+        row3.addView(serviceTile("🏪", "نقاط البيع", "دفعات محمية", v -> showPosOutlets()), serviceCellLp());
+        row3.addView(serviceTile("✉", "الرسائل", "تعديل النصوص", v -> showMessageTemplates()), serviceCellLp());
+        row3.addView(serviceTile("⚙", "الإعدادات", "تحكم كامل", v -> showSettings()), serviceCellLp());
 
         grid.addView(row1);
         grid.addView(row2);
+        grid.addView(row3);
         return grid;
+    }
+
+    private LinearLayout dashboardServiceRow() {
+        LinearLayout row = new LinearLayout(this);
+        row.setOrientation(LinearLayout.HORIZONTAL);
+        row.setLayoutDirection(View.LAYOUT_DIRECTION_RTL);
+        row.setBaselineAligned(false);
+        return row;
+    }
+
+    private LinearLayout.LayoutParams serviceCellLp() {
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0, dp(118), 1);
+        lp.setMargins(dp(4), dp(5), dp(4), dp(7));
+        return lp;
     }
 
     private View serviceTile(String icon, String title, String subtitle, View.OnClickListener listener) {
         LinearLayout box = cardBox();
         LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, -2);
-        lp.setMargins(dp(5), dp(5), dp(5), dp(10));
+        lp.setMargins(dp(4), dp(5), dp(4), dp(7));
         box.setLayoutParams(lp);
         box.setGravity(Gravity.CENTER);
-        box.setPadding(dp(8), dp(16), dp(8), dp(16));
-        int accent = title.contains("بيع") ? neonCyan : (title.contains("تقارير") ? gold : (title.contains("تنبيهات") ? neonPink : purple));
-        box.setBackground(round(Color.rgb(14, 17, 31), dp(26), Color.argb(170, Color.red(accent), Color.green(accent), Color.blue(accent)), dp(title.contains("بيع") ? 2 : 1)));
+        box.setPadding(dp(6), dp(12), dp(6), dp(12));
+        int accent = serviceAccentColor(title);
+        box.setBackground(round(Color.rgb(11, 15, 30), dp(24), Color.argb(185, Color.red(accent), Color.green(accent), Color.blue(accent)), dp(1)));
         box.setOnClickListener(listener);
-        if (Build.VERSION.SDK_INT >= 21) box.setElevation(title.contains("بيع") ? dp(8) : dp(4));
+        applyNeonPress(box);
+        if (Build.VERSION.SDK_INT >= 21) box.setElevation(title.contains("بيع") ? dp(9) : dp(4));
+
         TextView i = tv(icon, 25, accent, true);
         i.setGravity(Gravity.CENTER);
-        i.setPadding(0, dp(10), 0, dp(10));
-        i.setBackground(round(Color.argb(28, Color.red(accent), Color.green(accent), Color.blue(accent)), dp(40), Color.TRANSPARENT, 0));
-        box.addView(i, new LinearLayout.LayoutParams(dp(58), dp(58)));
-        TextView t = tv(title, 14, text, true);
+        i.setPadding(0, dp(7), 0, dp(7));
+        i.setBackground(round(Color.argb(34, Color.red(accent), Color.green(accent), Color.blue(accent)), dp(38), accent, dp(1)));
+        box.addView(i, new LinearLayout.LayoutParams(dp(56), dp(56)));
+
+        TextView t = tv(title, 13, text, true);
         t.setGravity(Gravity.CENTER);
         box.addView(t);
         TextView sub = tv(subtitle, 10, muted, false);
         sub.setGravity(Gravity.CENTER);
         box.addView(sub);
         return box;
+    }
+
+    private int serviceAccentColor(String title) {
+        if (title.contains("بيع")) return neonCyan;
+        if (title.contains("دفتر")) return gold;
+        if (title.contains("مخزون")) return purple;
+        if (title.contains("سجلات")) return Color.rgb(80, 160, 255);
+        if (title.contains("مراجعة")) return red;
+        if (title.contains("تقارير")) return orange;
+        if (title.contains("نقاط")) return green;
+        if (title.contains("رسائل")) return neonPink;
+        return purpleLight;
     }
 
     private View recentTransactionsCard() {
@@ -1624,7 +1662,7 @@ public class MainActivity extends Activity {
 
         LinearLayout picker = cardBox();
         picker.addView(tv("اختر الفئة", 19, text, true));
-        picker.addView(small("كل صف يحتوي ثلاث فئات. علامة التحذير الحمراء تظهر فقط عندما يكون المخزون أقل من 10 كروت."));
+        picker.addView(small("اختر السعر أولًا. كل صف يحتوي ثلاث فئات، والكارد المختار يضيء بلون واضح."));
         ArrayList<CategoryItem> cats = AppStore.loadCategories(this);
         if (!cats.isEmpty()) {
             boolean foundSelected = false;
@@ -1637,6 +1675,7 @@ public class MainActivity extends Activity {
             if (col == 0) {
                 row = new LinearLayout(this);
                 row.setOrientation(LinearLayout.HORIZONTAL);
+                row.setLayoutDirection(View.LAYOUT_DIRECTION_RTL);
                 picker.addView(row);
             }
             LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0, dp(82), 1);
@@ -1646,116 +1685,134 @@ public class MainActivity extends Activity {
             if (col == 3) col = 0;
         }
         int selectedAvailable = AppStore.availableCount(this, selectedAmount);
-        TextView chosen = tv("الفئة المختارة: " + selectedAmount + " ريال | المتبقي: " + selectedAvailable, 15, selectedAvailable > 0 && selectedAvailable < 10 ? red : neonCyan, true);
+        TextView chosen = tv("السعر المختار: " + selectedAmount + " ريال | المتبقي: " + selectedAvailable, 15, selectedAvailable > 0 && selectedAvailable < 10 ? red : neonCyan, true);
         chosen.setGravity(Gravity.CENTER);
         chosen.setPadding(0, dp(8), 0, 0);
         if (selectedAvailable > 0 && selectedAvailable < 10) {
-            picker.addView(badge("تنبيه: مخزون هذه الفئة منخفض", red));
+            picker.addView(badge("تنبيه: مخزون هذا السعر منخفض", red));
         }
         picker.addView(chosen);
         content.addView(picker);
 
         LinearLayout form = cardBox();
-        form.addView(tv("بيانات الزبون", 19, text, true));
+        form.setBackground(round(Color.rgb(9, 14, 28), dp(24), Color.argb(185, 32, 231, 255), dp(1)));
+        form.addView(tv("رقم الزبون", 19, text, true));
 
         LinearLayout phoneRow = new LinearLayout(this);
         phoneRow.setOrientation(LinearLayout.HORIZONTAL);
         phoneRow.setGravity(Gravity.CENTER_VERTICAL);
+        phoneRow.setLayoutDirection(View.LAYOUT_DIRECTION_RTL);
 
-        Button contactBtn = action("بحث", Color.rgb(17, 25, 48), Color.WHITE, v -> openContactPicker(pendingContactPhone, pendingContactName));
-        LinearLayout.LayoutParams contactLp = new LinearLayout.LayoutParams(dp(92), dp(58));
-        contactLp.setMargins(0, 0, dp(8), dp(6));
-        phoneRow.addView(contactBtn, contactLp);
-
-        EditText phone = neonInput("رقم الزبون", InputType.TYPE_CLASS_PHONE);
+        EditText phone = neonInput("اكتب رقم الزبون", InputType.TYPE_CLASS_PHONE);
         phone.setText(directSalePhoneDraft);
-        LinearLayout.LayoutParams phoneLp = new LinearLayout.LayoutParams(0, dp(58), 1);
-        phoneLp.setMargins(0, 0, 0, dp(6));
+        phone.setBackground(round(Color.rgb(5, 22, 26), dp(18), neonCyan, dp(2)));
+        LinearLayout.LayoutParams phoneLp = new LinearLayout.LayoutParams(0, dp(62), 1);
+        phoneLp.setMargins(0, 0, dp(8), dp(6));
         phoneRow.addView(phone, phoneLp);
+
+        EditText hiddenName = neonInput("", InputType.TYPE_CLASS_TEXT);
+        hiddenName.setText(directSaleNameDraft);
+        Button contactBtn = action("بحث", Color.rgb(17, 25, 48), Color.WHITE, v -> openContactPicker(pendingContactPhone, pendingContactName));
+        LinearLayout.LayoutParams contactLp = new LinearLayout.LayoutParams(dp(86), dp(62));
+        contactLp.setMargins(0, 0, 0, dp(6));
+        phoneRow.addView(contactBtn, contactLp);
         form.addView(phoneRow);
 
-        EditText name = neonInput("اسم الزبون اختياري", InputType.TYPE_CLASS_TEXT);
-        name.setText(directSaleNameDraft);
-        form.addView(name);
-
-        TextView customerHint = tv("اكتب رقم الزبون أو اختره. إذا كان موثقًا ومسموحًا له بالسلفة سيظهر زر آجل بجانب نقدي.", 14, muted, true);
+        TextView customerHint = tv("الآجل يظهر فقط إذا كان الرقم موجودًا في دفتر الحسابات ومسموحًا له بالسلفة.", 14, muted, true);
         customerHint.setPadding(dp(12), dp(9), dp(12), dp(9));
         customerHint.setBackground(round(Color.rgb(9, 14, 30), dp(16), borderSoft, dp(1)));
         form.addView(customerHint);
 
         pendingContactPhone = phone;
-        pendingContactName = name;
-        phone.addTextChangedListener(simpleWatcher(value -> directSalePhoneDraft = value));
-        name.addTextChangedListener(simpleWatcher(value -> directSaleNameDraft = value));
+        pendingContactName = hiddenName;
 
-        form.addView(sectionTitle("طريقة البيع"));
+        form.addView(sectionTitle("طريقة الدفع"));
         RadioGroup payGroup = new RadioGroup(this);
         payGroup.setOrientation(RadioGroup.HORIZONTAL);
-        RadioButton cash = payRadio("نقدي", true);
-        RadioButton credit = payRadio("آجل", false);
-        credit.setVisibility(View.GONE);
-        LinearLayout.LayoutParams cashLp = new RadioGroup.LayoutParams(0, dp(54), 1);
+        payGroup.setLayoutDirection(View.LAYOUT_DIRECTION_RTL);
+        RadioButton cash = payRadio("💵 نقدًا", true);
+        RadioButton credit = payRadio("🧾 آجل", false);
+        credit.setEnabled(false);
+        LinearLayout.LayoutParams cashLp = new RadioGroup.LayoutParams(0, dp(58), 1);
         cashLp.setMargins(dp(4), dp(4), dp(4), dp(4));
-        LinearLayout.LayoutParams creditLp = new RadioGroup.LayoutParams(0, dp(54), 1);
+        LinearLayout.LayoutParams creditLp = new RadioGroup.LayoutParams(0, dp(58), 1);
         creditLp.setMargins(dp(4), dp(4), dp(4), dp(4));
         payGroup.addView(cash, cashLp);
         payGroup.addView(credit, creditLp);
         form.addView(payGroup);
-        cash.setOnCheckedChangeListener((buttonView, isChecked) -> stylePayRadioButton(cash, isChecked, neonCyan));
-        credit.setOnCheckedChangeListener((buttonView, isChecked) -> stylePayRadioButton(credit, isChecked, gold));
-        stylePayRadioButton(cash, true, neonCyan);
-        stylePayRadioButton(credit, false, gold);
+        payGroup.setOnCheckedChangeListener((group, checkedId) -> {
+            stylePayRadioButton(cash, cash.isChecked(), neonCyan);
+            stylePayRadioButton(credit, credit.isChecked(), gold);
+        });
 
-        form.addView(sectionTitle("طريقة الإرسال"));
-        CheckBox sendSms = channelCheckBox("رسائل SMS", true, neonCyan);
-        CheckBox sendWhats = channelCheckBox("واتساب", true, Color.rgb(37, 211, 102));
-        form.addView(sendSms);
-        form.addView(sendWhats);
-
-        CheckBox saleRewards = channelCheckBox("احتساب المكافأة لهذه العملية", directSaleRewardsDraft && AppStore.isRewardsEnabled(this), gold);
+        form.addView(sectionTitle("الإرسال والمكافأة"));
+        LinearLayout optionRow = new LinearLayout(this);
+        optionRow.setOrientation(LinearLayout.HORIZONTAL);
+        optionRow.setLayoutDirection(View.LAYOUT_DIRECTION_RTL);
+        CheckBox sendSms = saleIconCheckBox("✉", "نصية", true, neonCyan);
+        CheckBox sendWhats = saleIconCheckBox("☘", "واتساب", false, Color.rgb(37, 211, 102));
+        CheckBox saleRewards = saleIconCheckBox("★", "مكافأة", directSaleRewardsDraft && AppStore.isRewardsEnabled(this), gold);
         saleRewards.setEnabled(AppStore.isRewardsEnabled(this));
-        saleRewards.setOnCheckedChangeListener((buttonView, isChecked) -> directSaleRewardsDraft = isChecked);
-        form.addView(saleRewards);
+        optionRow.addView(sendSms, saleOptionLp());
+        optionRow.addView(sendWhats, saleOptionLp());
+        optionRow.addView(saleRewards, saleOptionLp());
+        form.addView(optionRow);
         if (!AppStore.isRewardsEnabled(this)) {
-            form.addView(small("نظام المكافآت متوقف من إعدادات المكافآت العامة، لذلك لن تُحسب مكافأة لهذه العملية."));
+            form.addView(small("نظام المكافآت متوقف من إعدادات المكافآت العامة، لذلك تظهر أيقونة المكافأة غير مفعلة."));
         }
+        saleRewards.setOnCheckedChangeListener((buttonView, isChecked) -> {
+            directSaleRewardsDraft = isChecked;
+            styleSaleIconCheckBox(saleRewards, "★", "مكافأة", isChecked, gold);
+        });
 
         Runnable updateCreditUi = () -> {
-            LedgerCustomer lc = findDirectSaleLedgerCustomer(phone.getText().toString(), name.getText().toString());
+            directSalePhoneDraft = phone.getText().toString();
+            directSaleNameDraft = hiddenName.getText().toString();
+            LedgerCustomer lc = findDirectSaleLedgerCustomer(phone.getText().toString(), "");
             if (lc != null && lc.canAutoLoan()) {
-                credit.setVisibility(View.VISIBLE);
-                customerHint.setText("الزبون موثق: " + lc.name + " | المتاح للسلفة: " + lc.availableForRequest() + " ر.ي");
+                credit.setEnabled(true);
+                customerHint.setText("الزبون: " + lc.name + " | الآجل متاح | المتاح من السقف: " + lc.availableForRequest() + " ر.ي");
                 customerHint.setTextColor(green);
                 customerHint.setBackground(round(Color.rgb(8, 28, 22), dp(16), green, dp(1)));
             } else if (lc != null) {
-                credit.setVisibility(View.GONE);
+                credit.setChecked(false);
+                credit.setEnabled(false);
                 cash.setChecked(true);
-                customerHint.setText("الزبون موجود لكن الآجل غير متاح: " + AppStore.ledgerModeLabel(lc.effectiveMode()));
+                customerHint.setText("الزبون: " + lc.name + " | موجود في الدفتر لكن الآجل غير متاح: " + AppStore.ledgerModeLabel(lc.effectiveMode()));
                 customerHint.setTextColor(orange);
                 customerHint.setBackground(round(Color.rgb(38, 27, 8), dp(16), orange, dp(1)));
             } else {
-                credit.setVisibility(View.GONE);
+                credit.setChecked(false);
+                credit.setEnabled(false);
                 cash.setChecked(true);
-                customerHint.setText("اكتب رقم الزبون أو اختره. إذا كان موثقًا ومسموحًا له بالسلفة سيظهر زر آجل بجانب نقدي.");
+                customerHint.setText("الرقم غير مسجل في دفتر الحسابات. البيع الآجل غير متاح لهذا الرقم، ويمكنك البيع نقدًا فقط.");
                 customerHint.setTextColor(muted);
                 customerHint.setBackground(round(Color.rgb(9, 14, 30), dp(16), borderSoft, dp(1)));
             }
+            stylePayRadioButton(cash, cash.isChecked(), neonCyan);
+            stylePayRadioButton(credit, credit.isChecked(), gold);
         };
-        phone.addTextChangedListener(simpleWatcher(value -> { directSalePhoneDraft = value; updateCreditUi.run(); }));
-        name.addTextChangedListener(simpleWatcher(value -> { directSaleNameDraft = value; updateCreditUi.run(); }));
+        phone.addTextChangedListener(simpleWatcher(value -> updateCreditUi.run()));
+        hiddenName.addTextChangedListener(simpleWatcher(value -> updateCreditUi.run()));
         updateCreditUi.run();
 
-        Button primary = action("بيع وإرسال حسب الاختيار", purple, Color.WHITE, v ->
-                performDirectSaleCombined(
-                        phone.getText().toString(),
-                        name.getText().toString(),
-                        sendSms.isChecked(),
-                        sendWhats.isChecked(),
-                        saleRewards.isChecked(),
-                        credit.getVisibility() == View.VISIBLE && credit.isChecked()
-                ));
-        LinearLayout.LayoutParams primaryLp = new LinearLayout.LayoutParams(-1, dp(60));
-        primaryLp.setMargins(0, dp(12), 0, dp(4));
+        Button primary = action("إرسال", Color.rgb(0, 126, 78), Color.WHITE, v -> {
+            boolean saleOnCredit = credit.isEnabled() && credit.isChecked();
+            if (credit.isChecked() && !credit.isEnabled()) {
+                showNeonAlert("الآجل غير متاح", "لا يمكن اختيار آجل إلا إذا كان رقم الزبون موجودًا في دفتر الحسابات ومسموحًا له بالسلفة.", orange, true);
+                return;
+            }
+            performDirectSaleCombined(
+                    phone.getText().toString(),
+                    hiddenName.getText().toString(),
+                    sendSms.isChecked(),
+                    sendWhats.isChecked(),
+                    saleRewards.isChecked(),
+                    saleOnCredit
+            );
+        });
+        LinearLayout.LayoutParams primaryLp = new LinearLayout.LayoutParams(-1, dp(62));
+        primaryLp.setMargins(0, dp(14), 0, dp(4));
         form.addView(primary, primaryLp);
 
         content.addView(form);
@@ -1777,11 +1834,12 @@ public class MainActivity extends Activity {
     }
 
     private void stylePayRadioButton(RadioButton r, boolean checked, int accentColor) {
-        int bgColor = checked ? Color.argb(60, Color.red(accentColor), Color.green(accentColor), Color.blue(accentColor)) : Color.rgb(12, 16, 31);
-        int strokeColor = checked ? accentColor : Color.rgb(61, 73, 112);
-        r.setTextColor(checked ? Color.WHITE : text);
-        r.setBackground(round(bgColor, dp(18), strokeColor, checked ? dp(2) : dp(1)));
-        if (Build.VERSION.SDK_INT >= 21) r.setButtonTintList(android.content.res.ColorStateList.valueOf(accentColor));
+        boolean enabled = r.isEnabled();
+        int bgColor = !enabled ? Color.rgb(20, 20, 28) : (checked ? Color.argb(70, Color.red(accentColor), Color.green(accentColor), Color.blue(accentColor)) : Color.rgb(12, 16, 31));
+        int strokeColor = !enabled ? Color.rgb(55, 55, 70) : (checked ? accentColor : Color.rgb(61, 73, 112));
+        r.setTextColor(!enabled ? Color.rgb(105, 108, 128) : (checked ? Color.WHITE : text));
+        r.setBackground(round(bgColor, dp(18), strokeColor, checked && enabled ? dp(2) : dp(1)));
+        if (Build.VERSION.SDK_INT >= 21) r.setButtonTintList(android.content.res.ColorStateList.valueOf(enabled ? accentColor : Color.rgb(82, 85, 100)));
     }
 
     private LedgerCustomer findDirectSaleLedgerCustomer(String phone, String name) {
@@ -1827,6 +1885,36 @@ public class MainActivity extends Activity {
         LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0, dp(52), 1);
         lp.setMargins(dp(3), dp(5), dp(3), dp(3));
         return lp;
+    }
+
+    private LinearLayout.LayoutParams saleOptionLp() {
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0, dp(76), 1);
+        lp.setMargins(dp(4), dp(5), dp(4), dp(5));
+        return lp;
+    }
+
+    private CheckBox saleIconCheckBox(String icon, String label, boolean checked, int accentColor) {
+        CheckBox cb = new CheckBox(this);
+        cb.setAllCaps(false);
+        cb.setGravity(Gravity.CENTER);
+        cb.setTextSize(13);
+        cb.setTypeface(appTypeface(true));
+        cb.setPadding(dp(4), dp(4), dp(4), dp(4));
+        if (Build.VERSION.SDK_INT >= 21) cb.setButtonTintList(android.content.res.ColorStateList.valueOf(accentColor));
+        cb.setOnCheckedChangeListener((buttonView, isChecked) -> styleSaleIconCheckBox(cb, icon, label, isChecked, accentColor));
+        cb.setChecked(checked);
+        styleSaleIconCheckBox(cb, icon, label, checked, accentColor);
+        applyNeonPress(cb);
+        if (Build.VERSION.SDK_INT >= 21) cb.setElevation(checked ? dp(7) : dp(3));
+        return cb;
+    }
+
+    private void styleSaleIconCheckBox(CheckBox cb, String icon, String label, boolean checked, int accentColor) {
+        cb.setText(icon + "\n" + label + (checked ? "  ✓" : ""));
+        cb.setTextColor(checked ? Color.WHITE : muted);
+        int bgColor = checked ? Color.argb(58, Color.red(accentColor), Color.green(accentColor), Color.blue(accentColor)) : Color.rgb(10, 15, 31);
+        int stroke = checked ? accentColor : Color.rgb(61, 73, 112);
+        cb.setBackground(round(bgColor, dp(20), stroke, checked ? dp(2) : dp(1)));
     }
 
     private View directSaleCategoryButton(CategoryItem c) {
@@ -2125,7 +2213,7 @@ public class MainActivity extends Activity {
 
         String channels = selectedChannelsLabel(viaSms, viaWhatsApp);
         boolean effectiveRewards = rewardsForThisSale && AppStore.isRewardsEnabled(this);
-        LedgerCustomer creditCustomer = saleOnCredit ? findDirectSaleLedgerCustomer(clean, name) : null;
+        LedgerCustomer creditCustomer = saleOnCredit ? AppStore.findLedgerCustomerByPhone(this, clean) : null;
         if (saleOnCredit) {
             if (creditCustomer == null || !creditCustomer.canAutoLoan()) {
                 showNeonAlert("الآجل غير متاح", "هذا الزبون غير موثق أو السلفة غير مفعلة لحسابه.", orange, true);
@@ -2138,13 +2226,9 @@ public class MainActivity extends Activity {
         }
 
         AlertDialog dlg = new AlertDialog.Builder(this)
-                .setTitle("تأكيد البيع والإرسال")
-                .setMessage("سيتم حجز كرت واحد فقط من فئة " + selectedAmount + " ريال للرقم:\n" + clean
-                        + "\n\nطريقة البيع: " + (saleOnCredit ? "آجل" : "نقدي")
-                        + "\nطرق الإرسال المختارة:\n" + channels
-                        + "\n\nالمكافأة لهذه العملية: " + (effectiveRewards ? "مفعلة" : "معطلة")
-                        + "\n\nتنبيه: واتساب يفتح الرسالة جاهزة، وقد تحتاج الضغط على زر الإرسال داخل واتساب.")
-                .setPositiveButton("موافق، بيع وإرسال", (d,w) -> {
+                .setTitle("تأكيد البيع المباشر")
+                .setView(buildDirectSaleConfirmView(clean, saleOnCredit, channels, effectiveRewards))
+                .setPositiveButton("تأكيد الإرسال", (d,w) -> {
                     CardItem reserved = AppStore.takeAvailableCard(this, selectedAmount, clean);
                     if (reserved == null) {
                         String id = java.util.UUID.randomUUID().toString();
@@ -2208,6 +2292,34 @@ public class MainActivity extends Activity {
                 .create();
         styleNeonDialog(dlg, saleOnCredit ? gold : purpleLight);
         dlg.show();
+    }
+
+    private View buildDirectSaleConfirmView(String phone, boolean saleOnCredit, String channels, boolean rewardsEnabled) {
+        LinearLayout layout = new LinearLayout(this);
+        layout.setOrientation(LinearLayout.VERTICAL);
+        layout.setPadding(dp(14), dp(12), dp(14), dp(12));
+        int accent = saleOnCredit ? gold : green;
+        layout.setBackground(round(Color.rgb(17, 22, 38), dp(20), accent, dp(1)));
+        layout.addView(confirmLine("رقم الزبون", phone, neonCyan));
+        layout.addView(confirmLine("السعر", selectedAmount + " ريال", purpleLight));
+        layout.addView(confirmLine("طريقة الدفع", saleOnCredit ? "آجل" : "نقدًا", saleOnCredit ? gold : green));
+        layout.addView(confirmLine("طريقة الإرسال", channels, neonCyan));
+        layout.addView(confirmLine("المكافأة", rewardsEnabled ? "مفعلة" : "معطلة", rewardsEnabled ? gold : muted));
+        TextView note = small("سيتم حجز كرت واحد فقط من السعر المحدد. واتساب يفتح الرسالة جاهزة وقد تحتاج الضغط على زر الإرسال داخل واتساب.");
+        note.setPadding(dp(8), dp(8), dp(8), 0);
+        layout.addView(note);
+        return layout;
+    }
+
+    private TextView confirmLine(String label, String value, int accentColor) {
+        TextView row = tv(label + ":  " + value, 15, text, true);
+        row.setGravity(Gravity.RIGHT | Gravity.CENTER_VERTICAL);
+        row.setPadding(dp(10), dp(8), dp(10), dp(8));
+        row.setBackground(round(Color.argb(34, Color.red(accentColor), Color.green(accentColor), Color.blue(accentColor)), dp(14), Color.argb(165, Color.red(accentColor), Color.green(accentColor), Color.blue(accentColor)), dp(1)));
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, -2);
+        lp.setMargins(0, 0, 0, dp(7));
+        row.setLayoutParams(lp);
+        return row;
     }
 
     private String selectedChannelsLabel(boolean sms, boolean whatsapp) {
@@ -2838,6 +2950,12 @@ public class MainActivity extends Activity {
         appName.addView(action("حذف الشعار", card2, text, v -> { AppStore.clearNetworkLogo(this); toast("تم حذف الشعار"); buildLayout(); showSettings(); }));
         content.addView(appName);
 
+        LinearLayout ui = cardBox();
+        ui.addView(tv("تخصيص الواجهة", 17, text, true));
+        ui.addView(small("تحكم سريع بثلاث واجهات: الواجهة الرئيسية، لوحة التحكم، والأقسام السريعة. التصميم الحالي يعتمد 9 خانات رئيسية، كل سطر 3 خانات، مع توهج وتكبير خفيف عند النقر."));
+        ui.addView(action("فتح التحكم في الواجهة", Color.rgb(0, 126, 78), Color.WHITE, v -> showUiControlPanel()));
+        content.addView(ui);
+
         LinearLayout backupRestore = cardBox();
         backupRestore.addView(tv("النسخ والاسترجاع", 17, text, true));
         backupRestore.addView(small("نافذة واحدة للنسخ الاحتياطي والاسترجاع: حفظ نسخة في الهاتف، حفظ نسخة إلى Drive عبر اختيار مكان الحفظ، واستعادة نسخة من الهاتف أو من Drive."));
@@ -2921,6 +3039,105 @@ public class MainActivity extends Activity {
                 .setNegativeButton("إلغاء", null)
                 .show()));
         content.addView(danger);
+    }
+
+
+
+    private void showUiControlPanel() {
+        setTab("settings");
+        clear();
+        content.addView(title("تخصيص الواجهة"));
+
+        LinearLayout top = cardBox();
+        top.addView(tv("لوحة تحكم الواجهة", 18, text, true));
+        top.addView(small("تم تجهيزها بثلاث واجهات فقط حتى تبقى بسيطة ومستقرة: الواجهة الرئيسية، لوحة التحكم، والأقسام السريعة. كل قسم يتغير لونه ويكبر عند النقر عبر تأثير التوهج."));
+        content.addView(top);
+
+        LinearLayout shell = new LinearLayout(this);
+        shell.setOrientation(LinearLayout.HORIZONTAL);
+        shell.setLayoutDirection(View.LAYOUT_DIRECTION_RTL);
+        shell.setBaselineAligned(false);
+
+        LinearLayout side = uiControlSidebar();
+        LinearLayout pane = uiControlPane();
+        shell.addView(side, new LinearLayout.LayoutParams(dp(128), -2));
+        LinearLayout.LayoutParams paneLp = new LinearLayout.LayoutParams(0, -2, 1);
+        paneLp.setMargins(dp(8), 0, 0, 0);
+        shell.addView(pane, paneLp);
+        content.addView(shell);
+
+        if ("dashboard".equals(uiControlTab)) renderUiDashboardControl(pane);
+        else if ("quick".equals(uiControlTab)) renderUiQuickControl(pane);
+        else renderUiHomeControl(pane);
+    }
+
+    private LinearLayout uiControlSidebar() {
+        LinearLayout side = new LinearLayout(this);
+        side.setOrientation(LinearLayout.VERTICAL);
+        side.setPadding(dp(7), dp(10), dp(7), dp(10));
+        side.setBackground(round(Color.rgb(7, 34, 27), dp(22), Color.rgb(0, 230, 118), dp(1)));
+        side.addView(uiControlSideButton("home", "الرئيسية"));
+        side.addView(uiControlSideButton("dashboard", "لوحة التحكم"));
+        side.addView(uiControlSideButton("quick", "الأقسام السريعة"));
+        return side;
+    }
+
+    private Button uiControlSideButton(String key, String label) {
+        boolean selected = key.equals(uiControlTab);
+        Button b = new Button(this);
+        b.setText(label);
+        b.setAllCaps(false);
+        b.setTextSize(selected ? 13 : 12);
+        b.setTypeface(appTypeface(true));
+        b.setTextColor(selected ? Color.rgb(4, 26, 15) : Color.WHITE);
+        b.setGravity(Gravity.CENTER);
+        int bgColor = selected ? Color.rgb(0, 255, 148) : Color.rgb(13, 67, 49);
+        int strokeColor = selected ? Color.WHITE : Color.argb(145, 0, 255, 148);
+        b.setBackground(round(bgColor, dp(17), strokeColor, selected ? dp(2) : dp(1)));
+        b.setOnClickListener(v -> { uiControlTab = key; showUiControlPanel(); });
+        applyNeonPress(b);
+        if (Build.VERSION.SDK_INT >= 21) b.setElevation(selected ? dp(8) : dp(3));
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, dp(48));
+        lp.setMargins(0, 0, 0, dp(8));
+        b.setLayoutParams(lp);
+        return b;
+    }
+
+    private LinearLayout uiControlPane() {
+        LinearLayout pane = new LinearLayout(this);
+        pane.setOrientation(LinearLayout.VERTICAL);
+        pane.setPadding(dp(12), dp(12), dp(12), dp(12));
+        pane.setBackground(round(card, dp(22), Color.argb(175, 0, 230, 118), dp(1)));
+        return pane;
+    }
+
+    private void renderUiHomeControl(LinearLayout pane) {
+        pane.addView(tv("الواجهة الرئيسية", 17, text, true));
+        pane.addView(small("النمط المعتمد الآن: 9 خانات، كل سطر 3 خانات، حواف متقاربة غير متلاصقة، وتوهج عند الضغط."));
+        pane.addView(separator());
+        pane.addView(badge("3 × 3", green));
+        pane.addView(badge("تكبير خفيف عند النقر", neonCyan));
+        pane.addView(badge("حواف مضيئة", gold));
+        pane.addView(action("معاينة الواجهة الرئيسية", Color.rgb(0, 126, 78), Color.WHITE, v -> showHome()));
+    }
+
+    private void renderUiDashboardControl(LinearLayout pane) {
+        pane.addView(tv("لوحة التحكم", 17, text, true));
+        pane.addView(small("تحتوي على بطاقة الحالة والإحصائيات وآخر العمليات. أبقيناها مختصرة حتى لا تثقل الصفحة الرئيسية."));
+        pane.addView(separator());
+        pane.addView(badge("الحالة", green));
+        pane.addView(badge("إحصائيات", purpleLight));
+        pane.addView(badge("آخر العمليات", orange));
+        pane.addView(action("فتح لوحة التحكم", Color.rgb(0, 126, 78), Color.WHITE, v -> showHome()));
+    }
+
+    private void renderUiQuickControl(LinearLayout pane) {
+        pane.addView(tv("الأقسام السريعة", 17, text, true));
+        pane.addView(small("الأقسام السريعة الحالية: البيع المباشر، الدفتر، المخزون، السجلات، المراجعة، التقارير، نقاط البيع، الرسائل، الإعدادات."));
+        pane.addView(separator());
+        pane.addView(action("فتح البيع المباشر", neonCyan, Color.rgb(2, 12, 22), v -> showDirectSale()));
+        pane.addView(action("فتح الدفتر", gold, Color.rgb(35,24,8), v -> showSmartLedger()));
+        pane.addView(action("فتح الرسائل", neonPink, Color.WHITE, v -> showMessageTemplates()));
     }
 
 
