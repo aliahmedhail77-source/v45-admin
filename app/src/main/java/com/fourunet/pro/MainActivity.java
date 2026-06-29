@@ -97,6 +97,7 @@ public class MainActivity extends Activity {
     String reviewFocusLogId = "";
     boolean appUnlocked = false;
     final ExecutorService performanceExecutor = Executors.newSingleThreadExecutor();
+    private static final int IMPORT_BATCH_SIZE = 500;
     int logsVisibleLimit = AppStore.performanceLogPageSize();
     int cardsVisibleLimit = AppStore.performanceCardPageSize();
     int cardsVisibleAmount = -1;
@@ -966,6 +967,10 @@ public class MainActivity extends Activity {
             tg.startTone(ToneGenerator.TONE_PROP_BEEP, 180);
         } catch (Exception ignored) {}
     }
+
+    private void toneOk() { playAlertSound(); }
+
+    private void toneAlert() { playAlertSound(); }
 
     private void showLowStockWarningIfNeeded(int amount, int remainingAfterSale) {
         if (remainingAfterSale > 0 && remainingAfterSale < 10) {
@@ -2465,10 +2470,14 @@ public class MainActivity extends Activity {
         for (OperationLog log : all) if (amountFilter < 0 || log.amount == amountFilter) logs.add(log);
 
         int soldCards = 0, availableCards = 0, totalCards = 0, totalAmount = 0, sentOps = 0, failedOps = 0, reviewOps = 0;
-        for (CardItem cardItem : AppStore.loadCards(this)) {
-            if (amountFilter >= 0 && cardItem.amount != amountFilter) continue;
-            totalCards++;
-            if (cardItem.sold) soldCards++; else availableCards++;
+        if (amountFilter < 0) {
+            soldCards = AppStore.totalSold(this);
+            availableCards = AppStore.totalAvailable(this);
+            totalCards = AppStore.totalCardsCount(this);
+        } else {
+            soldCards = AppStore.soldCount(this, amountFilter);
+            availableCards = AppStore.availableCount(this, amountFilter);
+            totalCards = AppStore.cardsByAmountCount(this, amountFilter);
         }
         for (OperationLog log : logs) {
             String st = log.status == null ? "" : log.status;
@@ -5115,10 +5124,39 @@ public class MainActivity extends Activity {
                 .setView(input)
                 .setPositiveButton("حفظ", (d,w) -> {
                     ArrayList<String> lines = new ArrayList<>();
-                    for (String line : input.getText().toString().split("\\r?\\n")) lines.add(line);
-                    int added = AppStore.importCards(this, selectedAmount, lines, "manual");
-                    toast("تمت إضافة " + added + " كرت");
-                    showHome();
+                    for (String line : input.getText().toString().split("\r?\n")) collectCardsFromTextLine(lines, line);
+                    final AlertDialog progressDialog = showImportProgressDialog("إضافة يدوية", "إدخال يدوي");
+                    final ImportStats stats = new ImportStats();
+                    stats.scanned = lines.size();
+                    performanceExecutor.execute(() -> {
+                        try {
+                            ArrayList<String> batch = new ArrayList<>();
+                            for (String code : lines) {
+                                batch.add(code);
+                                if (batch.size() >= IMPORT_BATCH_SIZE) flushImportBatch(selectedAmount, batch, "manual", stats, false, 0, progressDialog);
+                            }
+                            flushImportBatch(selectedAmount, batch, "manual", stats, false, 0, progressDialog);
+                            runOnUiThread(() -> {
+                                TextView status = findImportStatusText(progressDialog);
+                                if (status != null) status.setText("اكتملت الإضافة اليدوية
+تمت القراءة: " + stats.scanned + "
+تمت الإضافة: " + stats.added + "
+المكرر/الموجود مسبقًا: " + stats.duplicates);
+                                toneOk();
+                                new Handler(Looper.getMainLooper()).postDelayed(() -> {
+                                    try { progressDialog.dismiss(); } catch(Exception ignored) {}
+                                    toast("تمت إضافة " + stats.added + " كرت");
+                                    showHome();
+                                }, 800);
+                            });
+                        } catch (Exception ex) {
+                            runOnUiThread(() -> {
+                                try { progressDialog.dismiss(); } catch(Exception ignored) {}
+                                toneAlert();
+                                toast("فشل الإدخال: " + ex.getMessage());
+                            });
+                        }
+                    });
                 })
                 .setNegativeButton("إلغاء", null)
                 .show();
@@ -5240,34 +5278,149 @@ public class MainActivity extends Activity {
         }
     }
 
+    private static class ImportStats {
+        int scanned = 0;
+        int added = 0;
+        int duplicates = 0;
+        int failed = 0;
+    }
+
+    private AlertDialog showImportProgressDialog(String title, String fileName) {
+        LinearLayout layout = new LinearLayout(this);
+        layout.setOrientation(LinearLayout.VERTICAL);
+        layout.setPadding(dp(18), dp(18), dp(18), dp(14));
+        layout.setBackground(round(Color.rgb(8, 11, 25), dp(22), neonCyan, dp(1)));
+
+        TextView head = tv(title, 20, text, true);
+        head.setGravity(Gravity.RIGHT);
+        layout.addView(head);
+
+        TextView file = small("الملف: " + (fileName == null || fileName.trim().isEmpty() ? "ملف مختار" : fileName));
+        file.setTextColor(muted);
+        layout.addView(file);
+
+        ProgressBar progress = new ProgressBar(this, null, android.R.attr.progressBarStyleHorizontal);
+        progress.setIndeterminate(true);
+        LinearLayout.LayoutParams pp = new LinearLayout.LayoutParams(-1, dp(14));
+        pp.setMargins(0, dp(16), 0, dp(12));
+        layout.addView(progress, pp);
+
+        TextView status = tv("جاري القراءة والاستيراد...", 16, text, true);
+        status.setGravity(Gravity.RIGHT);
+        status.setTag("import_status_text");
+        layout.addView(status);
+
+        TextView hint = small("لا تغلق التطبيق أثناء الاستيراد. يتم الإدخال على دفعات حتى لا يتشنج النظام.");
+        hint.setTextColor(orange);
+        layout.addView(hint);
+
+        AlertDialog dialog = new AlertDialog.Builder(this).setView(layout).create();
+        dialog.setCanceledOnTouchOutside(false);
+        dialog.setOnShowListener(d -> {
+            if (dialog.getWindow() != null) dialog.getWindow().setBackgroundDrawableResource(android.R.color.transparent);
+        });
+        dialog.show();
+        return dialog;
+    }
+
+    private TextView findImportStatusText(AlertDialog dialog) {
+        if (dialog == null) return null;
+        View root = dialog.getWindow() == null ? null : dialog.getWindow().getDecorView();
+        if (root == null) return null;
+        View found = findViewByTagRecursive(root, "import_status_text");
+        return found instanceof TextView ? (TextView) found : null;
+    }
+
+    private View findViewByTagRecursive(View v, Object tag) {
+        if (v == null) return null;
+        if (tag != null && tag.equals(v.getTag())) return v;
+        if (v instanceof android.view.ViewGroup) {
+            android.view.ViewGroup g = (android.view.ViewGroup) v;
+            for (int i = 0; i < g.getChildCount(); i++) {
+                View found = findViewByTagRecursive(g.getChildAt(i), tag);
+                if (found != null) return found;
+            }
+        }
+        return null;
+    }
+
+    private void updateImportDialog(AlertDialog dialog, ImportStats stats, String phase) {
+        runOnUiThread(() -> {
+            TextView status = findImportStatusText(dialog);
+            if (status != null) {
+                status.setText((phase == null ? "جاري الاستيراد..." : phase)
+                        + "
+تمت القراءة: " + stats.scanned
+                        + "
+تمت الإضافة: " + stats.added
+                        + "
+المكرر/الموجود مسبقًا: " + stats.duplicates
+                        + (stats.failed > 0 ? "
+فشل: " + stats.failed : ""));
+            }
+        });
+    }
+
+    private int flushImportBatch(int amount, ArrayList<String> batch, String sourceName, ImportStats stats, boolean rewardMode, int rewardAmount, AlertDialog dialog) {
+        if (batch == null || batch.isEmpty()) return 0;
+        int batchSize = batch.size();
+        int added;
+        if (rewardMode) {
+            added = AppStore.importRewardCards(this, rewardAmount, batch, sourceName);
+        } else {
+            added = AppStore.importCardsWithProgress(this, amount, batch, sourceName, null);
+        }
+        stats.added += Math.max(0, added);
+        stats.duplicates += Math.max(0, batchSize - added);
+        batch.clear();
+        updateImportDialog(dialog, stats, "جاري إدخال الدفعات...");
+        try { Thread.sleep(15); } catch (Exception ignored) {}
+        return added;
+    }
+
     private void importFromUri(Uri uri) {
         final boolean rewardMode = pendingRewardImport;
         final int rewardAmount = pendingRewardImportAmount;
         final int amount = selectedAmount;
         final String sourceName = getFileName(uri);
-        runPerformanceTask("جاري استيراد الكروت في الخلفية...", () -> {
-            ArrayList<String> lines = new ArrayList<>();
+        final AlertDialog progressDialog = showImportProgressDialog("استيراد الكروت", sourceName);
+        final ImportStats stats = new ImportStats();
+        performanceExecutor.execute(() -> {
+            ArrayList<String> batch = new ArrayList<>();
             try {
                 InputStream in = getContentResolver().openInputStream(uri);
-                BufferedReader reader = new BufferedReader(new InputStreamReader(in));
+                BufferedReader reader = new BufferedReader(new InputStreamReader(in, "UTF-8"));
                 String line;
-                while ((line = reader.readLine()) != null) collectCardsFromTextLine(lines, line);
-                reader.close();
-                int duplicateCount = AppStore.duplicateCardCount(this, lines);
-                if (rewardMode) {
-                    final int added = AppStore.importRewardCards(this, rewardAmount, lines, sourceName);
-                    runOnUiThread(() -> {
-                        pendingRewardImport = false;
-                        toast("تم استيراد " + added + " كرت مكافأة" + (duplicateCount > 0 ? " | تم تجاهل مكرر: " + duplicateCount : ""));
-                        rewardsPanelTab = "gift";
-                        showRewardsSettings();
-                    });
-                } else {
-                    final int added = AppStore.importCards(this, amount, lines, sourceName);
-                    runOnUiThread(() -> { toast("تم استيراد " + added + " كرت" + (duplicateCount > 0 ? " | تم تجاهل مكرر: " + duplicateCount : "")); showHome(); });
+                while ((line = reader.readLine()) != null) {
+                    int before = batch.size();
+                    collectCardsFromTextLine(batch, line);
+                    stats.scanned += Math.max(0, batch.size() - before);
+                    if (stats.scanned % 200 == 0) updateImportDialog(progressDialog, stats, "جاري قراءة الملف...");
+                    if (batch.size() >= IMPORT_BATCH_SIZE) flushImportBatch(amount, batch, sourceName, stats, rewardMode, rewardAmount, progressDialog);
                 }
+                reader.close();
+                flushImportBatch(amount, batch, sourceName, stats, rewardMode, rewardAmount, progressDialog);
+                runOnUiThread(() -> {
+                    pendingRewardImport = false;
+                    TextView status = findImportStatusText(progressDialog);
+                    if (status != null) status.setText("اكتمل الاستيراد بنجاح
+تمت القراءة: " + stats.scanned + "
+تمت الإضافة: " + stats.added + "
+المكرر/الموجود مسبقًا: " + stats.duplicates);
+                    toneOk();
+                    new Handler(Looper.getMainLooper()).postDelayed(() -> {
+                        try { progressDialog.dismiss(); } catch (Exception ignored) {}
+                        toast("تم الاستيراد: " + stats.added + " كرت" + (stats.duplicates > 0 ? " | مكرر: " + stats.duplicates : ""));
+                        if (rewardMode) { rewardsPanelTab = "gift"; showRewardsSettings(); } else showHome();
+                    }, 850);
+                });
             } catch (Exception e) {
-                runOnUiThread(() -> { pendingRewardImport = false; toast("فشل قراءة الملف: " + e.getMessage()); });
+                runOnUiThread(() -> {
+                    pendingRewardImport = false;
+                    try { progressDialog.dismiss(); } catch (Exception ignored) {}
+                    toneAlert();
+                    toast("فشل قراءة الملف: " + e.getMessage());
+                });
             }
         });
     }
@@ -5277,36 +5430,56 @@ public class MainActivity extends Activity {
         final int rewardAmount = pendingRewardImportAmount;
         final int amount = selectedAmount;
         final String sourceName = getFileName(uri);
-        runPerformanceTask("جاري استيراد Excel/CSV في الخلفية...", () -> {
-            ArrayList<String> cards = new ArrayList<>();
+        final AlertDialog progressDialog = showImportProgressDialog("استيراد Excel / CSV", sourceName);
+        final ImportStats stats = new ImportStats();
+        performanceExecutor.execute(() -> {
+            ArrayList<String> batch = new ArrayList<>();
             String name = sourceName.toLowerCase(Locale.US);
             try {
                 InputStream in = getContentResolver().openInputStream(uri);
                 if (name.endsWith(".xlsx")) {
-                    cards.addAll(readXlsxCells(in));
+                    ArrayList<String> cards = readXlsxCells(in);
+                    for (String card : cards) {
+                        if (card == null || card.trim().isEmpty()) continue;
+                        batch.add(card);
+                        stats.scanned++;
+                        if (stats.scanned % 200 == 0) updateImportDialog(progressDialog, stats, "جاري قراءة خلايا Excel...");
+                        if (batch.size() >= IMPORT_BATCH_SIZE) flushImportBatch(amount, batch, sourceName, stats, rewardMode, rewardAmount, progressDialog);
+                    }
                 } else {
                     BufferedReader reader = new BufferedReader(new InputStreamReader(in, "UTF-8"));
                     String line;
                     while ((line = reader.readLine()) != null) {
-                        collectCardsFromTextLine(cards, line);
+                        int before = batch.size();
+                        collectCardsFromTextLine(batch, line);
+                        stats.scanned += Math.max(0, batch.size() - before);
+                        if (stats.scanned % 200 == 0) updateImportDialog(progressDialog, stats, "جاري قراءة CSV...");
+                        if (batch.size() >= IMPORT_BATCH_SIZE) flushImportBatch(amount, batch, sourceName, stats, rewardMode, rewardAmount, progressDialog);
                     }
                     reader.close();
                 }
-                int duplicateCount = AppStore.duplicateCardCount(this, cards);
-                if (rewardMode) {
-                    final int added = AppStore.importRewardCards(this, rewardAmount, cards, sourceName);
-                    runOnUiThread(() -> {
-                        pendingRewardImport = false;
-                        toast("تم استيراد " + added + " كرت مكافأة من Excel/CSV" + (duplicateCount > 0 ? " | تم تجاهل مكرر: " + duplicateCount : ""));
-                        rewardsPanelTab = "gift";
-                        showRewardsSettings();
-                    });
-                } else {
-                    final int added = AppStore.importCards(this, amount, cards, sourceName);
-                    runOnUiThread(() -> { toast("تم استيراد " + added + " كرت من Excel/CSV" + (duplicateCount > 0 ? " | تم تجاهل مكرر: " + duplicateCount : "")); showHome(); });
-                }
+                flushImportBatch(amount, batch, sourceName, stats, rewardMode, rewardAmount, progressDialog);
+                runOnUiThread(() -> {
+                    pendingRewardImport = false;
+                    TextView status = findImportStatusText(progressDialog);
+                    if (status != null) status.setText("اكتمل الاستيراد بنجاح
+تمت القراءة: " + stats.scanned + "
+تمت الإضافة: " + stats.added + "
+المكرر/الموجود مسبقًا: " + stats.duplicates);
+                    toneOk();
+                    new Handler(Looper.getMainLooper()).postDelayed(() -> {
+                        try { progressDialog.dismiss(); } catch (Exception ignored) {}
+                        toast("تم الاستيراد: " + stats.added + " كرت" + (stats.duplicates > 0 ? " | مكرر: " + stats.duplicates : ""));
+                        if (rewardMode) { rewardsPanelTab = "gift"; showRewardsSettings(); } else showHome();
+                    }, 850);
+                });
             } catch (Exception e) {
-                runOnUiThread(() -> { pendingRewardImport = false; toast("فشل قراءة ملف Excel/CSV: " + e.getMessage()); });
+                runOnUiThread(() -> {
+                    pendingRewardImport = false;
+                    try { progressDialog.dismiss(); } catch (Exception ignored) {}
+                    toneAlert();
+                    toast("فشل قراءة ملف Excel/CSV: " + e.getMessage());
+                });
             }
         });
     }

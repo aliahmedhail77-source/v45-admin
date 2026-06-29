@@ -2,6 +2,10 @@ package com.fourunet.pro;
 
 import android.content.Context;
 import android.content.SharedPreferences;
+import android.content.ContentValues;
+import android.database.Cursor;
+import android.database.sqlite.SQLiteDatabase;
+import android.database.sqlite.SQLiteOpenHelper;
 import android.os.Environment;
 import android.util.Base64;
 
@@ -114,9 +118,8 @@ class AppStore {
     private static final String DEFAULT_NETWORK_NAME = "فور يو";
     private static final String DEFAULT_ADMIN_PHONE = "";
 
-    // Stage 13.6 STRONG PERFORMANCE ENGINE
-    // SharedPreferences remains the current storage engine, so we reduce parsing and repeated full scans
-    // through safe in-memory caches, stock summaries, and paged readers.
+    // Stage 13.6.1 STRONG PERFORMANCE ENGINE
+    // Cards are stored in SQLite for large stock imports. SharedPreferences remains for legacy settings/logs.
     static final int PERFORMANCE_LOG_PAGE_SIZE = 50;
     static final int PERFORMANCE_CARD_PAGE_SIZE = 80;
     private static final int MAX_FAST_LOGS = 1500;
@@ -125,6 +128,116 @@ class AppStore {
     private static HashMap<Integer, StockCount> stockCountCache = null;
     private static String logsCacheJson = null;
     private static ArrayList<OperationLog> logsCache = null;
+
+    private static final String KEY_CARDS_DB_READY = "cards_db_ready_v1361";
+    private static final String CARD_DB_NAME = "online_cards_perf.db";
+    private static final int CARD_DB_VERSION = 1;
+    private static CardDbHelper cardDbHelper = null;
+
+    interface ImportProgressCallback {
+        void onProgress(int scanned, int added, int duplicates);
+    }
+
+    private static class CardDbHelper extends SQLiteOpenHelper {
+        CardDbHelper(Context c) { super(c.getApplicationContext(), CARD_DB_NAME, null, CARD_DB_VERSION); }
+
+        @Override public void onCreate(SQLiteDatabase db) {
+            db.execSQL("CREATE TABLE IF NOT EXISTS cards (" +
+                    "id TEXT PRIMARY KEY," +
+                    "amount INTEGER NOT NULL," +
+                    "code TEXT NOT NULL," +
+                    "code_key TEXT NOT NULL UNIQUE," +
+                    "sold INTEGER NOT NULL DEFAULT 0," +
+                    "buyer_phone TEXT," +
+                    "sold_at TEXT," +
+                    "source TEXT," +
+                    "created_at TEXT" +
+                    ")");
+            db.execSQL("CREATE INDEX IF NOT EXISTS idx_cards_amount_sold ON cards(amount, sold)");
+            db.execSQL("CREATE INDEX IF NOT EXISTS idx_cards_amount_source_sold ON cards(amount, source, sold)");
+            db.execSQL("CREATE INDEX IF NOT EXISTS idx_cards_sold_at ON cards(sold, sold_at)");
+            db.execSQL("CREATE INDEX IF NOT EXISTS idx_cards_code_key ON cards(code_key)");
+        }
+
+        @Override public void onUpgrade(SQLiteDatabase db, int oldVersion, int newVersion) { onCreate(db); }
+    }
+
+    private static SQLiteDatabase cardDb(Context c) {
+        synchronized (AppStore.class) {
+            if (cardDbHelper == null) cardDbHelper = new CardDbHelper(c.getApplicationContext());
+            SQLiteDatabase db = cardDbHelper.getWritableDatabase();
+            try { db.enableWriteAheadLogging(); } catch (Exception ignored) {}
+            migrateCardsPrefsToDbIfNeeded(c, db);
+            return db;
+        }
+    }
+
+    private static void migrateCardsPrefsToDbIfNeeded(Context c, SQLiteDatabase db) {
+        SharedPreferences sp = prefs(c);
+        if (sp.getBoolean(KEY_CARDS_DB_READY, false)) return;
+        String raw = sp.getString(KEY_CARDS, "[]");
+        db.beginTransaction();
+        try {
+            if (raw != null && raw.trim().length() > 2) {
+                JSONArray arr = new JSONArray(raw);
+                for (int i = 0; i < arr.length(); i++) {
+                    JSONObject o = arr.getJSONObject(i);
+                    String code = normalizeCardCode(o.optString("code"));
+                    if (code.isEmpty()) continue;
+                    ContentValues cv = new ContentValues();
+                    cv.put("id", o.optString("id", UUID.randomUUID().toString()));
+                    cv.put("amount", o.optInt("amount"));
+                    cv.put("code", code);
+                    cv.put("code_key", cardDuplicateKey(code));
+                    cv.put("sold", o.optBoolean("sold") ? 1 : 0);
+                    cv.put("buyer_phone", o.optString("buyerPhone", ""));
+                    cv.put("sold_at", o.optString("soldAt", ""));
+                    cv.put("source", o.optString("source", ""));
+                    String createdAt = o.optString("createdAt", "");
+                    if (createdAt.trim().isEmpty()) createdAt = o.optString("addedAt", "");
+                    cv.put("created_at", createdAt);
+                    db.insertWithOnConflict("cards", null, cv, SQLiteDatabase.CONFLICT_IGNORE);
+                }
+            }
+            db.setTransactionSuccessful();
+            sp.edit().putBoolean(KEY_CARDS_DB_READY, true).remove(KEY_CARDS).apply();
+            cardsCacheJson = null;
+            cardsCache = null;
+            stockCountCache = null;
+        } catch (Exception e) {
+            // Keep old SharedPreferences data if migration fails.
+        } finally {
+            try { db.endTransaction(); } catch (Exception ignored) {}
+        }
+    }
+
+    private static CardItem cardFromCursor(Cursor cur) {
+        return new CardItem(
+                cur.getString(cur.getColumnIndexOrThrow("id")),
+                cur.getInt(cur.getColumnIndexOrThrow("amount")),
+                cur.getString(cur.getColumnIndexOrThrow("code")),
+                cur.getInt(cur.getColumnIndexOrThrow("sold")) == 1,
+                cur.getString(cur.getColumnIndexOrThrow("buyer_phone")),
+                cur.getString(cur.getColumnIndexOrThrow("sold_at")),
+                cur.getString(cur.getColumnIndexOrThrow("source")),
+                cur.getString(cur.getColumnIndexOrThrow("created_at"))
+        );
+    }
+
+    private static ContentValues cardValues(CardItem card) {
+        ContentValues cv = new ContentValues();
+        cv.put("id", card.id == null || card.id.trim().isEmpty() ? UUID.randomUUID().toString() : card.id);
+        cv.put("amount", card.amount);
+        String code = normalizeCardCode(card.code);
+        cv.put("code", code);
+        cv.put("code_key", cardDuplicateKey(code));
+        cv.put("sold", card.sold ? 1 : 0);
+        cv.put("buyer_phone", card.buyerPhone == null ? "" : card.buyerPhone);
+        cv.put("sold_at", card.soldAt == null ? "" : card.soldAt);
+        cv.put("source", card.source == null ? "" : card.source);
+        cv.put("created_at", card.createdAt == null || card.createdAt.trim().isEmpty() ? now() : card.createdAt);
+        return cv;
+    }
 
     private static final String OFFLINE_LIFETIME_SECRET = "ONLINE_V14_PRIVATE_LIFETIME_SECRET_776901570";
     private static final String OFFLINE_TRIAL_SECRET = "ONLINE_V29_PRIVATE_TRIAL_30_DAYS_SECRET_776901570";
@@ -1281,30 +1394,26 @@ class AppStore {
     }
 
     static ArrayList<CardItem> loadCards(Context c) {
-        String raw = prefs(c).getString(KEY_CARDS, "[]");
-        if (raw != null && raw.equals(cardsCacheJson) && cardsCache != null) return copyCardList(cardsCache);
         ArrayList<CardItem> list = new ArrayList<>();
+        Cursor cur = null;
         try {
-            JSONArray arr = new JSONArray(raw == null ? "[]" : raw);
-            for (int i = 0; i < arr.length(); i++) {
-                JSONObject o = arr.getJSONObject(i);
-                String createdAt = o.optString("createdAt", "");
-                if (createdAt.trim().isEmpty()) createdAt = o.optString("addedAt", "");
-                list.add(new CardItem(
-                        o.optString("id"),
-                        o.optInt("amount"),
-                        o.optString("code"),
-                        o.optBoolean("sold"),
-                        o.optString("buyerPhone"),
-                        o.optString("soldAt"),
-                        o.optString("source"),
-                        createdAt
-                ));
-            }
-            cardsCacheJson = raw;
-            cardsCache = copyCardList(list);
-            stockCountCache = null;
-        } catch (Exception ignored) {}
+            cur = cardDb(c).query("cards", null, null, null, null, null, "rowid DESC");
+            while (cur.moveToNext()) list.add(cardFromCursor(cur));
+        } catch (Exception ignored) {
+            // Legacy fallback only if database is unavailable.
+            String raw = prefs(c).getString(KEY_CARDS, "[]");
+            try {
+                JSONArray arr = new JSONArray(raw == null ? "[]" : raw);
+                for (int i = 0; i < arr.length(); i++) {
+                    JSONObject o = arr.getJSONObject(i);
+                    String createdAt = o.optString("createdAt", "");
+                    if (createdAt.trim().isEmpty()) createdAt = o.optString("addedAt", "");
+                    list.add(new CardItem(o.optString("id"), o.optInt("amount"), o.optString("code"), o.optBoolean("sold"), o.optString("buyerPhone"), o.optString("soldAt"), o.optString("source"), createdAt));
+                }
+            } catch (Exception ignored2) {}
+        } finally {
+            if (cur != null) cur.close();
+        }
         return list;
     }
 
@@ -1315,9 +1424,32 @@ class AppStore {
     }
 
     static void saveCards(Context c, ArrayList<CardItem> cards) {
+        SQLiteDatabase db = cardDb(c);
+        db.beginTransaction();
         try {
-            JSONArray arr = new JSONArray();
-            for (CardItem card : cards) {
+            db.delete("cards", null, null);
+            if (cards != null) {
+                for (CardItem card : cards) {
+                    if (card == null || normalizeCardCode(card.code).isEmpty()) continue;
+                    db.insertWithOnConflict("cards", null, cardValues(card), SQLiteDatabase.CONFLICT_IGNORE);
+                }
+            }
+            db.setTransactionSuccessful();
+            invalidateCardsCache();
+        } catch (Exception ignored) {
+        } finally {
+            try { db.endTransaction(); } catch (Exception ignored) {}
+        }
+    }
+
+    private static boolean isRewardStock(CardItem item) {
+        return item != null && item.source != null && item.source.startsWith("reward_stock");
+    }
+
+    private static JSONArray cardsToJsonArray(Context c) {
+        JSONArray arr = new JSONArray();
+        try {
+            for (CardItem card : loadCards(c)) {
                 JSONObject o = new JSONObject();
                 o.put("id", card.id);
                 o.put("amount", card.amount);
@@ -1329,13 +1461,22 @@ class AppStore {
                 o.put("createdAt", card.createdAt == null ? "" : card.createdAt);
                 arr.put(o);
             }
-            prefs(c).edit().putString(KEY_CARDS, arr.toString()).apply();
-            invalidateCardsCache();
         } catch (Exception ignored) {}
+        return arr;
     }
 
-    private static boolean isRewardStock(CardItem item) {
-        return item != null && item.source != null && item.source.startsWith("reward_stock");
+    private static ArrayList<CardItem> cardsFromJsonArray(JSONArray arr) {
+        ArrayList<CardItem> list = new ArrayList<>();
+        if (arr == null) return list;
+        try {
+            for (int i = 0; i < arr.length(); i++) {
+                JSONObject o = arr.getJSONObject(i);
+                String createdAt = o.optString("createdAt", "");
+                if (createdAt.trim().isEmpty()) createdAt = o.optString("addedAt", "");
+                list.add(new CardItem(o.optString("id", UUID.randomUUID().toString()), o.optInt("amount"), o.optString("code"), o.optBoolean("sold"), o.optString("buyerPhone"), o.optString("soldAt"), o.optString("source"), createdAt));
+            }
+        } catch (Exception ignored) {}
+        return list;
     }
 
     static String normalizeCardCode(String value) {
@@ -1354,31 +1495,35 @@ class AppStore {
     }
 
     static int duplicateCardCount(Context c, ArrayList<String> codes) {
-        HashSet<String> existing = new HashSet<>();
-        for (CardItem item : loadCards(c)) existing.add(cardDuplicateKey(item.code));
+        if (codes == null || codes.isEmpty()) return 0;
+        SQLiteDatabase db = cardDb(c);
         int dup = 0;
         HashSet<String> seen = new HashSet<>();
-        for (String raw : codes) {
-            String key = cardDuplicateKey(raw);
-            if (key.isEmpty()) continue;
-            if (existing.contains(key) || seen.contains(key)) dup++;
-            seen.add(key);
+        Cursor cur = null;
+        try {
+            for (String raw : codes) {
+                String key = cardDuplicateKey(raw);
+                if (key.isEmpty()) continue;
+                if (seen.contains(key)) { dup++; continue; }
+                seen.add(key);
+                cur = db.rawQuery("SELECT 1 FROM cards WHERE code_key=? LIMIT 1", new String[]{key});
+                if (cur.moveToFirst()) dup++;
+                cur.close(); cur = null;
+            }
+        } catch (Exception ignored) {
+        } finally {
+            if (cur != null) cur.close();
         }
         return dup;
     }
 
     static int deleteCardsByAmount(Context c, int amount) {
-        ArrayList<CardItem> cards = loadCards(c);
-        ArrayList<CardItem> next = new ArrayList<>();
+        SQLiteDatabase db = cardDb(c);
         int removed = 0;
-        for (CardItem item : cards) {
-            if (item.amount == amount && !isRewardStock(item)) {
-                removed++;
-            } else {
-                next.add(item);
-            }
-        }
-        saveCards(c, next);
+        try {
+            removed = db.delete("cards", "amount=? AND (source IS NULL OR source NOT LIKE 'reward_stock%')", new String[]{String.valueOf(amount)});
+            invalidateCardsCache();
+        } catch (Exception ignored) {}
         if (removed > 0) addLog(c, new OperationLog(UUID.randomUUID().toString(), "إدارة الكروت", "cards", "", "", amount,
                 "حذف كروت فئة", "تم حذف كل كروت الفئة " + amount + " ريال. العدد: " + removed, "", now()));
         return removed;
@@ -1389,31 +1534,71 @@ class AppStore {
         String q = normalizeCardCode(query).toUpperCase(Locale.US);
         String raw = query == null ? "" : query.trim().toUpperCase(Locale.US);
         if (q.isEmpty() && raw.isEmpty()) return out;
-        for (CardItem item : loadCards(c)) {
-            String code = item.code == null ? "" : item.code;
-            String n = normalizeCardCode(code).toUpperCase(Locale.US);
-            if ((!q.isEmpty() && n.contains(q)) || (!raw.isEmpty() && code.toUpperCase(Locale.US).contains(raw))) out.add(item);
-            if (out.size() >= 80) break;
+        Cursor cur = null;
+        try {
+            String like1 = "%" + q + "%";
+            String like2 = "%" + raw + "%";
+            cur = cardDb(c).query("cards", null,
+                    "code_key LIKE ? OR UPPER(code) LIKE ?",
+                    new String[]{like1, like2}, null, null, "rowid DESC", "80");
+            while (cur.moveToNext()) out.add(cardFromCursor(cur));
+        } catch (Exception ignored) {
+        } finally {
+            if (cur != null) cur.close();
         }
         return out;
     }
 
     static int importCards(Context c, int amount, ArrayList<String> codes, String source) {
+        return importCardsWithProgress(c, amount, codes, source, null);
+    }
+
+    static int importCardsWithProgress(Context c, int amount, ArrayList<String> codes, String source, ImportProgressCallback callback) {
         addCategory(c, amount);
-        ArrayList<CardItem> cards = loadCards(c);
-        HashSet<String> existing = new HashSet<>();
-        for (CardItem item : cards) existing.add(cardDuplicateKey(item.code));
+        if (codes == null || codes.isEmpty()) return 0;
+        SQLiteDatabase db = cardDb(c);
         int added = 0;
-        for (String raw : codes) {
-            String code = normalizeCardCode(raw);
-            if (code.isEmpty()) continue;
-            String key = cardDuplicateKey(code);
-            if (existing.contains(key)) continue;
-            cards.add(0, new CardItem(UUID.randomUUID().toString(), amount, code, false, "", "", source, now()));
-            existing.add(key);
-            added++;
+        int scanned = 0;
+        int duplicates = 0;
+        HashSet<String> seenInFile = new HashSet<>();
+        Cursor cur = null;
+        db.beginTransaction();
+        try {
+            String created = now();
+            for (String raw : codes) {
+                scanned++;
+                String code = normalizeCardCode(raw);
+                if (code.isEmpty()) continue;
+                String key = cardDuplicateKey(code);
+                if (seenInFile.contains(key)) { duplicates++; continue; }
+                seenInFile.add(key);
+                cur = db.rawQuery("SELECT 1 FROM cards WHERE code_key=? LIMIT 1", new String[]{key});
+                boolean exists = cur.moveToFirst();
+                cur.close(); cur = null;
+                if (exists) { duplicates++; continue; }
+                ContentValues cv = new ContentValues();
+                cv.put("id", UUID.randomUUID().toString());
+                cv.put("amount", amount);
+                cv.put("code", code);
+                cv.put("code_key", key);
+                cv.put("sold", 0);
+                cv.put("buyer_phone", "");
+                cv.put("sold_at", "");
+                cv.put("source", source == null ? "" : source);
+                cv.put("created_at", created);
+                long r = db.insertWithOnConflict("cards", null, cv, SQLiteDatabase.CONFLICT_IGNORE);
+                if (r >= 0) added++; else duplicates++;
+                if (callback != null && scanned % 200 == 0) callback.onProgress(scanned, added, duplicates);
+                if (scanned % 500 == 0) db.yieldIfContendedSafely();
+            }
+            db.setTransactionSuccessful();
+        } catch (Exception ignored) {
+        } finally {
+            if (cur != null) cur.close();
+            try { db.endTransaction(); } catch (Exception ignored) {}
         }
-        saveCards(c, cards);
+        invalidateCardsCache();
+        if (callback != null) callback.onProgress(scanned, added, duplicates);
         return added;
     }
 
@@ -1424,10 +1609,11 @@ class AppStore {
     }
 
     static void deleteCard(Context c, String id) {
-        ArrayList<CardItem> cards = loadCards(c);
-        ArrayList<CardItem> next = new ArrayList<>();
-        for (CardItem item : cards) if (!item.id.equals(id)) next.add(item);
-        saveCards(c, next);
+        if (id == null) return;
+        try {
+            cardDb(c).delete("cards", "id=?", new String[]{id});
+            invalidateCardsCache();
+        } catch (Exception ignored) {}
     }
 
     static int countSoldCardsOlderThanDays(Context c, int days) {
@@ -1565,43 +1751,62 @@ class AppStore {
     }
 
     static boolean updateCard(Context c, CardItem card, int amount, String code, boolean sold) {
-        ArrayList<CardItem> cards = loadCards(c);
+        if (card == null || card.id == null) return false;
         String normalized = normalizeCardCode(code);
         String newKey = cardDuplicateKey(normalized);
-        for (CardItem item : cards) {
-            if (!item.id.equals(card.id) && cardDuplicateKey(item.code).equals(newKey)) return false;
-        }
-        for (CardItem item : cards) {
-            if (item.id.equals(card.id)) {
-                item.amount = amount;
-                item.code = normalized;
-                item.sold = sold;
-                if (item.createdAt == null || item.createdAt.trim().isEmpty()) item.createdAt = now();
-                if (!sold) {
-                    item.buyerPhone = "";
-                    item.soldAt = "";
-                }
-                break;
+        if (normalized.isEmpty()) return false;
+        Cursor cur = null;
+        SQLiteDatabase db = cardDb(c);
+        try {
+            cur = db.rawQuery("SELECT id FROM cards WHERE code_key=? LIMIT 1", new String[]{newKey});
+            if (cur.moveToFirst()) {
+                String existingId = cur.getString(0);
+                if (!card.id.equals(existingId)) return false;
             }
+            if (cur != null) { cur.close(); cur = null; }
+            ContentValues cv = new ContentValues();
+            cv.put("amount", amount);
+            cv.put("code", normalized);
+            cv.put("code_key", newKey);
+            cv.put("sold", sold ? 1 : 0);
+            if (!sold) {
+                cv.put("buyer_phone", "");
+                cv.put("sold_at", "");
+            }
+            db.update("cards", cv, "id=?", new String[]{card.id});
+            invalidateCardsCache();
+            return true;
+        } catch (Exception e) {
+            return false;
+        } finally {
+            if (cur != null) cur.close();
         }
-        saveCards(c, cards);
-        return true;
     }
 
     private static HashMap<Integer, StockCount> stockCounts(Context c) {
         if (stockCountCache != null) return stockCountCache;
         HashMap<Integer, StockCount> map = new HashMap<>();
-        for (CardItem item : loadCards(c)) {
-            if (item == null) continue;
-            StockCount sc = map.get(item.amount);
-            if (sc == null) { sc = new StockCount(); map.put(item.amount, sc); }
-            if (isRewardStock(item)) {
-                sc.rewardTotal++;
-                if (item.sold) sc.rewardSold++; else sc.rewardAvailable++;
-            } else {
-                sc.total++;
-                if (item.sold) sc.sold++; else sc.available++;
+        Cursor cur = null;
+        try {
+            cur = cardDb(c).rawQuery("SELECT amount, sold, CASE WHEN source LIKE 'reward_stock%' THEN 1 ELSE 0 END AS reward, COUNT(*) AS cnt FROM cards GROUP BY amount, sold, reward", null);
+            while (cur.moveToNext()) {
+                int amount = cur.getInt(0);
+                boolean sold = cur.getInt(1) == 1;
+                boolean reward = cur.getInt(2) == 1;
+                int cnt = cur.getInt(3);
+                StockCount sc = map.get(amount);
+                if (sc == null) { sc = new StockCount(); map.put(amount, sc); }
+                if (reward) {
+                    sc.rewardTotal += cnt;
+                    if (sold) sc.rewardSold += cnt; else sc.rewardAvailable += cnt;
+                } else {
+                    sc.total += cnt;
+                    if (sold) sc.sold += cnt; else sc.available += cnt;
+                }
             }
+        } catch (Exception ignored) {
+        } finally {
+            if (cur != null) cur.close();
         }
         stockCountCache = map;
         return map;
@@ -1618,15 +1823,18 @@ class AppStore {
 
     static ArrayList<CardItem> cardsByAmountLimited(Context c, int amount, int offset, int limit) {
         ArrayList<CardItem> out = new ArrayList<>();
-        int safeOffset = Math.max(0, offset);
-        int safeLimit = limit <= 0 ? PERFORMANCE_CARD_PAGE_SIZE : limit;
-        int skipped = 0;
-        for (CardItem item : loadCards(c)) {
-            if (item.amount == amount && !isRewardStock(item)) {
-                if (skipped < safeOffset) { skipped++; continue; }
-                out.add(item);
-                if (out.size() >= safeLimit) break;
-            }
+        Cursor cur = null;
+        try {
+            int safeOffset = Math.max(0, offset);
+            int safeLimit = limit <= 0 ? PERFORMANCE_CARD_PAGE_SIZE : limit;
+            String lim = safeLimit == Integer.MAX_VALUE ? null : (safeOffset + "," + safeLimit);
+            cur = cardDb(c).query("cards", null,
+                    "amount=? AND (source IS NULL OR source NOT LIKE 'reward_stock%')",
+                    new String[]{String.valueOf(amount)}, null, null, "rowid DESC", lim);
+            while (cur.moveToNext()) out.add(cardFromCursor(cur));
+        } catch (Exception ignored) {
+        } finally {
+            if (cur != null) cur.close();
         }
         return out;
     }
@@ -1675,19 +1883,29 @@ class AppStore {
 
     static CardItem takeAvailableCard(Context c, int amount, String buyerPhone) {
         synchronized (AppStore.class) {
-            ArrayList<CardItem> cards = loadCards(c);
-            CardItem selected = null;
-            for (CardItem item : cards) {
-                if (item.amount == amount && !item.sold && !isRewardStock(item)) {
-                    item.sold = true;
-                    item.buyerPhone = buyerPhone;
-                    item.soldAt = now();
-                    selected = item;
-                    break;
-                }
+            SQLiteDatabase db = cardDb(c);
+            Cursor cur = null;
+            try {
+                cur = db.query("cards", null,
+                        "amount=? AND sold=0 AND (source IS NULL OR source NOT LIKE 'reward_stock%')",
+                        new String[]{String.valueOf(amount)}, null, null, "rowid ASC", "1");
+                if (!cur.moveToFirst()) return null;
+                CardItem selected = cardFromCursor(cur);
+                ContentValues cv = new ContentValues();
+                cv.put("sold", 1);
+                cv.put("buyer_phone", buyerPhone == null ? "" : buyerPhone);
+                cv.put("sold_at", now());
+                db.update("cards", cv, "id=?", new String[]{selected.id});
+                selected.sold = true;
+                selected.buyerPhone = buyerPhone == null ? "" : buyerPhone;
+                selected.soldAt = cv.getAsString("sold_at");
+                invalidateCardsCache();
+                return selected;
+            } catch (Exception e) {
+                return null;
+            } finally {
+                if (cur != null) cur.close();
             }
-            if (selected != null) saveCards(c, cards);
-            return selected;
         }
     }
 
@@ -1695,26 +1913,45 @@ class AppStore {
         synchronized (AppStore.class) {
             ArrayList<CardItem> selected = new ArrayList<>();
             if (amounts == null || amounts.length == 0) return selected;
-            ArrayList<CardItem> cards = loadCards(c);
-            for (int amount : amounts) {
-                CardItem found = null;
-                for (CardItem item : cards) {
-                    if (item.amount == amount && !item.sold && !isRewardStock(item) && !selected.contains(item)) {
-                        found = item;
-                        break;
+            SQLiteDatabase db = cardDb(c);
+            Cursor cur = null;
+            db.beginTransaction();
+            try {
+                HashSet<String> picked = new HashSet<>();
+                for (int amount : amounts) {
+                    cur = db.query("cards", null,
+                            "amount=? AND sold=0 AND (source IS NULL OR source NOT LIKE 'reward_stock%')",
+                            new String[]{String.valueOf(amount)}, null, null, "rowid ASC", "10");
+                    CardItem found = null;
+                    while (cur.moveToNext()) {
+                        CardItem tmp = cardFromCursor(cur);
+                        if (!picked.contains(tmp.id)) { found = tmp; break; }
                     }
+                    cur.close(); cur = null;
+                    if (found == null) return new ArrayList<>();
+                    selected.add(found);
+                    picked.add(found.id);
                 }
-                if (found == null) return new ArrayList<>();
-                selected.add(found);
+                String when = now();
+                ContentValues cv = new ContentValues();
+                cv.put("sold", 1);
+                cv.put("buyer_phone", buyerPhone == null ? "" : buyerPhone);
+                cv.put("sold_at", when);
+                for (CardItem item : selected) {
+                    db.update("cards", cv, "id=?", new String[]{item.id});
+                    item.sold = true;
+                    item.buyerPhone = buyerPhone == null ? "" : buyerPhone;
+                    item.soldAt = when;
+                }
+                db.setTransactionSuccessful();
+                invalidateCardsCache();
+                return selected;
+            } catch (Exception e) {
+                return new ArrayList<>();
+            } finally {
+                if (cur != null) cur.close();
+                try { db.endTransaction(); } catch (Exception ignored) {}
             }
-            String when = now();
-            for (CardItem item : selected) {
-                item.sold = true;
-                item.buyerPhone = buyerPhone;
-                item.soldAt = when;
-            }
-            saveCards(c, cards);
-            return selected;
         }
     }
 
@@ -1754,16 +1991,13 @@ class AppStore {
         String expected = buildCardPackSignature(requestCode, batchId, amount, codes);
         if (!expected.equals(signature)) throw new Exception("ملف الكروت غير صالح أو تم تعديله");
 
-        ArrayList<CardItem> existingCards = loadCards(c);
-        HashSet<String> existing = new HashSet<>();
-        for (CardItem item : existingCards) existing.add(cardDuplicateKey(item.code));
         HashSet<String> insidePack = new HashSet<>();
         for (String code : codes) {
             String key = cardDuplicateKey(code);
-            if (existing.contains(key)) throw new Exception("يوجد كرت مكرر سبق إدخاله في النظام بأي فئة: " + code);
             if (insidePack.contains(key)) throw new Exception("يوجد كرت مكرر داخل نفس الملف: " + code);
             insidePack.add(key);
         }
+        if (duplicateCardCount(c, codes) > 0) throw new Exception("يوجد كرت أو أكثر من هذا الملف سبق إدخاله في النظام");
 
         int added = importCards(c, amount, codes, "admin_pack:" + batchId);
         HashSet<String> batches = loadImportedBatches(c);
@@ -1868,13 +2102,15 @@ class AppStore {
         if (amount <= 0) throw new Exception("الفئة غير صحيحة");
         if (quantity <= 0) throw new Exception("العدد غير صحيح");
 
-        ArrayList<CardItem> cards = loadCards(c);
         ArrayList<CardItem> selected = new ArrayList<>();
-        for (CardItem item : cards) {
-            if (item.amount == amount && !item.sold) {
-                selected.add(item);
-                if (selected.size() >= quantity) break;
-            }
+        Cursor selCur = null;
+        try {
+            selCur = cardDb(c).query("cards", null,
+                    "amount=? AND sold=0 AND (source IS NULL OR source NOT LIKE 'reward_stock%')",
+                    new String[]{String.valueOf(amount)}, null, null, "rowid ASC", String.valueOf(Math.max(1, quantity)));
+            while (selCur.moveToNext()) selected.add(cardFromCursor(selCur));
+        } finally {
+            if (selCur != null) selCur.close();
         }
         if (selected.size() < quantity) throw new Exception("الكروت المتاحة من فئة " + amount + " أقل من العدد المطلوب. المتاح: " + selected.size());
 
@@ -1911,13 +2147,14 @@ class AppStore {
         writer.close();
         fos.close();
 
-        for (CardItem item : selected) {
-            item.sold = true;
-            item.buyerPhone = pos.phone;
-            item.soldAt = now();
-            item.source = "pos_pack:" + batchId;
-        }
-        saveCards(c, cards);
+        SQLiteDatabase db = cardDb(c);
+        ContentValues cv = new ContentValues();
+        cv.put("sold", 1);
+        cv.put("buyer_phone", pos.phone == null ? "" : pos.phone);
+        cv.put("sold_at", now());
+        cv.put("source", "pos_pack:" + batchId);
+        for (CardItem item : selected) db.update("cards", cv, "id=?", new String[]{item.id});
+        invalidateCardsCache();
 
         addLog(c, new OperationLog(UUID.randomUUID().toString(), "تغذية نقطة بيع", "pos_pack", pos.name, pos.phone, amount,
                 "تم إنشاء ملف نقطة بيع", "تم تجهيز " + codes.size() + " كرت فئة " + amount + " لنقطة البيع: " + pos.name + " | المكافآت: " + (pos.rewardsEnabled ? "مفعلة" : "بدون مكافآت") + " | الدفعة: " + batchId + " | الملف: " + file.getAbsolutePath(), "", now()));
@@ -3236,7 +3473,7 @@ class AppStore {
         root.put("settings", settings);
 
         root.put(KEY_CATEGORIES, new JSONArray(prefs(c).getString(KEY_CATEGORIES, "[]")));
-        root.put(KEY_CARDS, new JSONArray(prefs(c).getString(KEY_CARDS, "[]")));
+        root.put(KEY_CARDS, cardsToJsonArray(c));
         root.put(KEY_LOGS, new JSONArray(prefs(c).getString(KEY_LOGS, "[]")));
         root.put(KEY_TRUSTED, new JSONArray(prefs(c).getString(KEY_TRUSTED, "[]")));
         root.put(KEY_TRUSTED_CREDIT_AGENTS, new JSONArray(prefs(c).getString(KEY_TRUSTED_CREDIT_AGENTS, "[]")));
@@ -3540,20 +3777,32 @@ class AppStore {
 
     private static CardItem takeRewardCard(Context c, int amount, String buyerPhone) {
         synchronized (AppStore.class) {
-            ArrayList<CardItem> cards = loadCards(c);
-            CardItem selected = null;
-            for (CardItem item : cards) {
-                if (item.amount == amount && !item.sold && isRewardStock(item)) {
-                    item.sold = true;
-                    item.buyerPhone = buyerPhone == null ? "" : buyerPhone;
-                    item.soldAt = now();
-                    item.source = "reward_stock_sent";
-                    selected = item;
-                    break;
-                }
+            Cursor cur = null;
+            SQLiteDatabase db = cardDb(c);
+            try {
+                cur = db.query("cards", null,
+                        "amount=? AND sold=0 AND source LIKE 'reward_stock%'",
+                        new String[]{String.valueOf(amount)}, null, null, "rowid ASC", "1");
+                if (!cur.moveToFirst()) return null;
+                CardItem selected = cardFromCursor(cur);
+                String when = now();
+                ContentValues cv = new ContentValues();
+                cv.put("sold", 1);
+                cv.put("buyer_phone", buyerPhone == null ? "" : buyerPhone);
+                cv.put("sold_at", when);
+                cv.put("source", "reward_stock_sent");
+                db.update("cards", cv, "id=?", new String[]{selected.id});
+                selected.sold = true;
+                selected.buyerPhone = buyerPhone == null ? "" : buyerPhone;
+                selected.soldAt = when;
+                selected.source = "reward_stock_sent";
+                invalidateCardsCache();
+                return selected;
+            } catch (Exception e) {
+                return null;
+            } finally {
+                if (cur != null) cur.close();
             }
-            if (selected != null) saveCards(c, cards);
-            return selected;
         }
     }
 
@@ -3684,7 +3933,7 @@ class AppStore {
         String backupCreatedAt = root.optString("createdAt", "");
 
         if (categories != null) editor.putString(KEY_CATEGORIES, categories.toString());
-        if (cards != null) editor.putString(KEY_CARDS, cards.toString());
+        if (cards != null) editor.remove(KEY_CARDS).putBoolean(KEY_CARDS_DB_READY, true);
         if (logs != null) editor.putString(KEY_LOGS, logs.toString());
         if (trusted != null) editor.putString(KEY_TRUSTED, trusted.toString());
             if (trustedCreditAgents != null) editor.putString(KEY_TRUSTED_CREDIT_AGENTS, trustedCreditAgents.toString());
@@ -3704,6 +3953,7 @@ class AppStore {
         if (restoreHistory != null) editor.putString(KEY_RESTORE_HISTORY, restoreHistory.toString());
         if (customerRewards != null) editor.putString(KEY_CUSTOMER_REWARDS, customerRewards.toString());
         editor.apply();
+        if (cards != null) saveCards(c, cardsFromJsonArray(cards));
         recordRestoreHistory(c, backupCreatedAt, "استعادة من ملف");
         addLog(c, new OperationLog(UUID.randomUUID().toString(), "النظام", "restore", "", "", 0, "تمت الاستعادة", "تمت استعادة نسخة احتياطية بتاريخ: " + now(), "", now()));
         ensureDefaultCategories(c);
@@ -3715,6 +3965,7 @@ class AppStore {
         String activatedDevice = prefs(c).getString(KEY_ACTIVATED_DEVICE_ID, "");
         String activatedAt = prefs(c).getString(KEY_ACTIVATED_AT, "");
         prefs(c).edit().clear().apply();
+        try { cardDb(c).delete("cards", null, null); invalidateCardsCache(); } catch (Exception ignored) {}
         if (activated && activatedDevice != null && activatedDevice.equals(getDeviceId(c))) {
             prefs(c).edit()
                     .putBoolean(KEY_ACTIVATED, true)
