@@ -2111,6 +2111,53 @@ class AppStore {
         }
     }
 
+
+    // Stage 14: safety rollback for direct-sale operations.
+    // If a card is reserved and the ledger step fails before sending/logging, return the card to available stock.
+    static boolean restoreTakenCardToAvailable(Context c, CardItem card) {
+        if (card == null || card.id == null || card.id.trim().isEmpty()) return false;
+        synchronized (AppStore.class) {
+            try {
+                ContentValues cv = new ContentValues();
+                cv.put("sold", 0);
+                cv.put("buyer_phone", "");
+                cv.put("sold_at", "");
+                int updated = cardDb(c).update("cards", cv, "id=?", new String[]{card.id});
+                if (updated > 0) {
+                    card.sold = false;
+                    card.buyerPhone = "";
+                    card.soldAt = "";
+                    invalidateCardsCache();
+                    return true;
+                }
+            } catch (Exception ignored) {}
+            try {
+                String raw = prefs(c).getString(KEY_CARDS, "[]");
+                JSONArray arr = new JSONArray(raw == null ? "[]" : raw);
+                boolean changed = false;
+                for (int i = 0; i < arr.length(); i++) {
+                    JSONObject o = arr.getJSONObject(i);
+                    if (card.id.equals(o.optString("id"))) {
+                        o.put("sold", false);
+                        o.put("buyerPhone", "");
+                        o.put("soldAt", "");
+                        changed = true;
+                        break;
+                    }
+                }
+                if (changed) {
+                    prefs(c).edit().putString(KEY_CARDS, arr.toString()).commit();
+                    card.sold = false;
+                    card.buyerPhone = "";
+                    card.soldAt = "";
+                    invalidateCardsCache();
+                    return true;
+                }
+            } catch (Exception ignored) {}
+            return false;
+        }
+    }
+
     static ArrayList<CardItem> takeAvailableCardsAllOrNone(Context c, int[] amounts, String buyerPhone) {
         synchronized (AppStore.class) {
             ArrayList<CardItem> selected = new ArrayList<>();

@@ -10,8 +10,8 @@ android {
         applicationId 'com.fourunet.onlineadmin.stable'
         minSdk 23
         targetSdk 34
-        versionCode 55
-        versionName '45.0-stage13.9-main-dashboard-grid-direct-sale-ui'
+        versionCode 56
+        versionName '45.0-stage14-stability-hardening'
     }
 
     signingConfigs {

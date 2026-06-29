@@ -1205,12 +1205,12 @@ public class MainActivity extends Activity {
 
     private View recentTransactionsCard() {
         LinearLayout box = cardBox();
-        ArrayList<OperationLog> logs = AppStore.loadRecentVisibleLogs(this, 4);
+        ArrayList<OperationLog> logs = AppStore.loadRecentVisibleLogs(this, 5);
         if (logs.isEmpty()) {
             box.addView(small("لا توجد عمليات حديثة حتى الآن."));
             return box;
         }
-        int max = Math.min(4, logs.size());
+        int max = Math.min(5, logs.size());
         for (int i = 0; i < max; i++) {
             box.addView(recentOperationRow(logs.get(i), i < max - 1));
         }
@@ -1797,6 +1797,8 @@ public class MainActivity extends Activity {
         updateCreditUi.run();
 
         Button primary = action("إرسال", Color.rgb(0, 126, 78), Color.WHITE, v -> {
+            v.setEnabled(false);
+            new Handler(Looper.getMainLooper()).postDelayed(() -> v.setEnabled(true), 1200);
             boolean saleOnCredit = credit.isEnabled() && credit.isChecked();
             if (credit.isChecked() && !credit.isEnabled()) {
                 showNeonAlert("الآجل غير متاح", "لا يمكن اختيار آجل إلا إذا كان رقم الزبون موجودًا في دفتر الحسابات ومسموحًا له بالسلفة.", orange, true);
@@ -2213,6 +2215,11 @@ public class MainActivity extends Activity {
 
         String channels = selectedChannelsLabel(viaSms, viaWhatsApp);
         boolean effectiveRewards = rewardsForThisSale && AppStore.isRewardsEnabled(this);
+        int availableBeforeConfirm = AppStore.availableCount(this, selectedAmount);
+        if (availableBeforeConfirm <= 0) {
+            showNeonAlert("لا توجد كروت متاحة", "لا توجد كروت متاحة من فئة " + selectedAmount + " ريال. اختر فئة أخرى أو أضف كروتًا قبل البيع.", red, true);
+            return;
+        }
         LedgerCustomer creditCustomer = saleOnCredit ? AppStore.findLedgerCustomerByPhone(this, clean) : null;
         if (saleOnCredit) {
             if (creditCustomer == null || !creditCustomer.canAutoLoan()) {
@@ -2246,7 +2253,8 @@ public class MainActivity extends Activity {
                     if (saleOnCredit) {
                         afterCredit = AppStore.applyLedgerLoanWithCredit(this, clean, selectedAmount, code);
                         if (afterCredit == null) {
-                            showNeonAlert("تعذر تسجيل الآجل", "تم منع العملية لأن حساب الزبون لا يسمح بالآجل أو السقف غير كافٍ.", red, true);
+                            AppStore.restoreTakenCardToAvailable(this, reserved);
+                            showNeonAlert("تعذر تسجيل الآجل", "تم منع العملية لأن حساب الزبون لا يسمح بالآجل أو السقف غير كافٍ. تم إرجاع الكرت للمخزون ولم يتم إرسال أي رسالة.", red, true);
                             return;
                         }
                     }
