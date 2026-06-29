@@ -10,8 +10,8 @@ android {
         applicationId 'com.fourunet.onlineadmin.stable'
         minSdk 23
         targetSdk 34
-        versionCode 52
-        versionName '45.0-stage13.1-ui-purple-redesign'
+        versionCode 53
+        versionName '45.0-stage13.6-strong-performance-engine'
     }
 
     signingConfigs {

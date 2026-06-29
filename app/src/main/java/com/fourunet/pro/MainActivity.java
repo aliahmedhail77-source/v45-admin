@@ -60,6 +60,8 @@ import java.util.HashSet;
 import java.util.Calendar;
 import java.util.zip.ZipInputStream;
 import java.util.zip.ZipEntry;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 import org.json.JSONObject;
 
@@ -94,6 +96,13 @@ public class MainActivity extends Activity {
     int pendingRewardImportAmount = 100;
     String reviewFocusLogId = "";
     boolean appUnlocked = false;
+    final ExecutorService performanceExecutor = Executors.newSingleThreadExecutor();
+    int logsVisibleLimit = AppStore.performanceLogPageSize();
+    int cardsVisibleLimit = AppStore.performanceCardPageSize();
+    int cardsVisibleAmount = -1;
+
+    // Stage 13.6 STRONG PERFORMANCE ENGINE.
+    // عرض البيانات بالدفعات وتشغيل التقارير الثقيلة في الخلفية.
 
     // Stage 13.5 SMART UI + DIRECT SALE ENHANCEMENT.
     // تحسينات واجهة آمنة + بيع آجل للزبون الموثق + تنبيهات مخزون منخفض.
@@ -134,6 +143,12 @@ public class MainActivity extends Activity {
             return;
         }
         openMainAfterSecurity();
+    }
+
+    @Override
+    protected void onDestroy() {
+        try { performanceExecutor.shutdownNow(); } catch (Exception ignored) {}
+        super.onDestroy();
     }
 
     private void openMainAfterSecurity() {
@@ -1117,7 +1132,7 @@ public class MainActivity extends Activity {
 
     private View recentTransactionsCard() {
         LinearLayout box = cardBox();
-        ArrayList<OperationLog> logs = AppStore.loadLogs(this);
+        ArrayList<OperationLog> logs = AppStore.loadRecentLogs(this, 4);
         if (logs.isEmpty()) {
             box.addView(small("لا توجد عمليات حديثة حتى الآن."));
             return box;
@@ -1180,7 +1195,7 @@ public class MainActivity extends Activity {
         else if (available < 10) box.addView(badge("⚠ مخزون منخفض: " + available, orange));
         box.addView(small(c.amount + " ر.ي"));
         box.addView(separator());
-        box.addView(small("إجمالي الكروت: " + AppStore.cardsByAmount(this, c.amount).size()));
+        box.addView(small("إجمالي الكروت: " + AppStore.cardsByAmountCount(this, c.amount)));
         box.addView(small("كروت مباعة: " + AppStore.soldCount(this, c.amount)));
         box.addView(small("الكروت المتبقية: " + available));
 
@@ -1315,7 +1330,7 @@ public class MainActivity extends Activity {
     }
 
     private void confirmDeleteCategory(CategoryItem c) {
-        int total = AppStore.cardsByAmount(this, c.amount).size();
+        int total = AppStore.cardsByAmountCount(this, c.amount);
         new AlertDialog.Builder(this)
                 .setTitle("حذف الفئة")
                 .setMessage("اختر طريقة الحذف لفئة " + c.amount + " ريال.\n\nعدد الكروت داخل الفئة: " + total + " كرت.")
@@ -1345,13 +1360,29 @@ public class MainActivity extends Activity {
         tools.addView(action("🗑 حذف كل كروت هذه الفئة", Color.rgb(82,30,42), Color.WHITE, v -> confirmDeleteAllCardsForCategory(c)));
         content.addView(tools);
 
-        ArrayList<CardItem> list = AppStore.cardsByAmount(this, c.amount);
+        if (cardsVisibleAmount != c.amount) {
+            cardsVisibleAmount = c.amount;
+            cardsVisibleLimit = AppStore.performanceCardPageSize();
+        }
+        int totalCards = AppStore.cardsByAmountCount(this, c.amount);
+        ArrayList<CardItem> list = AppStore.cardsByAmountLimited(this, c.amount, 0, cardsVisibleLimit);
         if (list.isEmpty()) {
             LinearLayout empty = cardBox();
             empty.addView(small("لا توجد كروت في هذه الفئة."));
             content.addView(empty);
             return;
         }
+
+        LinearLayout perfInfo = cardBox();
+        perfInfo.addView(tv("عرض سريع", 16, text, true));
+        perfInfo.addView(small("المعروض الآن: " + list.size() + " من " + totalCards + " كرت. لا يتم تحميل كل الكروت دفعة واحدة حتى يبقى التطبيق سريعًا."));
+        if (totalCards > list.size()) {
+            perfInfo.addView(action("تحميل " + AppStore.performanceCardPageSize() + " كرت أخرى", card2, text, v -> {
+                cardsVisibleLimit += AppStore.performanceCardPageSize();
+                showCardsForCategory(c);
+            }));
+        }
+        content.addView(perfInfo);
 
         for (CardItem item : list) {
             LinearLayout box = cardBox();
@@ -1380,7 +1411,7 @@ public class MainActivity extends Activity {
     }
 
     private void confirmDeleteAllCardsForCategory(CategoryItem c) {
-        int total = AppStore.cardsByAmount(this, c.amount).size();
+        int total = AppStore.cardsByAmountCount(this, c.amount);
         new AlertDialog.Builder(this)
                 .setTitle("حذف كل كروت الفئة")
                 .setMessage("سيتم حذف كل الكروت العادية داخل فئة " + c.amount + " ريال.\n\nالعدد الحالي: " + total + " كرت.\n\nلن يمكن التراجع إلا من نسخة احتياطية.")
@@ -1783,7 +1814,8 @@ public class MainActivity extends Activity {
         report.addView(action("حذف كل إشعارات السداد", Color.rgb(82,30,42), Color.WHITE, v -> confirmClearLogs()));
         content.addView(report);
 
-        ArrayList<OperationLog> logs = AppStore.loadLogs(this);
+        int totalLogs = AppStore.logsCount(this);
+        ArrayList<OperationLog> logs = AppStore.loadRecentLogs(this, logsVisibleLimit);
         if (logs.isEmpty()) {
             LinearLayout empty = cardBox();
             empty.addView(small("لا توجد عمليات حتى الآن."));
@@ -1797,6 +1829,17 @@ public class MainActivity extends Activity {
             for (OperationLog log : logs) if (!reviewFocusLogId.equals(log.id)) ordered.add(log);
             logs = ordered;
         }
+
+        LinearLayout perf = cardBox();
+        perf.addView(tv("محرك الأداء", 16, text, true));
+        perf.addView(small("المعروض الآن: " + logs.size() + " من " + totalLogs + " عملية. يتم تحميل السجل بالدفعات بدل فتح كل العمليات مرة واحدة."));
+        if (totalLogs > logs.size()) {
+            perf.addView(action("تحميل " + AppStore.performanceLogPageSize() + " عملية أخرى", card2, text, v -> {
+                logsVisibleLimit += AppStore.performanceLogPageSize();
+                showLogs();
+            }));
+        }
+        content.addView(perf);
 
         for (OperationLog log : logs) {
             boolean focused = reviewFocusLogId != null && reviewFocusLogId.equals(log.id);
@@ -2409,9 +2452,11 @@ public class MainActivity extends Activity {
     }
 
     private void writePdfReport(Uri uri, int amountFilter, boolean summaryOnly) {
-        String title = amountFilter < 0 ? "تقرير مبيعات كل الفئات" : "تقرير مبيعات فئة " + amountFilter + " ريال";
-        String report = buildCardsSalesPdfReportText(title, amountFilter, summaryOnly);
-        writeStyledPdfToUri(uri, title, report);
+        runPerformanceTask("جاري حفظ تقرير PDF في الخلفية...", () -> {
+            String title = amountFilter < 0 ? "تقرير مبيعات كل الفئات" : "تقرير مبيعات فئة " + amountFilter + " ريال";
+            String report = buildCardsSalesPdfReportText(title, amountFilter, summaryOnly);
+            writeStyledPdfToUri(uri, title, report);
+        });
     }
 
     private String buildCardsSalesPdfReportText(String title, int amountFilter, boolean summaryOnly) {
@@ -2462,7 +2507,7 @@ public class MainActivity extends Activity {
         ArrayList<CategoryItem> catsForReport = AppStore.loadCategories(this);
         for (CategoryItem cat : catsForReport) {
             if (amountFilter >= 0 && cat.amount != amountFilter) continue;
-            int catTotal = AppStore.cardsByAmount(this, cat.amount).size();
+            int catTotal = AppStore.cardsByAmountCount(this, cat.amount);
             int catSold = AppStore.soldCount(this, cat.amount);
             int catAvailable = AppStore.availableCount(this, cat.amount);
             int catOps = 0;
@@ -2523,9 +2568,9 @@ public class MainActivity extends Activity {
             OutputStream out = getContentResolver().openOutputStream(uri);
             st.pdf.writeTo(out);
             if (out != null) out.close();
-            toast("تم حفظ تقرير PDF احترافي بنجاح");
+            runOnUiThread(() -> toast("تم حفظ تقرير PDF احترافي بنجاح"));
         } catch (Exception e) {
-            toast("فشل حفظ التقرير: " + e.getMessage());
+            runOnUiThread(() -> toast("فشل حفظ التقرير: " + e.getMessage()));
             try { if (st.page != null) st.pdf.finishPage(st.page); } catch (Exception ignored) {}
         } finally {
             try { st.pdf.close(); } catch (Exception ignored) {}
@@ -5196,64 +5241,74 @@ public class MainActivity extends Activity {
     }
 
     private void importFromUri(Uri uri) {
-        ArrayList<String> lines = new ArrayList<>();
-        try {
-            InputStream in = getContentResolver().openInputStream(uri);
-            BufferedReader reader = new BufferedReader(new InputStreamReader(in));
-            String line;
-            while ((line = reader.readLine()) != null) collectCardsFromTextLine(lines, line);
-            reader.close();
-            int duplicateCount = AppStore.duplicateCardCount(this, lines);
-            int added;
-            if (pendingRewardImport) {
-                added = AppStore.importRewardCards(this, pendingRewardImportAmount, lines, getFileName(uri));
-                pendingRewardImport = false;
-                toast("تم استيراد " + added + " كرت مكافأة" + (duplicateCount > 0 ? " | تم تجاهل مكرر: " + duplicateCount : ""));
-                rewardsPanelTab = "gift";
-                showRewardsSettings();
-            } else {
-                added = AppStore.importCards(this, selectedAmount, lines, getFileName(uri));
-                toast("تم استيراد " + added + " كرت" + (duplicateCount > 0 ? " | تم تجاهل مكرر: " + duplicateCount : ""));
-                showHome();
+        final boolean rewardMode = pendingRewardImport;
+        final int rewardAmount = pendingRewardImportAmount;
+        final int amount = selectedAmount;
+        final String sourceName = getFileName(uri);
+        runPerformanceTask("جاري استيراد الكروت في الخلفية...", () -> {
+            ArrayList<String> lines = new ArrayList<>();
+            try {
+                InputStream in = getContentResolver().openInputStream(uri);
+                BufferedReader reader = new BufferedReader(new InputStreamReader(in));
+                String line;
+                while ((line = reader.readLine()) != null) collectCardsFromTextLine(lines, line);
+                reader.close();
+                int duplicateCount = AppStore.duplicateCardCount(this, lines);
+                if (rewardMode) {
+                    final int added = AppStore.importRewardCards(this, rewardAmount, lines, sourceName);
+                    runOnUiThread(() -> {
+                        pendingRewardImport = false;
+                        toast("تم استيراد " + added + " كرت مكافأة" + (duplicateCount > 0 ? " | تم تجاهل مكرر: " + duplicateCount : ""));
+                        rewardsPanelTab = "gift";
+                        showRewardsSettings();
+                    });
+                } else {
+                    final int added = AppStore.importCards(this, amount, lines, sourceName);
+                    runOnUiThread(() -> { toast("تم استيراد " + added + " كرت" + (duplicateCount > 0 ? " | تم تجاهل مكرر: " + duplicateCount : "")); showHome(); });
+                }
+            } catch (Exception e) {
+                runOnUiThread(() -> { pendingRewardImport = false; toast("فشل قراءة الملف: " + e.getMessage()); });
             }
-        } catch (Exception e) {
-            pendingRewardImport = false;
-            toast("فشل قراءة الملف: " + e.getMessage());
-        }
+        });
     }
 
     private void importFromExcelUri(Uri uri) {
-        ArrayList<String> cards = new ArrayList<>();
-        String name = getFileName(uri).toLowerCase(Locale.US);
-        try {
-            InputStream in = getContentResolver().openInputStream(uri);
-            if (name.endsWith(".xlsx")) {
-                cards.addAll(readXlsxCells(in));
-            } else {
-                BufferedReader reader = new BufferedReader(new InputStreamReader(in, "UTF-8"));
-                String line;
-                while ((line = reader.readLine()) != null) {
-                    collectCardsFromTextLine(cards, line);
+        final boolean rewardMode = pendingRewardImport;
+        final int rewardAmount = pendingRewardImportAmount;
+        final int amount = selectedAmount;
+        final String sourceName = getFileName(uri);
+        runPerformanceTask("جاري استيراد Excel/CSV في الخلفية...", () -> {
+            ArrayList<String> cards = new ArrayList<>();
+            String name = sourceName.toLowerCase(Locale.US);
+            try {
+                InputStream in = getContentResolver().openInputStream(uri);
+                if (name.endsWith(".xlsx")) {
+                    cards.addAll(readXlsxCells(in));
+                } else {
+                    BufferedReader reader = new BufferedReader(new InputStreamReader(in, "UTF-8"));
+                    String line;
+                    while ((line = reader.readLine()) != null) {
+                        collectCardsFromTextLine(cards, line);
+                    }
+                    reader.close();
                 }
-                reader.close();
+                int duplicateCount = AppStore.duplicateCardCount(this, cards);
+                if (rewardMode) {
+                    final int added = AppStore.importRewardCards(this, rewardAmount, cards, sourceName);
+                    runOnUiThread(() -> {
+                        pendingRewardImport = false;
+                        toast("تم استيراد " + added + " كرت مكافأة من Excel/CSV" + (duplicateCount > 0 ? " | تم تجاهل مكرر: " + duplicateCount : ""));
+                        rewardsPanelTab = "gift";
+                        showRewardsSettings();
+                    });
+                } else {
+                    final int added = AppStore.importCards(this, amount, cards, sourceName);
+                    runOnUiThread(() -> { toast("تم استيراد " + added + " كرت من Excel/CSV" + (duplicateCount > 0 ? " | تم تجاهل مكرر: " + duplicateCount : "")); showHome(); });
+                }
+            } catch (Exception e) {
+                runOnUiThread(() -> { pendingRewardImport = false; toast("فشل قراءة ملف Excel/CSV: " + e.getMessage()); });
             }
-            int duplicateCount = AppStore.duplicateCardCount(this, cards);
-            int added;
-            if (pendingRewardImport) {
-                added = AppStore.importRewardCards(this, pendingRewardImportAmount, cards, getFileName(uri));
-                pendingRewardImport = false;
-                toast("تم استيراد " + added + " كرت مكافأة من Excel/CSV" + (duplicateCount > 0 ? " | تم تجاهل مكرر: " + duplicateCount : ""));
-                rewardsPanelTab = "gift";
-                showRewardsSettings();
-            } else {
-                added = AppStore.importCards(this, selectedAmount, cards, getFileName(uri));
-                toast("تم استيراد " + added + " كرت من Excel/CSV" + (duplicateCount > 0 ? " | تم تجاهل مكرر: " + duplicateCount : ""));
-                showHome();
-            }
-        } catch (Exception e) {
-            pendingRewardImport = false;
-            toast("فشل قراءة ملف Excel/CSV: " + e.getMessage());
-        }
+        });
     }
 
     private ArrayList<String> readXlsxCells(InputStream input) throws Exception {
@@ -5463,6 +5518,17 @@ public class MainActivity extends Activity {
         return new SimpleDateFormat("yyyy/MM/dd", Locale.US).format(cal.getTime());
     }
 
+    private void runPerformanceTask(String waitMessage, Runnable task) {
+        toast(waitMessage == null ? "جاري المعالجة في الخلفية..." : waitMessage);
+        performanceExecutor.execute(() -> {
+            try {
+                task.run();
+            } catch (Exception ex) {
+                runOnUiThread(() -> toast("فشل التنفيذ: " + ex.getMessage()));
+            }
+        });
+    }
+
     private void showCustomPeriodReportDialog() {
         LinearLayout layout = new LinearLayout(this);
         layout.setOrientation(LinearLayout.VERTICAL);
@@ -5482,9 +5548,11 @@ public class MainActivity extends Activity {
 
     private void shareSingleOperationPdf(OperationLog log) {
         if (log == null) return;
-        String report = buildSingleOperationReport(log);
-        File file = createTextPdfFile("تقرير عملية", report, "operation_report");
-        if (file != null) sharePdfFile(file, "تقرير عملية");
+        runPerformanceTask("جاري إنشاء تقرير العملية في الخلفية...", () -> {
+            String report = buildSingleOperationReport(log);
+            File file = createTextPdfFile("تقرير عملية", report, "operation_report");
+            if (file != null) runOnUiThread(() -> sharePdfFile(file, "تقرير عملية"));
+        });
     }
 
     private String buildSingleOperationReport(OperationLog log) {
@@ -5512,15 +5580,19 @@ public class MainActivity extends Activity {
 
     private void shareTrustedAgentReportPdf(TrustedCreditAgent a, String from, String to) {
         if (a == null) return;
-        String report = buildTrustedCreditAgentDateReport(a, from, to);
-        File file = createTextPdfFile("تقرير نقطة البيع", report, "pos_report");
-        if (file != null) sharePdfFile(file, "تقرير نقطة البيع: " + a.name);
+        runPerformanceTask("جاري إنشاء تقرير نقطة البيع في الخلفية...", () -> {
+            String report = buildTrustedCreditAgentDateReport(a, from, to);
+            File file = createTextPdfFile("تقرير نقطة البيع", report, "pos_report");
+            if (file != null) runOnUiThread(() -> sharePdfFile(file, "تقرير نقطة البيع: " + a.name));
+        });
     }
 
     private void sharePeriodReportPdf(String title, String from, String to) {
-        String report = buildPeriodReport(title, from, to);
-        File file = createTextPdfFile(title, report, "period_report");
-        if (file != null) sharePdfFile(file, title);
+        runPerformanceTask("جاري إنشاء تقرير PDF في الخلفية...", () -> {
+            String report = buildPeriodReport(title, from, to);
+            File file = createTextPdfFile(title, report, "period_report");
+            if (file != null) runOnUiThread(() -> sharePdfFile(file, title));
+        });
     }
 
     private String buildPeriodReport(String title, String from, String to) {
@@ -5646,10 +5718,10 @@ public class MainActivity extends Activity {
             OutputStream out = new java.io.FileOutputStream(file);
             st.pdf.writeTo(out);
             out.close();
-            toast("تم إنشاء تقرير PDF احترافي");
+            runOnUiThread(() -> toast("تم إنشاء تقرير PDF احترافي"));
             return file;
         } catch (Exception e) {
-            toast("فشل إنشاء PDF: " + e.getMessage());
+            runOnUiThread(() -> toast("فشل إنشاء PDF: " + e.getMessage()));
             try { if (st.page != null) st.pdf.finishPage(st.page); } catch (Exception ignored) {}
             return null;
         } finally {

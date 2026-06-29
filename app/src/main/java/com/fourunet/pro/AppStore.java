@@ -12,6 +12,7 @@ import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.Date;
 import java.util.HashSet;
+import java.util.HashMap;
 import java.util.Locale;
 import java.util.UUID;
 import java.security.MessageDigest;
@@ -112,6 +113,19 @@ class AppStore {
 
     private static final String DEFAULT_NETWORK_NAME = "فور يو";
     private static final String DEFAULT_ADMIN_PHONE = "";
+
+    // Stage 13.6 STRONG PERFORMANCE ENGINE
+    // SharedPreferences remains the current storage engine, so we reduce parsing and repeated full scans
+    // through safe in-memory caches, stock summaries, and paged readers.
+    static final int PERFORMANCE_LOG_PAGE_SIZE = 50;
+    static final int PERFORMANCE_CARD_PAGE_SIZE = 80;
+    private static final int MAX_FAST_LOGS = 1500;
+    private static String cardsCacheJson = null;
+    private static ArrayList<CardItem> cardsCache = null;
+    private static HashMap<Integer, StockCount> stockCountCache = null;
+    private static String logsCacheJson = null;
+    private static ArrayList<OperationLog> logsCache = null;
+
     private static final String OFFLINE_LIFETIME_SECRET = "ONLINE_V14_PRIVATE_LIFETIME_SECRET_776901570";
     private static final String OFFLINE_TRIAL_SECRET = "ONLINE_V29_PRIVATE_TRIAL_30_DAYS_SECRET_776901570";
     private static final String OFFLINE_ANNUAL_SECRET = "ONLINE_V29_PRIVATE_ANNUAL_365_DAYS_SECRET_776901570";
@@ -170,6 +184,27 @@ class AppStore {
     static final String DEFAULT_REWARD_POINTS_TEMPLATE = "نقاط:+{points} رصيد:{balance} باقي:{remain}";
     static final String DEFAULT_REWARD_SENT_TEMPLATE = "مبروك هديتك:{rewardCard} رصيد:{balance}";
     static final String DEFAULT_REWARD_PENDING_TEMPLATE = "وصلت للهدية، انتظر توفر الكروت";
+
+    private static class StockCount {
+        int total;
+        int sold;
+        int available;
+        int rewardTotal;
+        int rewardSold;
+        int rewardAvailable;
+    }
+
+    private static ArrayList<CardItem> copyCardList(ArrayList<CardItem> src) {
+        return src == null ? new ArrayList<CardItem>() : new ArrayList<CardItem>(src);
+    }
+
+    private static ArrayList<OperationLog> copyLogList(ArrayList<OperationLog> src) {
+        return src == null ? new ArrayList<OperationLog>() : new ArrayList<OperationLog>(src);
+    }
+
+    static int performanceLogPageSize() { return PERFORMANCE_LOG_PAGE_SIZE; }
+
+    static int performanceCardPageSize() { return PERFORMANCE_CARD_PAGE_SIZE; }
 
     static SharedPreferences prefs(Context c) {
         return c.getSharedPreferences(PREF, Context.MODE_PRIVATE);
@@ -1246,9 +1281,11 @@ class AppStore {
     }
 
     static ArrayList<CardItem> loadCards(Context c) {
+        String raw = prefs(c).getString(KEY_CARDS, "[]");
+        if (raw != null && raw.equals(cardsCacheJson) && cardsCache != null) return copyCardList(cardsCache);
         ArrayList<CardItem> list = new ArrayList<>();
         try {
-            JSONArray arr = new JSONArray(prefs(c).getString(KEY_CARDS, "[]"));
+            JSONArray arr = new JSONArray(raw == null ? "[]" : raw);
             for (int i = 0; i < arr.length(); i++) {
                 JSONObject o = arr.getJSONObject(i);
                 String createdAt = o.optString("createdAt", "");
@@ -1264,8 +1301,17 @@ class AppStore {
                         createdAt
                 ));
             }
+            cardsCacheJson = raw;
+            cardsCache = copyCardList(list);
+            stockCountCache = null;
         } catch (Exception ignored) {}
         return list;
+    }
+
+    private static void invalidateCardsCache() {
+        cardsCacheJson = null;
+        cardsCache = null;
+        stockCountCache = null;
     }
 
     static void saveCards(Context c, ArrayList<CardItem> cards) {
@@ -1284,6 +1330,7 @@ class AppStore {
                 arr.put(o);
             }
             prefs(c).edit().putString(KEY_CARDS, arr.toString()).apply();
+            invalidateCardsCache();
         } catch (Exception ignored) {}
     }
 
@@ -1541,53 +1588,88 @@ class AppStore {
         return true;
     }
 
-    static ArrayList<CardItem> cardsByAmount(Context c, int amount) {
-        ArrayList<CardItem> out = new ArrayList<>();
+    private static HashMap<Integer, StockCount> stockCounts(Context c) {
+        if (stockCountCache != null) return stockCountCache;
+        HashMap<Integer, StockCount> map = new HashMap<>();
         for (CardItem item : loadCards(c)) {
-            if (item.amount == amount && !isRewardStock(item)) out.add(item);
+            if (item == null) continue;
+            StockCount sc = map.get(item.amount);
+            if (sc == null) { sc = new StockCount(); map.put(item.amount, sc); }
+            if (isRewardStock(item)) {
+                sc.rewardTotal++;
+                if (item.sold) sc.rewardSold++; else sc.rewardAvailable++;
+            } else {
+                sc.total++;
+                if (item.sold) sc.sold++; else sc.available++;
+            }
+        }
+        stockCountCache = map;
+        return map;
+    }
+
+    private static StockCount stockCount(Context c, int amount) {
+        StockCount sc = stockCounts(c).get(amount);
+        return sc == null ? new StockCount() : sc;
+    }
+
+    static ArrayList<CardItem> cardsByAmount(Context c, int amount) {
+        return cardsByAmountLimited(c, amount, 0, Integer.MAX_VALUE);
+    }
+
+    static ArrayList<CardItem> cardsByAmountLimited(Context c, int amount, int offset, int limit) {
+        ArrayList<CardItem> out = new ArrayList<>();
+        int safeOffset = Math.max(0, offset);
+        int safeLimit = limit <= 0 ? PERFORMANCE_CARD_PAGE_SIZE : limit;
+        int skipped = 0;
+        for (CardItem item : loadCards(c)) {
+            if (item.amount == amount && !isRewardStock(item)) {
+                if (skipped < safeOffset) { skipped++; continue; }
+                out.add(item);
+                if (out.size() >= safeLimit) break;
+            }
         }
         return out;
     }
 
+    static int cardsByAmountCount(Context c, int amount) {
+        return stockCount(c, amount).total;
+    }
+
     static int availableCount(Context c, int amount) {
-        int total = 0;
-        for (CardItem item : loadCards(c)) if (item.amount == amount && !item.sold && !isRewardStock(item)) total++;
-        return total;
+        return stockCount(c, amount).available;
     }
 
     static int soldCount(Context c, int amount) {
-        int total = 0;
-        for (CardItem item : loadCards(c)) if (item.amount == amount && item.sold && !isRewardStock(item)) total++;
-        return total;
+        return stockCount(c, amount).sold;
     }
 
     static int rewardAvailableCount(Context c, int amount) {
-        int total = 0;
-        for (CardItem item : loadCards(c)) if (item.amount == amount && !item.sold && isRewardStock(item)) total++;
-        return total;
+        return stockCount(c, amount).rewardAvailable;
     }
 
     static int rewardTotalCount(Context c, int amount) {
-        int total = 0;
-        for (CardItem item : loadCards(c)) if (item.amount == amount && isRewardStock(item)) total++;
-        return total;
+        return stockCount(c, amount).rewardTotal;
     }
 
     static int rewardSentCount(Context c, int amount) {
-        int total = 0;
-        for (CardItem item : loadCards(c)) if (item.amount == amount && item.sold && isRewardStock(item)) total++;
-        return total;
+        return stockCount(c, amount).rewardSold;
     }
 
     static int totalAvailable(Context c) {
         int total = 0;
-        for (CardItem item : loadCards(c)) if (!item.sold && !isRewardStock(item)) total++;
+        for (StockCount sc : stockCounts(c).values()) total += sc.available;
         return total;
     }
 
     static int totalSold(Context c) {
         int total = 0;
-        for (CardItem item : loadCards(c)) if (item.sold && !isRewardStock(item)) total++;
+        for (StockCount sc : stockCounts(c).values()) total += sc.sold;
+        return total;
+    }
+
+    static int totalCardsCount(Context c) {
+        int total = 0;
+        for (StockCount sc : stockCounts(c).values()) total += sc.total;
         return total;
     }
 
@@ -1844,9 +1926,11 @@ class AppStore {
     }
 
     static ArrayList<OperationLog> loadLogs(Context c) {
+        String raw = prefs(c).getString(KEY_LOGS, "[]");
+        if (raw != null && raw.equals(logsCacheJson) && logsCache != null) return copyLogList(logsCache);
         ArrayList<OperationLog> list = new ArrayList<>();
         try {
-            JSONArray arr = new JSONArray(prefs(c).getString(KEY_LOGS, "[]"));
+            JSONArray arr = new JSONArray(raw == null ? "[]" : raw);
             for (int i = 0; i < arr.length(); i++) {
                 JSONObject o = arr.getJSONObject(i);
                 list.add(new OperationLog(
@@ -1862,8 +1946,32 @@ class AppStore {
                         o.optString("createdAt")
                 ));
             }
+            logsCacheJson = raw;
+            logsCache = copyLogList(list);
         } catch (Exception ignored) {}
         return list;
+    }
+
+    private static void invalidateLogsCache() {
+        logsCacheJson = null;
+        logsCache = null;
+    }
+
+    static int logsCount(Context c) {
+        return loadLogs(c).size();
+    }
+
+    static ArrayList<OperationLog> loadRecentLogs(Context c, int max) {
+        return loadLogsPage(c, 0, max <= 0 ? PERFORMANCE_LOG_PAGE_SIZE : max);
+    }
+
+    static ArrayList<OperationLog> loadLogsPage(Context c, int offset, int limit) {
+        ArrayList<OperationLog> all = loadLogs(c);
+        ArrayList<OperationLog> out = new ArrayList<>();
+        int start = Math.max(0, offset);
+        int end = Math.min(all.size(), start + (limit <= 0 ? PERFORMANCE_LOG_PAGE_SIZE : limit));
+        for (int i = start; i < end; i++) out.add(all.get(i));
+        return out;
     }
 
     static void saveLogs(Context c, ArrayList<OperationLog> logs) {
@@ -1884,13 +1992,14 @@ class AppStore {
                 arr.put(o);
             }
             prefs(c).edit().putString(KEY_LOGS, arr.toString()).apply();
+            invalidateLogsCache();
         } catch (Exception ignored) {}
     }
 
     static void addLog(Context c, OperationLog log) {
         ArrayList<OperationLog> logs = loadLogs(c);
         logs.add(0, log);
-        while (logs.size() > 1000) logs.remove(logs.size() - 1);
+        while (logs.size() > MAX_FAST_LOGS) logs.remove(logs.size() - 1);
         saveLogs(c, logs);
     }
 
@@ -1952,6 +2061,7 @@ class AppStore {
 
     static void clearLogs(Context c) {
         prefs(c).edit().putString(KEY_LOGS, "[]").apply();
+        invalidateLogsCache();
     }
 
     static int sentOperationsCount(Context c) {
