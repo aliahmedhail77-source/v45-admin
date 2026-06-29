@@ -200,7 +200,7 @@ class AppStore {
                 }
             }
             db.setTransactionSuccessful();
-            sp.edit().putBoolean(KEY_CARDS_DB_READY, true).remove(KEY_CARDS).apply();
+            sp.edit().putBoolean(KEY_CARDS_DB_READY, true).remove(KEY_CARDS).commit();
             cardsCacheJson = null;
             cardsCache = null;
             stockCountCache = null;
@@ -237,6 +237,119 @@ class AppStore {
         cv.put("source", card.source == null ? "" : card.source);
         cv.put("created_at", card.createdAt == null || card.createdAt.trim().isEmpty() ? now() : card.createdAt);
         return cv;
+    }
+
+
+    // STAGE 13.6.2 HOTFIX:
+    // If the first SQLite migration is interrupted on a device that already has a very large
+    // legacy SharedPreferences card list, automatic selling must not stop with "no stock".
+    // These tiny fallbacks are used only while the DB-ready flag is still false.
+    private static boolean hasLegacyCardsPrefs(Context c) {
+        try {
+            String raw = prefs(c).getString(KEY_CARDS, "[]");
+            return raw != null && raw.trim().length() > 2;
+        } catch (Exception e) { return false; }
+    }
+
+    private static CardItem takeAvailableCardLegacyPrefs(Context c, int amount, String buyerPhone) {
+        ArrayList<CardItem> cards = new ArrayList<>();
+        CardItem selected = null;
+        try {
+            String raw = prefs(c).getString(KEY_CARDS, "[]");
+            JSONArray arr = new JSONArray(raw == null ? "[]" : raw);
+            String when = now();
+            for (int i = 0; i < arr.length(); i++) {
+                JSONObject o = arr.getJSONObject(i);
+                String createdAt = o.optString("createdAt", "");
+                if (createdAt.trim().isEmpty()) createdAt = o.optString("addedAt", "");
+                CardItem item = new CardItem(
+                        o.optString("id", UUID.randomUUID().toString()),
+                        o.optInt("amount"),
+                        o.optString("code"),
+                        o.optBoolean("sold"),
+                        o.optString("buyerPhone"),
+                        o.optString("soldAt"),
+                        o.optString("source"),
+                        createdAt
+                );
+                if (selected == null && item.amount == amount && !item.sold && !isRewardStock(item)) {
+                    item.sold = true;
+                    item.buyerPhone = buyerPhone == null ? "" : buyerPhone;
+                    item.soldAt = when;
+                    selected = item;
+                }
+                cards.add(item);
+            }
+            if (selected != null) {
+                JSONArray out = new JSONArray();
+                for (CardItem card : cards) {
+                    JSONObject o = new JSONObject();
+                    o.put("id", card.id);
+                    o.put("amount", card.amount);
+                    o.put("code", card.code);
+                    o.put("sold", card.sold);
+                    o.put("buyerPhone", card.buyerPhone == null ? "" : card.buyerPhone);
+                    o.put("soldAt", card.soldAt == null ? "" : card.soldAt);
+                    o.put("source", card.source == null ? "" : card.source);
+                    o.put("createdAt", card.createdAt == null ? "" : card.createdAt);
+                    out.put(o);
+                }
+                prefs(c).edit().putString(KEY_CARDS, out.toString()).commit();
+                invalidateCardsCache();
+            }
+        } catch (Exception ignored) {}
+        return selected;
+    }
+
+    private static ArrayList<CardItem> takeAvailableCardsAllOrNoneLegacyPrefs(Context c, int[] amounts, String buyerPhone) {
+        ArrayList<CardItem> cards = new ArrayList<>();
+        ArrayList<CardItem> selected = new ArrayList<>();
+        if (amounts == null || amounts.length == 0) return selected;
+        try {
+            String raw = prefs(c).getString(KEY_CARDS, "[]");
+            JSONArray arr = new JSONArray(raw == null ? "[]" : raw);
+            for (int i = 0; i < arr.length(); i++) {
+                JSONObject o = arr.getJSONObject(i);
+                String createdAt = o.optString("createdAt", "");
+                if (createdAt.trim().isEmpty()) createdAt = o.optString("addedAt", "");
+                cards.add(new CardItem(o.optString("id", UUID.randomUUID().toString()), o.optInt("amount"), o.optString("code"), o.optBoolean("sold"), o.optString("buyerPhone"), o.optString("soldAt"), o.optString("source"), createdAt));
+            }
+            HashSet<String> picked = new HashSet<>();
+            for (int amount : amounts) {
+                CardItem found = null;
+                for (CardItem item : cards) {
+                    if (item.amount == amount && !item.sold && !isRewardStock(item) && !picked.contains(item.id)) {
+                        found = item;
+                        break;
+                    }
+                }
+                if (found == null) return new ArrayList<>();
+                selected.add(found);
+                picked.add(found.id);
+            }
+            String when = now();
+            for (CardItem item : selected) {
+                item.sold = true;
+                item.buyerPhone = buyerPhone == null ? "" : buyerPhone;
+                item.soldAt = when;
+            }
+            JSONArray out = new JSONArray();
+            for (CardItem card : cards) {
+                JSONObject o = new JSONObject();
+                o.put("id", card.id);
+                o.put("amount", card.amount);
+                o.put("code", card.code);
+                o.put("sold", card.sold);
+                o.put("buyerPhone", card.buyerPhone == null ? "" : card.buyerPhone);
+                o.put("soldAt", card.soldAt == null ? "" : card.soldAt);
+                o.put("source", card.source == null ? "" : card.source);
+                o.put("createdAt", card.createdAt == null ? "" : card.createdAt);
+                out.put(o);
+            }
+            prefs(c).edit().putString(KEY_CARDS, out.toString()).commit();
+            invalidateCardsCache();
+            return selected;
+        } catch (Exception ignored) { return new ArrayList<>(); }
     }
 
     private static final String OFFLINE_LIFETIME_SECRET = "ONLINE_V14_PRIVATE_LIFETIME_SECRET_776901570";
@@ -1883,25 +1996,36 @@ class AppStore {
 
     static CardItem takeAvailableCard(Context c, int amount, String buyerPhone) {
         synchronized (AppStore.class) {
-            SQLiteDatabase db = cardDb(c);
+            SQLiteDatabase db = null;
             Cursor cur = null;
             try {
+                db = cardDb(c);
                 cur = db.query("cards", null,
                         "amount=? AND sold=0 AND (source IS NULL OR source NOT LIKE 'reward_stock%')",
                         new String[]{String.valueOf(amount)}, null, null, "rowid ASC", "1");
-                if (!cur.moveToFirst()) return null;
+                if (!cur.moveToFirst()) {
+                    if (!prefs(c).getBoolean(KEY_CARDS_DB_READY, false) && hasLegacyCardsPrefs(c)) {
+                        return takeAvailableCardLegacyPrefs(c, amount, buyerPhone);
+                    }
+                    return null;
+                }
                 CardItem selected = cardFromCursor(cur);
+                String when = now();
                 ContentValues cv = new ContentValues();
                 cv.put("sold", 1);
                 cv.put("buyer_phone", buyerPhone == null ? "" : buyerPhone);
-                cv.put("sold_at", now());
-                db.update("cards", cv, "id=?", new String[]{selected.id});
+                cv.put("sold_at", when);
+                int updated = db.update("cards", cv, "id=? AND sold=0", new String[]{selected.id});
+                if (updated <= 0) return null;
                 selected.sold = true;
                 selected.buyerPhone = buyerPhone == null ? "" : buyerPhone;
-                selected.soldAt = cv.getAsString("sold_at");
+                selected.soldAt = when;
                 invalidateCardsCache();
                 return selected;
             } catch (Exception e) {
+                if (!prefs(c).getBoolean(KEY_CARDS_DB_READY, false) && hasLegacyCardsPrefs(c)) {
+                    return takeAvailableCardLegacyPrefs(c, amount, buyerPhone);
+                }
                 return null;
             } finally {
                 if (cur != null) cur.close();
@@ -1928,7 +2052,12 @@ class AppStore {
                         if (!picked.contains(tmp.id)) { found = tmp; break; }
                     }
                     cur.close(); cur = null;
-                    if (found == null) return new ArrayList<>();
+                    if (found == null) {
+                        if (!prefs(c).getBoolean(KEY_CARDS_DB_READY, false) && hasLegacyCardsPrefs(c)) {
+                            return takeAvailableCardsAllOrNoneLegacyPrefs(c, amounts, buyerPhone);
+                        }
+                        return new ArrayList<>();
+                    }
                     selected.add(found);
                     picked.add(found.id);
                 }
@@ -1947,6 +2076,9 @@ class AppStore {
                 invalidateCardsCache();
                 return selected;
             } catch (Exception e) {
+                if (!prefs(c).getBoolean(KEY_CARDS_DB_READY, false) && hasLegacyCardsPrefs(c)) {
+                    return takeAvailableCardsAllOrNoneLegacyPrefs(c, amounts, buyerPhone);
+                }
                 return new ArrayList<>();
             } finally {
                 if (cur != null) cur.close();
