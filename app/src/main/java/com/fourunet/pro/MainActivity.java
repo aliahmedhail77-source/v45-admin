@@ -31,6 +31,7 @@ import android.text.TextPaint;
 import android.text.Editable;
 import android.text.TextWatcher;
 import android.view.Gravity;
+import android.view.MotionEvent;
 import android.view.View;
 import android.widget.*;
 
@@ -87,8 +88,8 @@ public class MainActivity extends Activity {
     String reviewFocusLogId = "";
     boolean appUnlocked = false;
 
-    // Stage 13.2 UI identity - Dark Neon Purple style.
-    // هذا تغيير شكلي فقط؛ لا يغير منطق السلف أو السداد أو SMS أو قاعدة البيانات.
+    // Stage 13.3 FULL UI REDESIGN - Dark Neon Purple style.
+    // هذا تغيير واجهات فقط؛ لا يغير منطق السلف أو السداد أو SMS أو قاعدة البيانات.
     final int purple = Color.rgb(155, 92, 255);          // Neon Purple
     final int purpleDark = Color.rgb(8, 10, 24);         // Deep app background
     final int purpleLight = Color.rgb(32, 231, 255);     // Neon Cyan accent
@@ -751,6 +752,19 @@ public class MainActivity extends Activity {
         return gd;
     }
 
+    private void applyNeonPress(View v) {
+        v.setOnTouchListener((view, event) -> {
+            if (event.getAction() == MotionEvent.ACTION_DOWN) {
+                view.animate().scaleX(1.035f).scaleY(1.035f).alpha(0.96f).setDuration(95).start();
+                if (Build.VERSION.SDK_INT >= 21) view.setElevation(dp(10));
+            } else if (event.getAction() == MotionEvent.ACTION_UP || event.getAction() == MotionEvent.ACTION_CANCEL) {
+                view.animate().scaleX(1f).scaleY(1f).alpha(1f).setDuration(120).start();
+                if (Build.VERSION.SDK_INT >= 21) view.setElevation(dp(4));
+            }
+            return false;
+        });
+    }
+
     private Typeface appTypeface(boolean bold) {
         return Typeface.create(bold ? "sans-serif-medium" : "sans-serif", bold ? Typeface.BOLD : Typeface.NORMAL);
     }
@@ -773,6 +787,7 @@ public class MainActivity extends Activity {
         LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, -2);
         lp.setMargins(0, 0, 0, dp(14));
         box.setLayoutParams(lp);
+        applyNeonPress(box);
         if (Build.VERSION.SDK_INT >= 21) box.setElevation(dp(4));
         return box;
     }
@@ -828,6 +843,7 @@ public class MainActivity extends Activity {
         int stroke = (bgColor == card || bgColor == card2 || bgColor == Color.TRANSPARENT) ? borderSoft : Color.argb(110, 255,255,255);
         b.setBackground(round(bgColor, dp(18), stroke, dp(1)));
         b.setOnClickListener(listener);
+        applyNeonPress(b);
         if (Build.VERSION.SDK_INT >= 21) b.setElevation(dp(2));
         return b;
     }
@@ -2671,18 +2687,21 @@ public class MainActivity extends Activity {
         e.setText(value == null ? "" : value);
         e.setGravity(Gravity.RIGHT);
         e.setInputType(inputType);
-        e.setTextColor(Color.rgb(20,20,28));
-        e.setHintTextColor(Color.rgb(115,115,130));
+        e.setTextColor(text);
+        e.setHintTextColor(muted);
         e.setTextSize(16);
-        e.setPadding(dp(12), 0, dp(12), 0);
-        e.setBackground(round(Color.WHITE, dp(12), Color.rgb(210, 205, 225), dp(1)));
+        e.setTypeface(appTypeface(false));
+        e.setSingleLine(false);
+        e.setPadding(dp(14), 0, dp(14), 0);
+        e.setBackground(round(Color.rgb(10, 14, 30), dp(16), Color.rgb(48, 62, 102), dp(1)));
         return e;
     }
 
     private void showLedgerCustomerDialog(LedgerCustomer old) {
         LinearLayout layout = new LinearLayout(this);
         layout.setOrientation(LinearLayout.VERTICAL);
-        layout.setPadding(dp(14), dp(8), dp(14), dp(4));
+        layout.setPadding(dp(16), dp(12), dp(16), dp(8));
+        layout.setBackgroundColor(bg);
         EditText name = ledgerEdit("اسم الزبون", old == null ? "" : old.name, InputType.TYPE_CLASS_TEXT);
         EditText phone = ledgerEdit("رقم الزبون 7xxxxxxxx", old == null ? "" : old.phone, InputType.TYPE_CLASS_PHONE);
         EditText limit = ledgerEdit("سقف السلفة", old == null ? "500" : String.valueOf(old.loanLimit), InputType.TYPE_CLASS_NUMBER);
@@ -2690,22 +2709,27 @@ public class MainActivity extends Activity {
         EditText credit = ledgerEdit("رصيد العميل", old == null ? "0" : String.valueOf(old.creditBalance), InputType.TYPE_CLASS_NUMBER);
         EditText notes = ledgerEdit("ملاحظات", old == null ? "" : old.notes, InputType.TYPE_CLASS_TEXT);
 
-        TextView modeTitle = tv("طريقة التعامل مع العميل", 15, Color.rgb(25,25,30), true);
+        TextView modeTitle = tv("طريقة التعامل مع العميل", 16, text, true);
         modeTitle.setPadding(0, dp(8), 0, dp(2));
         RadioGroup modes = new RadioGroup(this);
         modes.setOrientation(RadioGroup.VERTICAL);
         RadioButton autoFull = new RadioButton(this);
         autoFull.setId(1001);
         autoFull.setText("آلي كامل: يطلب كرت + يسدد + الزائد رصيد");
-        autoFull.setTextColor(Color.rgb(25,25,30));
+        autoFull.setTextColor(text);
         RadioButton settleOnly = new RadioButton(this);
         settleOnly.setId(1002);
         settleOnly.setText("إيقاف السلف / سداد فقط");
-        settleOnly.setTextColor(Color.rgb(25,25,30));
+        settleOnly.setTextColor(text);
         RadioButton stopped = new RadioButton(this);
         stopped.setId(1003);
         stopped.setText("موقوف: لا صرف ولا سداد تلقائي");
-        stopped.setTextColor(Color.rgb(25,25,30));
+        stopped.setTextColor(text);
+        if (Build.VERSION.SDK_INT >= 21) {
+            autoFull.setButtonTintList(android.content.res.ColorStateList.valueOf(neonCyan));
+            settleOnly.setButtonTintList(android.content.res.ColorStateList.valueOf(neonCyan));
+            stopped.setButtonTintList(android.content.res.ColorStateList.valueOf(neonCyan));
+        }
         modes.addView(autoFull);
         modes.addView(settleOnly);
         modes.addView(stopped);
@@ -2747,7 +2771,8 @@ public class MainActivity extends Activity {
     private void showLedgerEntryDialog() {
         LinearLayout layout = new LinearLayout(this);
         layout.setOrientation(LinearLayout.VERTICAL);
-        layout.setPadding(dp(14), dp(8), dp(14), dp(4));
+        layout.setPadding(dp(16), dp(12), dp(16), dp(8));
+        layout.setBackgroundColor(bg);
         EditText phone = ledgerEdit("رقم الزبون", "", InputType.TYPE_CLASS_PHONE);
         EditText desc = ledgerEdit("الملاحظة / البيان", "قيد يدوي", InputType.TYPE_CLASS_TEXT);
         EditText debit = ledgerEdit("مدين: يزيد الدين على الزبون", "0", InputType.TYPE_CLASS_NUMBER);
@@ -2755,6 +2780,7 @@ public class MainActivity extends Activity {
         Spinner method = new Spinner(this);
         String[] methods = new String[]{"قيد يدوي", "ون كاش", "جوالي", "جيب", "كريمي", "فلوسك", "عن طريق المحل", "إدارة"};
         method.setAdapter(new ArrayAdapter<String>(this, android.R.layout.simple_spinner_dropdown_item, methods));
+        method.setBackground(round(Color.rgb(10, 14, 30), dp(16), Color.rgb(48, 62, 102), dp(1)));
         layout.addView(phone);
         layout.addView(desc);
         layout.addView(debit);
