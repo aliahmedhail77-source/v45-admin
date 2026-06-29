@@ -99,11 +99,12 @@ public class MainActivity extends Activity {
     final ExecutorService performanceExecutor = Executors.newSingleThreadExecutor();
     private static final int IMPORT_BATCH_SIZE = 500;
     int logsVisibleLimit = AppStore.performanceLogPageSize();
+    int ledgerEntriesVisibleLimit = 5;
     int cardsVisibleLimit = AppStore.performanceCardPageSize();
     int cardsVisibleAmount = -1;
 
-    // Stage 13.7.3 DIRECT SALE UI AND LOW STOCK ALERT FIX.
-    // تحسين البيع المباشر، وضوح الألوان، وتنبيه المخزون المنخفض بدون لمس إرسال الكروت الآلي.
+    // Stage 13.8 REPORTS LOGS WALLET REVIEW CLEANUP.
+    // تنظيف التقارير والسجلات، إخفاء سجلات الطابور التقنية، تحسين الدفتر والمراجعة، ورسائل السداد والتعبئة.
 
     // Stage 13.6 STRONG PERFORMANCE ENGINE.
     // عرض البيانات بالدفعات وتشغيل التقارير الثقيلة في الخلفية.
@@ -1166,7 +1167,7 @@ public class MainActivity extends Activity {
 
     private View recentTransactionsCard() {
         LinearLayout box = cardBox();
-        ArrayList<OperationLog> logs = AppStore.loadRecentLogs(this, 4);
+        ArrayList<OperationLog> logs = AppStore.loadRecentVisibleLogs(this, 4);
         if (logs.isEmpty()) {
             box.addView(small("لا توجد عمليات حديثة حتى الآن."));
             return box;
@@ -1874,14 +1875,14 @@ public class MainActivity extends Activity {
     private void showLogs() {
         setTab("logs");
         clear();
-        content.addView(title("السجلات والتقارير"));
+        content.addView(title("السجلات"));
 
         LinearLayout report = cardBox();
-        report.addView(tv("تقرير PDF", 17, text, true));
-        report.addView(small("يمكن تنزيل تقرير إجمالي مفصل مقسم إلى مربعات لكل فئة، أو تقرير مختصر، أو تقرير لفئة واحدة فقط."));
-        report.addView(action("تقرير إجمالي مفصل حسب الفئات", purple, Color.WHITE, v -> startPdfDownload(-1, false)));
-        report.addView(action("تقرير إجمالي مختصر", card2, text, v -> startPdfDownload(-1, true)));
-        report.addView(action("تقرير PDF لفئة محددة", card2, text, v -> showPdfCategoryDialog()));
+        report.addView(tv("تقرير العمليات", 17, text, true));
+        report.addView(small("تقرير واحد عام للعمليات مع الإجمالي والرصيد قبل/بعد، بدون تقرير إجراءات العميل وبدون إنشاء تقرير منفصل لكل عملية."));
+        report.addView(action("تقرير العمليات المفصل", purple, Color.WHITE, v -> startPdfDownload(-1, false)));
+        report.addView(action("تقرير العمليات المختصر", card2, text, v -> startPdfDownload(-1, true)));
+        report.addView(action("تقرير لفئة محددة", card2, text, v -> showPdfCategoryDialog()));
         report.addView(separator());
         report.addView(tv("تقارير المراجعة والمتابعة", 16, text, true));
         report.addView(small("تقارير PDF منظمة يمكن مشاركتها عبر واتساب: يومي، أسبوعي، شهري، أو فترة مخصصة."));
@@ -1892,14 +1893,14 @@ public class MainActivity extends Activity {
         reportQuick.addView(action("شهري PDF", card2, text, v -> sharePeriodReportPdf("تقرير شهري", firstDayOfThisMonth(), todayDate())), new LinearLayout.LayoutParams(0, dp(50), 1));
         report.addView(reportQuick);
         report.addView(action("تقرير PDF حسب تاريخ مخصص", purple, Color.WHITE, v -> showCustomPeriodReportDialog()));
-        report.addView(action("حذف كل إشعارات السداد", Color.rgb(82,30,42), Color.WHITE, v -> confirmClearLogs()));
+        report.addView(action("حذف سجلات العمليات الظاهرة", Color.rgb(82,30,42), Color.WHITE, v -> confirmClearLogs()));
         content.addView(report);
 
-        int totalLogs = AppStore.logsCount(this);
-        ArrayList<OperationLog> logs = AppStore.loadRecentLogs(this, logsVisibleLimit);
+        int totalLogs = AppStore.visibleLogsCount(this);
+        ArrayList<OperationLog> logs = AppStore.loadRecentVisibleLogs(this, logsVisibleLimit);
         if (logs.isEmpty()) {
             LinearLayout empty = cardBox();
-            empty.addView(small("لا توجد عمليات حتى الآن."));
+            empty.addView(small("لا توجد سجلات عمليات حتى الآن."));
             content.addView(empty);
             return;
         }
@@ -1912,10 +1913,10 @@ public class MainActivity extends Activity {
         }
 
         LinearLayout perf = cardBox();
-        perf.addView(tv("محرك الأداء", 16, text, true));
-        perf.addView(small("المعروض الآن: " + logs.size() + " من " + totalLogs + " عملية. يتم تحميل السجل بالدفعات بدل فتح كل العمليات مرة واحدة."));
+        perf.addView(tv("عرض السجلات", 16, text, true));
+        perf.addView(small("المعروض الآن: " + logs.size() + " من " + totalLogs + " سجل مفيد. تم إخفاء رسائل الطابور والقراءة الداخلية غير المتعلقة بالسداد أو البيع."));
         if (totalLogs > logs.size()) {
-            perf.addView(action("تحميل " + AppStore.performanceLogPageSize() + " عملية أخرى", card2, text, v -> {
+            perf.addView(action("تحميل " + AppStore.performanceLogPageSize() + " سجل آخر", card2, text, v -> {
                 logsVisibleLimit += AppStore.performanceLogPageSize();
                 showLogs();
             }));
@@ -1952,7 +1953,7 @@ public class MainActivity extends Activity {
                 tools.addView(wa, toolLp);
                 box.addView(tools);
             }
-            box.addView(action("📄 تقرير العملية PDF / واتساب", purple, Color.WHITE, v -> shareSingleOperationPdf(log)));
+            // Stage 13.8: لا ننشئ تقريرًا منفصلًا لكل عملية حتى يبقى حجم الملفات صغيرًا.
             box.addView(action("حذف إشعار السداد", Color.rgb(82,30,42), Color.WHITE, v -> confirmDeleteLog(log)));
             content.addView(box);
         }
@@ -2470,7 +2471,7 @@ public class MainActivity extends Activity {
         pendingReportSummaryOnly = summaryOnly;
         String stamp = new SimpleDateFormat("yyyyMMdd_HHmm", Locale.US).format(new Date());
         String mode = summaryOnly ? "summary" : "details";
-        String name = amount < 0 ? "4U_NET_report_all_" + mode + "_" + stamp + ".pdf" : "4U_NET_report_" + amount + "_" + mode + "_" + stamp + ".pdf";
+        String name = amount < 0 ? "4U_NET_operations_report_" + mode + "_" + stamp + ".pdf" : "4U_NET_operations_report_" + amount + "_" + mode + "_" + stamp + ".pdf";
         Intent intent = new Intent(Intent.ACTION_CREATE_DOCUMENT);
         intent.addCategory(Intent.CATEGORY_OPENABLE);
         intent.setType("application/pdf");
@@ -2512,8 +2513,8 @@ public class MainActivity extends Activity {
 
     private void confirmDeleteLog(OperationLog log) {
         new AlertDialog.Builder(this)
-                .setTitle("حذف إشعار السداد")
-                .setMessage("سيتم حذف الإشعار من السجل فقط، ولن يتم إرجاع الكرت إلى المتاح.")
+                .setTitle("حذف سجل عملية")
+                .setMessage("سيتم حذف هذا السجل فقط، ولن يتم إرجاع الكرت إلى المتاح.")
                 .setPositiveButton("موافق، حذف", (d,w) -> { AppStore.deleteLog(this, log.id); showLogs(); })
                 .setNegativeButton("إلغاء", null)
                 .show();
@@ -2521,8 +2522,8 @@ public class MainActivity extends Activity {
 
     private void confirmClearLogs() {
         new AlertDialog.Builder(this)
-                .setTitle("حذف كل إشعارات السداد")
-                .setMessage("سيتم حذف سجلات العمليات فقط. الكروت المباعة ستبقى مباعة حتى لا يحدث تكرار بيع.")
+                .setTitle("حذف سجلات العمليات")
+                .setMessage("سيتم حذف سجلات العمليات الظاهرة فقط. الكروت المباعة ستبقى مباعة حتى لا يحدث تكرار بيع.")
                 .setPositiveButton("موافق، حذف", (d,w) -> { AppStore.clearLogs(this); showLogs(); })
                 .setNegativeButton("إلغاء", null)
                 .show();
@@ -2534,14 +2535,14 @@ public class MainActivity extends Activity {
 
     private void writePdfReport(Uri uri, int amountFilter, boolean summaryOnly) {
         runPerformanceTask("جاري حفظ تقرير PDF في الخلفية...", () -> {
-            String title = amountFilter < 0 ? "تقرير مبيعات كل الفئات" : "تقرير مبيعات فئة " + amountFilter + " ريال";
+            String title = amountFilter < 0 ? "تقرير العمليات" : "تقرير عمليات فئة " + amountFilter + " ريال";
             String report = buildCardsSalesPdfReportText(title, amountFilter, summaryOnly);
             writeStyledPdfToUri(uri, title, report);
         });
     }
 
     private String buildCardsSalesPdfReportText(String title, int amountFilter, boolean summaryOnly) {
-        ArrayList<OperationLog> all = AppStore.loadLogs(this);
+        ArrayList<OperationLog> all = AppStore.loadVisibleLogs(this);
         ArrayList<OperationLog> logs = new ArrayList<>();
         for (OperationLog log : all) if (amountFilter < 0 || log.amount == amountFilter) logs.add(log);
 
@@ -2569,12 +2570,12 @@ public class MainActivity extends Activity {
 
         String range = amountFilter < 0 ? "إجمالي كل الفئات" : "فئة " + amountFilter + " ريال";
         StringBuilder out = new StringBuilder();
-        out.append(title == null ? "تقرير مبيعات" : title).append("\n");
+        out.append(title == null ? "تقرير العمليات" : title).append("\n");
         out.append("==============================\n");
         out.append("النطاق: ").append(range).append("\n");
         out.append("نوع التقرير: ").append(summaryOnly ? "مختصر" : "مفصل").append("\n");
         out.append("تاريخ إنشاء التقرير: ").append(AppStore.now()).append("\n");
-        out.append("طريقة العرض: PDF احترافي منظم بترتيب الأعمدة المطلوب\n");
+        out.append("طريقة العرض: تقرير عمليات مختصر ومنظم بحجم صغير\n");
         out.append("------------------------------\n");
         out.append("الملخص\n");
         out.append("إجمالي الكروت: ").append(totalCards).append("\n");
@@ -2584,7 +2585,7 @@ public class MainActivity extends Activity {
         out.append("عمليات تحتاج مراجعة: ").append(reviewOps).append("\n");
         out.append("عمليات فاشلة/مرفوضة: ").append(failedOps).append("\n");
         out.append("إجمالي مبالغ العمليات الناجحة: ").append(totalAmount).append(" ريال\n");
-        out.append("عدد إشعارات السداد في التقرير: ").append(logs.size()).append("\n");
+        out.append("عدد سجلات العمليات في التقرير: ").append(logs.size()).append("\n");
         out.append("==============================\n");
         out.append(amountFilter < 0 ? "ملخص الفئات\n" : "ملخص الفئة\n");
         out.append("------------------------------\n");
@@ -2613,7 +2614,7 @@ public class MainActivity extends Activity {
         }
 
         if (summaryOnly) {
-            out.append("ملاحظة: اختر التقرير المفصل لعرض بيانات العمليات والكروت والرسائل.\n");
+            out.append("ملاحظة: التقرير المختصر يعرض الإجمالي فقط لتقليل حجم الملف.\n");
             out.append(AppStore.getNetworkName(this)).append("\n");
             return out.toString();
         }
@@ -2700,7 +2701,6 @@ public class MainActivity extends Activity {
         info.addView(small("رابط ملف التحديث الحالي:\n" + AppStore.getUpdateManifestUrl(this)));
         info.addView(action("🔄 فحص التحديثات الآن", purple, Color.WHITE, v -> checkForUpdateNow()));
         info.addView(action("تعديل رابط ملف التحديث", card2, text, v -> showUpdateManifestUrlDialog()));
-        info.addView(action("رجوع للإعدادات", card2, text, v -> showSettings()));
         content.addView(info);
 
         LinearLayout note = cardBox();
@@ -2901,9 +2901,9 @@ public class MainActivity extends Activity {
         content.addView(updates);
 
         LinearLayout trusted = cardBox();
-        trusted.addView(tv("إدارة المحافظ والأسماء الموثوقة", 17, text, true));
+        trusted.addView(tv("إدارة البنوك والمحافظ والأسماء الموثوقة", 17, text, true));
         trusted.addView(small("أضف أي محفظة بنفس نظام ون كاش مثل floosk أو كاش: اسم المحفظة + كلمات التعرف + الاسم الظاهر في رسالة المحفظة + رقم إرسال الكرت."));
-        trusted.addView(action("فتح إدارة المحافظ", purple, Color.WHITE, v -> showTrustedContacts()));
+        trusted.addView(action("🏦 فتح إدارة البنوك والمحافظ", purple, Color.WHITE, v -> showTrustedContacts()));
         content.addView(trusted);
 
         LinearLayout creditAgents = cardBox();
@@ -2944,11 +2944,7 @@ public class MainActivity extends Activity {
         actions.addView(action("إعدادات", purple, Color.WHITE, v -> showSmartLedgerSettings()), new LinearLayout.LayoutParams(0, dp(50), 1));
         actions.addView(action("زبون جديد", gold, Color.rgb(35,24,8), v -> showLedgerCustomerDialog(null)), new LinearLayout.LayoutParams(0, dp(50), 1));
         head.addView(actions);
-        LinearLayout actions2 = new LinearLayout(this);
-        actions2.setOrientation(LinearLayout.HORIZONTAL);
-        actions2.addView(action("قيد يومي", card2, text, v -> showLedgerEntryDialog()), new LinearLayout.LayoutParams(0, dp(50), 1));
-        actions2.addView(action("رجوع للضبط", card2, text, v -> showSettings()), new LinearLayout.LayoutParams(0, dp(50), 1));
-        head.addView(actions2);
+        head.addView(action("قيد يومي", card2, text, v -> showLedgerEntryDialog()), new LinearLayout.LayoutParams(-1, dp(50)));
         content.addView(head);
 
         LinearLayout help = cardBox();
@@ -2969,9 +2965,18 @@ public class MainActivity extends Activity {
         LinearLayout entries = cardBox();
         entries.addView(tv("آخر القيود", 17, text, true));
         ArrayList<LedgerEntry> es = AppStore.loadLedgerEntries(this);
-        if (es.isEmpty()) entries.addView(small("لا توجد قيود محاسبية حتى الآن."));
-        int max = Math.min(8, es.size());
-        for (int i = 0; i < max; i++) entries.addView(ledgerEntryRow(es.get(i)));
+        if (es.isEmpty()) {
+            entries.addView(small("لا توجد قيود محاسبية حتى الآن."));
+        } else {
+            int max = Math.min(Math.max(5, ledgerEntriesVisibleLimit), es.size());
+            for (int i = 0; i < max; i++) entries.addView(ledgerEntryRow(es.get(i)));
+            if (es.size() > max) {
+                entries.addView(action("المزيد - عرض 20 قيد إضافي", card2, text, v -> {
+                    ledgerEntriesVisibleLimit += 20;
+                    showSmartLedger();
+                }), new LinearLayout.LayoutParams(-1, dp(50)));
+            }
+        }
         content.addView(entries);
     }
 
@@ -3016,8 +3021,8 @@ public class MainActivity extends Activity {
         clear();
         content.addView(title("ضبط الدفتر المحاسبي الذكي"));
         LinearLayout box = cardBox();
-        box.addView(tv("نافذة الضبط العريضة", 18, text, true));
-        box.addView(small("هذه الإعدادات تضبط الدفتر فقط. الإيداعات من عملاء الدفتر تُحسب كسداد/رصيد، وطلبات الكروت تتم برسالة رقم الفئة من العميل."));
+        box.addView(tv("إعدادات كل عملية على حدة", 18, text, true));
+        box.addView(small("قسّمنا الضبط حسب نوع العملية: السداد أولًا، ثم السلفة، ثم بقية التفاصيل. الإيداعات من عملاء الدفتر تُحسب كسداد/رصيد، وطلبات الكروت تتم برسالة رقم الفئة من العميل."));
         Switch enabled = new Switch(this);
         enabled.setText("تشغيل الدفتر المحاسبي الذكي");
         enabled.setTextColor(text); enabled.setTextSize(16); enabled.setTypeface(appTypeface(true));
@@ -3038,7 +3043,6 @@ public class MainActivity extends Activity {
             toast("تم حفظ إعدادات الدفتر المحاسبي");
             showSmartLedger();
         }), new LinearLayout.LayoutParams(-1, dp(54)));
-        box.addView(action("رجوع للدفتر", card2, text, v -> showSmartLedger()), new LinearLayout.LayoutParams(-1, dp(50)));
         content.addView(box);
     }
 
@@ -3099,12 +3103,24 @@ public class MainActivity extends Activity {
         else if (LedgerCustomer.MODE_SETTLE_ONLY.equals(oldMode)) modes.check(1002);
         else modes.check(1003);
 
+        layout.addView(tv("بيانات الزبون", 16, text, true));
+        layout.addView(small("اكتب الاسم والرقم كما سيظهران في الدفتر ورسائل السداد. الرقم المحلي يبدأ غالبًا بـ 7 ويتكون من 9 أرقام."));
         layout.addView(name);
+        layout.addView(small("مثال: محمد أحمد علي — يفضّل الاسم المطابق لرسائل المحافظ عند وجود سداد باسم فقط."));
         layout.addView(phone);
+        layout.addView(small("هذا الرقم هو أساس ربط السداد والسلفة وإرسال الرسائل للزبون."));
+        layout.addView(separator());
+        layout.addView(tv("إعدادات السلفة والرصيد", 16, text, true));
         layout.addView(limit);
+        layout.addView(small("أقصى مبلغ يمكن للزبون أخذه كسلفة عند تفعيل الوضع الآلي الكامل."));
         layout.addView(debt);
+        layout.addView(small("المبلغ الحالي المتبقي على الزبون قبل أي سداد جديد."));
         layout.addView(credit);
+        layout.addView(small("أي مبلغ زائد من السداد يحفظ هنا كرصيد للزبون."));
+        layout.addView(separator());
+        layout.addView(tv("ملاحظات داخلية", 16, text, true));
         layout.addView(notes);
+        layout.addView(small("اكتب ملاحظات الإدارة فقط؛ لا ترسل للزبون تلقائيًا."));
         layout.addView(modeTitle);
         layout.addView(modes);
         new AlertDialog.Builder(this)
@@ -3176,7 +3192,7 @@ public class MainActivity extends Activity {
                 .setView(scroll)
                 .setPositiveButton("واتساب", (d,w) -> openWhatsAppBusinessMessage(c.phone, statement))
                 .setNeutralButton("PDF", (d,w) -> {
-                    File file = createTextPdfFile("تقرير إجراءات العميل", pdfStatement, "ledger_customer_statement");
+                    File file = createTextPdfFile("تقرير العمليات", pdfStatement, "ledger_operations_statement");
                     if (file != null) sharePdfFile(file, "كشف حساب: " + (c.name == null ? c.phone : c.name));
                 })
                 .setNegativeButton("إغلاق", null)
@@ -3228,9 +3244,6 @@ public class MainActivity extends Activity {
         test.addView(action("اختبار PIN", card2, text, v -> showPinUnlockDialog(() -> toast("اختبار PIN ناجح"), true)));
         content.addView(test);
 
-        LinearLayout back = cardBox();
-        back.addView(action("رجوع للإعدادات", card2, text, v -> showSettings()));
-        content.addView(back);
     }
 
     private void configureAppLockMethod(String method) {
@@ -3344,9 +3357,6 @@ public class MainActivity extends Activity {
             content.addView(box);
         }
 
-        LinearLayout back = cardBox();
-        back.addView(action("رجوع للإعدادات", card2, text, v -> showSettings()));
-        content.addView(back);
     }
 
     private void showPosOutletDialog(PosOutlet existing) {
@@ -3527,12 +3537,10 @@ public class MainActivity extends Activity {
         content.addView(templateBox(true));
         content.addView(directSaleTemplateBox());
         content.addView(posMessageTemplatesBox());
+        content.addView(ledgerAndTopUpTemplatesBox());
         content.addView(rewardMessageTemplatesBox());
         content.addView(templateBox(false));
 
-        LinearLayout back = cardBox();
-        back.addView(action("رجوع للإعدادات", card2, text, v -> showSettings()));
-        content.addView(back);
     }
 
     private TextView messagePreviewText(String value) {
@@ -3670,6 +3678,45 @@ public class MainActivity extends Activity {
                             success.getText().toString(), duplicate.getText().toString(), invalidPhone.getText().toString(),
                             limit.getText().toString(), noStock.getText().toString(), invalidCategory.getText().toString(), ambiguous.getText().toString());
                     toast("تم حفظ رسائل نقاط البيع");
+                    showMessageTemplates();
+                })
+                .setNegativeButton("إلغاء", null)
+                .show();
+        makeDialogKeyboardFriendly(dialog);
+    }
+
+    private LinearLayout ledgerAndTopUpTemplatesBox() {
+        LinearLayout box = cardBox();
+        box.addView(tv("رسائل القيود والسداد وتعبئة رصيد نقاط البيع", 17, text, true));
+        box.addView(small("هذا القسم قابل للتعديل من المستخدم للرسائل الناتجة من الدفتر: رسالة السداد للعميل، ورسالة تعبئة رصيد نقطة البيع."));
+        String demoLedger = AppStore.applyLedgerPaymentTemplate(this, AppStore.getLedgerPaymentTemplate(this), "محمد أحمد", 500, 700, 200, 0, 100);
+        box.addView(messagePreviewText(demoLedger));
+        box.addView(action("تعديل رسائل السداد والتعبئة", purple, Color.WHITE, v -> showLedgerAndTopUpTemplatesDialog()), new LinearLayout.LayoutParams(-1, dp(50)));
+        return box;
+    }
+
+    private void showLedgerAndTopUpTemplatesDialog() {
+        LinearLayout layout = new LinearLayout(this);
+        layout.setOrientation(LinearLayout.VERTICAL);
+        layout.setPadding(dp(8), dp(8), dp(8), dp(8));
+        layout.addView(small("متغيرات السداد: {customerName}, {amount}, {debtBefore}, {debtAfter}, {creditBefore}, {creditAfter}, {network}, {signature}"));
+        EditText ledger = templateEdit("رسالة سداد العميل", AppStore.getLedgerPaymentTemplate(this));
+        layout.addView(ledger);
+        layout.addView(separator());
+        layout.addView(small("متغيرات تعبئة نقطة البيع: {amount}, {oldRemaining}, {remaining}, {network}, {signature}"));
+        EditText topup = templateEdit("رسالة تعبئة رصيد نقطة البيع", AppStore.getPosTopUpTemplate(this));
+        layout.addView(topup);
+        TextView preview = messagePreviewText(AppStore.applyLedgerPaymentTemplate(this, ledger.getText().toString(), "محمد أحمد", 500, 700, 200, 0, 100));
+        layout.addView(action("تحديث معاينة السداد", card2, text, v -> preview.setText(AppStore.applyLedgerPaymentTemplate(this, ledger.getText().toString(), "محمد أحمد", 500, 700, 200, 0, 100))));
+        layout.addView(preview);
+        ScrollView scroll = new ScrollView(this);
+        scroll.addView(layout);
+        AlertDialog dialog = new AlertDialog.Builder(this)
+                .setTitle("رسائل السداد والتعبئة")
+                .setView(scroll)
+                .setPositiveButton("حفظ", (d,w) -> {
+                    AppStore.setLedgerAndTopUpTemplates(this, ledger.getText().toString(), topup.getText().toString());
+                    toast("تم حفظ رسائل السداد والتعبئة");
                     showMessageTemplates();
                 })
                 .setNegativeButton("إلغاء", null)
@@ -4041,8 +4088,6 @@ public class MainActivity extends Activity {
         side.addView(rewardsSideButton("expiry", "الصلاحية"));
         Space sp = new Space(this);
         side.addView(sp, new LinearLayout.LayoutParams(-1, dp(8)));
-        Button back = action("رجوع", Color.rgb(48, 38, 55), Color.WHITE, v -> showSettings());
-        side.addView(back, new LinearLayout.LayoutParams(-1, dp(48)));
         return side;
     }
 
@@ -4395,12 +4440,12 @@ public class MainActivity extends Activity {
     private void showTrustedContacts() {
         setTab("settings");
         clear();
-        content.addView(title("المحافظ والأسماء الموثوقة"));
+        content.addView(title("إدارة البنوك والمحافظ"));
 
         LinearLayout add = cardBox();
-        add.addView(tv("إضافة محفظة أو اسم موثوق", 17, text, true));
+        add.addView(tv("إضافة بنك / محفظة / اسم موثوق", 17, text, true));
         add.addView(small("هذه الصفحة تعرّف التطبيق على المحافظ التي لا تعطي رقم العميل داخل الرسالة. اكتب اسم المحفظة، وكلمات تظهر في المرسل أو نص الرسالة، والاسم كما يظهر في المحفظة، ورقم الزبون الذي سيستلم الكرت."));
-        add.addView(action("إضافة محفظة / اسم", purple, Color.WHITE, v -> showTrustedDialog()));
+        add.addView(action("➕ إضافة بنك أو محفظة", purple, Color.WHITE, v -> showTrustedDialog()));
         content.addView(add);
 
         ArrayList<TrustedContact> list = AppStore.loadTrustedContacts(this);
@@ -4427,9 +4472,6 @@ public class MainActivity extends Activity {
             content.addView(box);
         }
 
-        LinearLayout back = cardBox();
-        back.addView(action("رجوع للإعدادات", card2, text, v -> showSettings()));
-        content.addView(back);
     }
 
     private void confirmDeleteTrustedContact(TrustedContact contact) {
@@ -5740,9 +5782,6 @@ public class MainActivity extends Activity {
                     .show()));
             content.addView(box);
         }
-        LinearLayout back = cardBox();
-        back.addView(action("رجوع للإعدادات", card2, text, v -> showSettings()));
-        content.addView(back);
     }
 
 
@@ -5843,7 +5882,7 @@ public class MainActivity extends Activity {
     private String buildPeriodReport(String title, String from, String to) {
         String f = normalizeReportDate(from);
         String t = normalizeReportDate(to);
-        ArrayList<OperationLog> logs = AppStore.loadLogs(this);
+        ArrayList<OperationLog> logs = AppStore.loadVisibleLogs(this);
         ArrayList<TrustedCreditAgent> agents = AppStore.loadTrustedCreditAgents(this);
         int count = 0, success = 0, pending = 0, rejected = 0, totalSales = 0, topups = 0, balanceRequests = 0;
         StringBuilder details = new StringBuilder();
@@ -6717,7 +6756,7 @@ public class MainActivity extends Activity {
 
     private String buildTrustedCreditAgentDateReport(TrustedCreditAgent a, String from, String to) {
         if (a == null) return "لا توجد نقطة بيع محددة.";
-        ArrayList<OperationLog> logs = AppStore.loadLogs(this);
+        ArrayList<OperationLog> logs = AppStore.loadVisibleLogs(this);
         StringBuilder out = new StringBuilder();
         String f = normalizeReportDate(from);
         String t = normalizeReportDate(to);

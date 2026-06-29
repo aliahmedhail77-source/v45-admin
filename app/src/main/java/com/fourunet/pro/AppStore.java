@@ -67,6 +67,8 @@ class AppStore {
     private static final String KEY_POS_NO_STOCK_TEMPLATE = "pos_no_stock_message_template_v50";
     private static final String KEY_POS_INVALID_CATEGORY_TEMPLATE = "pos_invalid_category_message_template_v50";
     private static final String KEY_POS_AMBIGUOUS_TEMPLATE = "pos_ambiguous_message_template_v50";
+    private static final String KEY_LEDGER_PAYMENT_TEMPLATE = "ledger_payment_message_template_v138";
+    private static final String KEY_POS_TOPUP_TEMPLATE = "pos_topup_message_template_v138";
     private static final String KEY_NETWORK_NAME = "network_name";
     private static final String KEY_ADMIN_PHONE = "admin_phone";
     private static final String KEY_NETWORK_LOGO_PATH = "network_logo_path_v134";
@@ -390,6 +392,8 @@ class AppStore {
             + "{network}";
 
     static final String DEFAULT_NO_STOCK_TEMPLATE = "نفدت فئة {amount} ريال. راجع الإدارة: {adminPhone}";
+    static final String DEFAULT_LEDGER_PAYMENT_TEMPLATE = "مرحبًا {customerName}👋\n✅ وصل {amount}ر.ي\nالرصيد قبل: {debtBefore}ر.ي\nالمتبقي الآن: {debtAfter}ر.ي\nرصيدك الزائد: {creditAfter}ر.ي\n{signature}";
+    static final String DEFAULT_POS_TOPUP_TEMPLATE = "تمت تعبئة رصيدك\nالمبلغ: {amount}\nالرصيد السابق: {oldRemaining}\nالرصيد المتاح الآن: {remaining}\n{signature}";
 
     static final String DEFAULT_POS_SUCCESS_TEMPLATE = "تم التنفيذ\n"
             + "العميل: {customer_phone}\n"
@@ -1285,12 +1289,51 @@ class AppStore {
         return ensureSystemSignature(c, base);
     }
 
+    static String getLedgerPaymentTemplate(Context c) {
+        return prefs(c).getString(KEY_LEDGER_PAYMENT_TEMPLATE, DEFAULT_LEDGER_PAYMENT_TEMPLATE);
+    }
+
+    static String getPosTopUpTemplate(Context c) {
+        return prefs(c).getString(KEY_POS_TOPUP_TEMPLATE, DEFAULT_POS_TOPUP_TEMPLATE);
+    }
+
+    static void setLedgerAndTopUpTemplates(Context c, String ledgerPayment, String posTopUp) {
+        prefs(c).edit()
+                .putString(KEY_LEDGER_PAYMENT_TEMPLATE, cleanLongTemplate(ledgerPayment, DEFAULT_LEDGER_PAYMENT_TEMPLATE))
+                .putString(KEY_POS_TOPUP_TEMPLATE, cleanLongTemplate(posTopUp, DEFAULT_POS_TOPUP_TEMPLATE))
+                .apply();
+    }
+
+    static String applyLedgerPaymentTemplate(Context c, String template, String customerName, int amount, int debtBefore, int debtAfter, int creditBefore, int creditAfter) {
+        String out = template == null || template.trim().isEmpty() ? DEFAULT_LEDGER_PAYMENT_TEMPLATE : template;
+        out = out.replace("{customerName}", customerName == null || customerName.trim().isEmpty() ? "عميلنا" : customerName.trim());
+        out = out.replace("{amount}", String.valueOf(Math.max(0, amount)));
+        out = out.replace("{debtBefore}", String.valueOf(Math.max(0, debtBefore)));
+        out = out.replace("{debtAfter}", String.valueOf(Math.max(0, debtAfter)));
+        out = out.replace("{creditBefore}", String.valueOf(Math.max(0, creditBefore)));
+        out = out.replace("{creditAfter}", String.valueOf(Math.max(0, creditAfter)));
+        out = out.replace("{network}", getNetworkName(c));
+        out = out.replace("{signature}", getMessageSignature(c));
+        return ensureSystemSignature(c, out);
+    }
+
+    static String buildLedgerPaymentMessage(Context c, LedgerCustomer customer, int amount, int debtBefore, int creditBefore) {
+        String displayName = customer == null || customer.name == null || customer.name.trim().isEmpty() ? "عميلنا" : customer.name.trim();
+        int debtAfter = customer == null ? 0 : customer.debt;
+        int creditAfter = customer == null ? 0 : customer.creditBalance;
+        return applyLedgerPaymentTemplate(c, getLedgerPaymentTemplate(c), displayName, amount, debtBefore, debtAfter, creditBefore, creditAfter);
+    }
+
     static String buildTrustedCreditTopUpMessage(Context c, TrustedCreditAgent a, int addedAmount) {
         int remain = remainingTrustedCredit(a);
-        return "تمت تعبئة رصيدك"
-                + "\nالمبلغ: " + Math.max(0, addedAmount)
-                + "\nالرصيد المتاح: " + remain
-                + "\n" + getMessageSignature(c);
+        int oldRemaining = Math.max(0, remain - Math.max(0, addedAmount));
+        String out = getPosTopUpTemplate(c);
+        out = out.replace("{amount}", String.valueOf(Math.max(0, addedAmount)));
+        out = out.replace("{oldRemaining}", String.valueOf(oldRemaining));
+        out = out.replace("{remaining}", String.valueOf(remain));
+        out = out.replace("{network}", getNetworkName(c));
+        out = out.replace("{signature}", getMessageSignature(c));
+        return ensureSystemSignature(c, out);
     }
 
     static String buildNoStockMessage(Context c, int amount) {
@@ -2356,6 +2399,58 @@ class AppStore {
         return list;
     }
 
+    static boolean isTechnicalQueueLog(OperationLog log) {
+        if (log == null) return true;
+        String provider = log.provider == null ? "" : log.provider.trim();
+        String status = log.status == null ? "" : log.status.trim();
+        String msg = log.message == null ? "" : log.message.trim();
+        String hay = (provider + " " + status + " " + msg);
+        return provider.equals("SMS موثوق")
+                || provider.contains("الطابور")
+                || status.contains("الطابور")
+                || status.contains("تمت قراءة الطابور")
+                || status.contains("في الطابور الموثوق")
+                || msg.contains("بدأت معالجة الرسالة الموثوقة من الطابور")
+                || msg.contains("انتهت قراءة الرسالة الموثوقة")
+                || hay.contains("تمت قراءة الطابور");
+    }
+
+    static boolean isUserVisibleLog(OperationLog log) {
+        if (log == null) return false;
+        if (isTechnicalQueueLog(log)) return false;
+        String status = log.status == null ? "" : log.status.trim();
+        String provider = log.provider == null ? "" : log.provider.trim();
+        String msg = log.message == null ? "" : log.message.trim();
+        if (status.contains("مرفوض بصمت") && !status.contains("مراجعة")) return false;
+        if (provider.equals("النظام") && msg.contains("نسخة احتياطية تلقائية")) return false;
+        return true;
+    }
+
+    static ArrayList<OperationLog> loadVisibleLogs(Context c) {
+        ArrayList<OperationLog> out = new ArrayList<>();
+        for (OperationLog log : loadLogs(c)) {
+            if (isUserVisibleLog(log)) out.add(log);
+        }
+        return out;
+    }
+
+    static int visibleLogsCount(Context c) {
+        return loadVisibleLogs(c).size();
+    }
+
+    static ArrayList<OperationLog> loadVisibleLogsPage(Context c, int offset, int limit) {
+        ArrayList<OperationLog> all = loadVisibleLogs(c);
+        ArrayList<OperationLog> out = new ArrayList<>();
+        int start = Math.max(0, offset);
+        int end = Math.min(all.size(), start + (limit <= 0 ? PERFORMANCE_LOG_PAGE_SIZE : limit));
+        for (int i = start; i < end; i++) out.add(all.get(i));
+        return out;
+    }
+
+    static ArrayList<OperationLog> loadRecentVisibleLogs(Context c, int max) {
+        return loadVisibleLogsPage(c, 0, max <= 0 ? PERFORMANCE_LOG_PAGE_SIZE : max);
+    }
+
     private static void invalidateLogsCache() {
         logsCacheJson = null;
         logsCache = null;
@@ -2401,6 +2496,9 @@ class AppStore {
     }
 
     static void addLog(Context c, OperationLog log) {
+        // Stage 13.8: لا نخزن سجلات الطابور التقنية في سجل المستخدم.
+        // السجل الظاهر يبقى للعمليات الفعلية فقط: سداد، سلفة، بيع، تعبئة، مراجعة، فشل مهم.
+        if (isTechnicalQueueLog(log)) return;
         ArrayList<OperationLog> logs = loadLogs(c);
         logs.add(0, log);
         while (logs.size() > MAX_FAST_LOGS) logs.remove(logs.size() - 1);
@@ -2475,7 +2573,7 @@ class AppStore {
     }
 
     static int processedOperationsCount(Context c) {
-        return loadLogs(c).size();
+        return loadVisibleLogs(c).size();
     }
 
     static HashSet<String> loadProcessed(Context c) {
@@ -3185,33 +3283,55 @@ class AppStore {
         if (customer == null) return "";
         String clean = normalizeLocalPhone(customer.phone);
         String name = (customer.name == null || customer.name.trim().isEmpty()) ? clean : customer.name.trim();
+        ArrayList<LedgerEntry> entries = ledgerEntriesForCustomer(c, clean, 100);
+        int totalLoans = 0, totalPayments = 0, totalDebit = 0, totalCredit = 0, failed = 0, review = 0;
+        int firstDebtBefore = Math.max(0, customer.debt);
+        for (LedgerEntry e : entries) {
+            String st = e.status == null ? LedgerEntry.inferStatus(e.type) : e.status;
+            if (st.contains("مرفوض") || st.contains("فشل")) failed++;
+            if (st.contains("معلق") || st.contains("مراجعة")) review++;
+            if (st.contains("سلفة") || e.debit > 0) totalLoans += Math.max(0, e.debit);
+            if (st.contains("سداد") || e.credit > 0) totalPayments += Math.max(0, e.credit);
+            totalDebit += Math.max(0, e.debit);
+            totalCredit += Math.max(0, e.credit);
+        }
+        if (!entries.isEmpty()) {
+            LedgerEntry oldest = entries.get(entries.size() - 1);
+            firstDebtBefore = debtBeforeEntry(oldest);
+        }
         StringBuilder sb = new StringBuilder();
-        sb.append("تقرير إجراءات العميل - ").append(getNetworkName(c)).append("\n\n");
+        sb.append("تقرير العمليات - ").append(getNetworkName(c)).append("\n\n");
         sb.append("العميل: ").append(name).append("\n");
         sb.append("الرقم: ").append(clean).append("\n");
-        sb.append("وضع التعامل: ").append(ledgerModeLabel(customer.effectiveMode())).append("\n");
-        sb.append("سقف السلفة: ").append(customer.loanLimit).append(" ر.ي\n");
-        sb.append("المتبقي عليه: ").append(customer.debt).append(" ر.ي\n");
-        sb.append("رصيد العميل: ").append(customer.creditBalance).append(" ر.ي\n");
-        sb.append("المتاح من السقف: ").append(customer.remainingLoan()).append(" ر.ي\n\n");
-        ArrayList<LedgerEntry> entries = ledgerEntriesForCustomer(c, clean, 50);
+        sb.append("وضع التعامل: ").append(ledgerModeLabel(customer.effectiveMode())).append("\n\n");
+        sb.append("الإجمالي\n");
+        sb.append("عدد العمليات: ").append(entries.size()).append("\n");
+        sb.append("إجمالي السلف/المدين: ").append(totalLoans).append(" ر.ي\n");
+        sb.append("إجمالي السداد/الدائن: ").append(totalPayments).append(" ر.ي\n");
+        sb.append("صافي الحركة: ").append(totalDebit - totalCredit).append(" ر.ي\n");
+        sb.append("الرصيد قبل أول قيد معروض: ").append(firstDebtBefore).append(" ر.ي\n");
+        sb.append("الرصيد الحالي/بعد آخر قيد: ").append(customer.debt).append(" ر.ي\n");
+        sb.append("رصيد العميل الزائد: ").append(customer.creditBalance).append(" ر.ي\n");
+        sb.append("المتاح من السقف: ").append(customer.remainingLoan()).append(" ر.ي\n");
+        if (failed > 0 || review > 0) sb.append("مراجعة/فشل: ").append(review).append(" / ").append(failed).append("\n");
+        sb.append("\nالعمليات\n");
+        sb.append("الوقت | النوع | المبلغ | الطريقة | قبل | بعد | البيان\n");
         if (entries.isEmpty()) {
             sb.append("لا توجد عمليات لهذا الزبون حتى الآن.\n");
         } else {
-            int i = 1;
             for (LedgerEntry e : entries) {
-                sb.append("عملية ").append(i++).append("\n");
-                sb.append("الوقت: ").append(e.createdAt).append("\n");
-                sb.append("الفئة/المبلغ: ").append(ledgerEntryAmount(e)).append(" ر.ي\n");
-                sb.append("الحالة: ").append(e.status == null ? LedgerEntry.inferStatus(e.type) : e.status).append("\n");
-                sb.append("طريقة السداد: ").append(e.paymentMethod == null ? LedgerEntry.inferPaymentMethod(e.type, e.reference) : e.paymentMethod).append("\n");
-                sb.append("العدد: ").append(Math.max(1, e.count)).append("\n");
-                sb.append("المتبقي عليه بعد العملية: ").append(e.balanceAfter).append(" ر.ي\n");
-                if (e.description != null && !e.description.trim().isEmpty()) sb.append("ملاحظة: ").append(e.description.trim()).append("\n");
-                sb.append("------------------------------\n");
+                String status = e.status == null ? LedgerEntry.inferStatus(e.type) : e.status;
+                String method = e.paymentMethod == null ? LedgerEntry.inferPaymentMethod(e.type, e.reference) : e.paymentMethod;
+                sb.append(e.createdAt).append(" | ")
+                        .append(status).append(" | ")
+                        .append(ledgerEntryAmount(e)).append(" | ")
+                        .append(method).append(" | ")
+                        .append(debtBeforeEntry(e)).append(" | ")
+                        .append(e.balanceAfter).append(" | ")
+                        .append(shortLedgerText(e.description, 80)).append("\n");
             }
         }
-        sb.append("\n").append(NETWORK_SIGNATURE);
+        sb.append("\n").append(getMessageSignature(c));
         return sb.toString();
     }
 
@@ -3219,30 +3339,39 @@ class AppStore {
         if (customer == null) return "";
         String clean = normalizeLocalPhone(customer.phone);
         String name = (customer.name == null || customer.name.trim().isEmpty()) ? clean : customer.name.trim();
-        StringBuilder sb = new StringBuilder();
-        sb.append("بيانات العميل\n");
-        sb.append("اسم العميل: ").append(name).append("\n");
-        sb.append("رقم الهاتف: ").append(clean).append("\n");
-        sb.append("وضع التعامل: ").append(ledgerModeLabel(customer.effectiveMode())).append("\n");
-        sb.append("السقف: ").append(customer.loanLimit).append(" ر.ي\n");
-        sb.append("المتبقي عليه: ").append(customer.debt).append(" ر.ي\n");
-        sb.append("رصيد العميل: ").append(customer.creditBalance).append(" ر.ي\n");
-        sb.append("المتاح من السقف: ").append(customer.remainingLoan()).append(" ر.ي\n");
-        sb.append("\nملخص سريع\n");
         ArrayList<LedgerEntry> entries = ledgerEntriesForCustomer(c, clean, 200);
-        int totalLoans = 0, totalPayments = 0, failed = 0;
+        int totalLoans = 0, totalPayments = 0, failed = 0, review = 0;
+        int totalDebit = 0, totalCredit = 0;
+        int firstDebtBefore = Math.max(0, customer.debt);
         for (LedgerEntry e : entries) {
             String st = e.status == null ? LedgerEntry.inferStatus(e.type) : e.status;
             if (st.contains("مرفوض") || st.contains("فشل")) failed++;
-            if (st.contains("سلفة")) totalLoans += Math.max(0, e.debit);
-            if (st.contains("سداد")) totalPayments += Math.max(0, e.credit);
+            if (st.contains("معلق") || st.contains("مراجعة")) review++;
+            if (st.contains("سلفة") || e.debit > 0) totalLoans += Math.max(0, e.debit);
+            if (st.contains("سداد") || e.credit > 0) totalPayments += Math.max(0, e.credit);
+            totalDebit += Math.max(0, e.debit);
+            totalCredit += Math.max(0, e.credit);
         }
+        if (!entries.isEmpty()) firstDebtBefore = debtBeforeEntry(entries.get(entries.size() - 1));
+        StringBuilder sb = new StringBuilder();
+        sb.append("تقرير العمليات\n");
+        sb.append("اسم العميل: ").append(name).append("\n");
+        sb.append("رقم الهاتف: ").append(clean).append("\n");
+        sb.append("وضع التعامل: ").append(ledgerModeLabel(customer.effectiveMode())).append("\n");
+        sb.append("تاريخ إنشاء التقرير: ").append(now()).append("\n\n");
+        sb.append("الإجمالي\n");
         sb.append("عدد العمليات: ").append(entries.size()).append("\n");
-        sb.append("إجمالي السلف: ").append(totalLoans).append(" ر.ي\n");
-        sb.append("إجمالي السداد: ").append(totalPayments).append(" ر.ي\n");
-        sb.append("عمليات فاشلة: ").append(failed).append("\n");
-        sb.append("\nتفاصيل العمليات\n");
-        sb.append("الوقت والتاريخ | الفئة | الحالة | طريقة السداد | العدد | ملاحظة\n");
+        sb.append("إجمالي السلف/المدين: ").append(totalLoans).append(" ر.ي\n");
+        sb.append("إجمالي السداد/الدائن: ").append(totalPayments).append(" ر.ي\n");
+        sb.append("صافي الحركة: ").append(totalDebit - totalCredit).append(" ر.ي\n");
+        sb.append("الرصيد قبل: ").append(firstDebtBefore).append(" ر.ي\n");
+        sb.append("الرصيد الحالي/بعد: ").append(customer.debt).append(" ر.ي\n");
+        sb.append("رصيد العميل: ").append(customer.creditBalance).append(" ر.ي\n");
+        sb.append("المتاح من السقف: ").append(customer.remainingLoan()).append(" ر.ي\n");
+        sb.append("عمليات مراجعة: ").append(review).append("\n");
+        sb.append("عمليات فاشلة: ").append(failed).append("\n\n");
+        sb.append("تفاصيل العمليات\n");
+        sb.append("الوقت والتاريخ | النوع | الفئة/المبلغ | طريقة السداد | الرصيد قبل | الرصيد بعد | العدد | ملاحظة\n");
         if (entries.isEmpty()) {
             sb.append("لا توجد عمليات لهذا الزبون حتى الآن.\n");
         } else {
@@ -3251,18 +3380,29 @@ class AppStore {
                 String method = e.paymentMethod == null ? LedgerEntry.inferPaymentMethod(e.type, e.reference) : e.paymentMethod;
                 String note = e.description == null ? "" : e.description.replace("|", "-").replace("\n", " ").trim();
                 sb.append(e.createdAt).append(" | ")
-                        .append(ledgerEntryAmount(e)).append(" | ")
                         .append(status).append(" | ")
+                        .append(ledgerEntryAmount(e)).append(" | ")
                         .append(method).append(" | ")
+                        .append(debtBeforeEntry(e)).append(" | ")
+                        .append(e.balanceAfter).append(" | ")
                         .append(Math.max(1, e.count)).append(" | ")
-                        .append(note).append("\n");
+                        .append(shortLedgerText(note, 140)).append("\n");
             }
         }
-        sb.append("\nالإجمالي\n");
-        sb.append("المتبقي عليه: ").append(customer.debt).append(" ر.ي\n");
-        sb.append("رصيد العميل: ").append(customer.creditBalance).append(" ر.ي\n");
-        sb.append("المتاح من السقف: ").append(customer.remainingLoan()).append(" ر.ي\n");
+        sb.append("\n").append(getMessageSignature(c));
         return sb.toString();
+    }
+
+    static int debtBeforeEntry(LedgerEntry e) {
+        if (e == null) return 0;
+        return Math.max(0, Math.max(0, e.balanceAfter) - Math.max(0, e.debit) + Math.max(0, e.credit));
+    }
+
+    static String shortLedgerText(String value, int max) {
+        String v = value == null ? "" : value.replace("\r", " ").replace("\n", " ").replaceAll("\\s+", " ").trim();
+        int limit = max <= 0 ? 120 : max;
+        if (v.length() <= limit) return v;
+        return v.substring(0, limit) + "...";
     }
 
     static int ledgerEntryAmount(LedgerEntry e) {

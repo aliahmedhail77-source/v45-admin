@@ -10,8 +10,8 @@ android {
         applicationId 'com.fourunet.onlineadmin.stable'
         minSdk 23
         targetSdk 34
-        versionCode 53
-        versionName '45.0-stage13.6-strong-performance-engine'
+        versionCode 54
+        versionName '45.0-stage13.8-reports-logs-wallet-review-cleanup'
     }
 
     signingConfigs {

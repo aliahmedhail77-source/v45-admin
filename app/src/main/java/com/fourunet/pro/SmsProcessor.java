@@ -42,8 +42,9 @@ class SmsProcessor {
         if (PaymentParser.isSystemGeneratedMessage(safeBody) || PaymentParser.isIgnoredNotificationMessage(safeBody)) return;
         if (!isTrustedQueueCandidate(appContext, safeSender, safeBody)) return;
         if (AppStore.isExactPaymentTextProcessed(appContext, safeSender, safeBody)) return;
-        final String rawId = addLog(appContext, "SMS موثوق", safeSender, "", "", 0, "في الطابور الموثوق",
-                "تم اعتماد الرسالة لأنها من مصدر موثوق، وأضيفت إلى طابور FIFO حسب ترتيب الوصول.\nالنص: " + safeBody, "");
+        // Stage 13.8: لا نعرض رسائل الطابور في سجل المستخدم.
+        // العملية الناتجة فقط هي التي تظهر: سداد/سلفة/بيع/مراجعة/فشل مهم.
+        final String rawId = "";
         synchronized (SMS_QUEUE_LOCK) {
             TRUSTED_SMS_QUEUE.add(new QueuedSms(appContext, safeSender, safeBody, safeReceivedAt, rawId));
             if (smsQueueWorkerRunning) return;
@@ -62,13 +63,18 @@ class SmsProcessor {
                     return;
                 }
             }
-            AppStore.updateLogStatus(item.context, item.rawLogId, "قيد المعالجة", "بدأت معالجة الرسالة الموثوقة من الطابور بالترتيب.\nالنص: " + item.body);
+            if (item.rawLogId != null && !item.rawLogId.trim().isEmpty()) AppStore.updateLogStatus(item.context, item.rawLogId, "قيد المعالجة", "بدأت معالجة الرسالة الموثوقة من الطابور بالترتيب.\nالنص: " + item.body);
             try {
                 processIncomingSms(item.context, item.sender, item.body, item.receivedAt);
-                AppStore.updateLogStatus(item.context, item.rawLogId, "تمت قراءة الطابور", "انتهت قراءة الرسالة الموثوقة. راجع سجل العملية الناتجة للتنفيذ أو سبب التعليق.\nالنص: " + item.body);
+                if (item.rawLogId != null && !item.rawLogId.trim().isEmpty()) AppStore.updateLogStatus(item.context, item.rawLogId, "تمت قراءة الطابور", "انتهت قراءة الرسالة الموثوقة. راجع سجل العملية الناتجة للتنفيذ أو سبب التعليق.\nالنص: " + item.body);
             } catch (Exception ex) {
-                AppStore.updateLogStatus(item.context, item.rawLogId, "فشل الطابور", "فشل غير متوقع أثناء معالجة SMS موثوق. السبب: " + ex.getMessage() + "\nالنص: " + item.body);
-                NotifyHelper.notifyPendingAction(item.context, item.rawLogId, 0, "", "فشل في طابور SMS الموثوق");
+                if (item.rawLogId != null && !item.rawLogId.trim().isEmpty()) {
+                    AppStore.updateLogStatus(item.context, item.rawLogId, "فشل الطابور", "فشل غير متوقع أثناء معالجة SMS موثوق. السبب: " + ex.getMessage() + "\nالنص: " + item.body);
+                    NotifyHelper.notifyPendingAction(item.context, item.rawLogId, 0, "", "فشل في طابور SMS الموثوق");
+                } else {
+                    String failId = addLog(item.context, "SMS", item.sender, "", "", 0, "فشل معالجة رسالة", "فشل غير متوقع أثناء معالجة رسالة موثوقة. السبب: " + ex.getMessage() + "\nالنص: " + item.body, "");
+                    NotifyHelper.notifyPendingAction(item.context, failId, 0, "", "فشل معالجة رسالة موثوقة");
+                }
             }
         }
     }
@@ -255,8 +261,8 @@ class SmsProcessor {
         if (!isValidLocalMobile(receiver)) {
             String name = payment.customerName == null ? "" : payment.customerName.trim();
             String note = name.isEmpty()
-                    ? "تم التعرف على عملية إيداع صحيحة لكن لا يوجد رقم زبون صحيح مكون من 9 أرقام ويبدأ بـ 7، ولم يتم العثور على حساب مطابق في الدفتر. راجع الرسالة ثم أضف الرقم/الاسم."
-                    : "تم التعرف على عملية إيداع صحيحة باسم: " + name + "، لكن لا يوجد رقم زبون صحيح ولم يتم العثور على حساب مطابق في الدفتر. أضف الاسم إلى الدفتر أو المحافظ الموثوقة ثم عالج الإشعار.";
+                    ? "تم التعرف على عملية إيداع صحيحة لكن لا يوجد رقم زبون صحيح مكون من 9 أرقام ويبدأ بـ 7. العملية تحتاج مراجعة وإرفاق الرقم من المستخدم قبل الاعتماد."
+                    : "تم التعرف على عملية إيداع صحيحة باسم: " + name + "، لكن لا يوجد رقم زبون صحيح. راجع العملية ثم أضف الاسم إلى المحافظ الموثوقة مع إرفاق الرقم الصحيح قبل الاعتماد.";
             String pendingLogId = addLog(context, payment.provider, sender, name, "", payment.amount, "إيداع صريح غير منفذ: يحتاج إضافة اسم", note + "\nنص الرسالة الأصلي:\n" + body, "");
             NotifyHelper.notifyExplicitDepositReview(context, pendingLogId, payment.amount, payment.provider, name, "لا يوجد رقم استلام صحيح");
             return;
@@ -279,26 +285,7 @@ class SmsProcessor {
                         "سداد من " + method + " بمبلغ " + payment.amount + " ر.ي. المتبقي بعد السداد: " + Math.max(0, debtBefore - Math.min(debtBefore, payment.amount)) + " ر.ي", method);
                 int paidToDebt = Math.min(debtBefore, payment.amount);
                 int addedCredit = Math.max(0, payment.amount - paidToDebt);
-                String displayName = updated.name == null || updated.name.trim().isEmpty() ? "عميلنا" : updated.name.trim();
-                String msg;
-                if (updated.debt <= 0 && addedCredit > 0) {
-                    msg = "مرحبًا " + displayName + "👋\n"
-                            + "✅ وصل " + payment.amount + "ر.ي\n"
-                            + "💰تم السداد كاملًا\n"
-                            + "رصيدك:" + updated.creditBalance + "ر.ي\n"
-                            + AppStore.getMessageSignature(context);
-                } else if (updated.debt <= 0) {
-                    msg = "مرحبًا " + displayName + "👋\n"
-                            + "✅ وصل " + payment.amount + "ر.ي\n"
-                            + "💰تم السداد كاملًا\n"
-                            + "عليك:0ر.ي\n"
-                            + AppStore.getMessageSignature(context);
-                } else {
-                    msg = "مرحبًا " + displayName + "👋\n"
-                            + "✅ وصل " + payment.amount + "ر.ي\n"
-                            + "💰المتبقي:" + updated.debt + "ر.ي\n"
-                            + AppStore.getMessageSignature(context);
-                }
+                String msg = AppStore.buildLedgerPaymentMessage(context, updated, payment.amount, debtBefore, creditBefore);
                 String logId = addLog(context, payment.provider, sender, payment.customerName, receiver, payment.amount,
                         "جاري إرسال SMS", messageNote + "\nتم ترحيل الإيداع كسداد في الدفتر. الدين السابق: " + debtBefore
                                 + " | رصيد سابق: " + creditBefore + " | رصيد حالي: " + updated.creditBalance
