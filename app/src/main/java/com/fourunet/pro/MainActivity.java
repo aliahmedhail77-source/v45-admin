@@ -8,6 +8,8 @@ import android.content.pm.PackageManager;
 import android.database.Cursor;
 import android.hardware.biometrics.BiometricPrompt;
 import android.graphics.Canvas;
+import android.graphics.Bitmap;
+import android.graphics.BitmapFactory;
 import android.graphics.Color;
 import android.graphics.Paint;
 import android.graphics.RectF;
@@ -41,6 +43,7 @@ import java.lang.reflect.Method;
 import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.io.OutputStream;
+import java.io.FileOutputStream;
 import java.io.OutputStreamWriter;
 import java.net.HttpURLConnection;
 import java.net.URL;
@@ -65,6 +68,7 @@ public class MainActivity extends Activity {
     private static final int REQ_BACKUP_RESTORE = 41;
     private static final int REQ_ADMIN_PACK = 50;
     private static final int REQ_PICK_CONTACT = 60;
+    private static final int REQ_NETWORK_LOGO = 70;
 
     LinearLayout root;
     LinearLayout content;
@@ -680,9 +684,7 @@ public class MainActivity extends Activity {
         row.setOrientation(LinearLayout.HORIZONTAL);
         row.setGravity(Gravity.CENTER_VERTICAL);
 
-        TextView avatar = tv("", 14, Color.WHITE, true);
-        avatar.setGravity(Gravity.CENTER);
-        avatar.setBackground(round(Color.argb(24, 255, 255, 255), dp(20), Color.argb(110, 255, 255, 255), dp(1)));
+        View avatar = networkLogoView(54);
         row.addView(avatar, new LinearLayout.LayoutParams(dp(54), dp(54)));
 
         LinearLayout titleBox = new LinearLayout(this);
@@ -692,7 +694,9 @@ public class MainActivity extends Activity {
         TextView title = tv(AppStore.getNetworkName(this), 28, Color.WHITE, true);
         title.setGravity(Gravity.RIGHT);
         titleBox.addView(title);
-        TextView sub = tv("إدارة وبيع كروت الإنترنت تلقائيًا", 11, Color.argb(215, 255,255,255), false);
+        String phone = AppStore.getNetworkPhone(this);
+        String subText = (phone == null || phone.trim().isEmpty()) ? "إدارة وبيع كروت الإنترنت تلقائيًا" : "رقم التواصل: " + phone.trim();
+        TextView sub = tv(subText, 11, Color.argb(215, 255,255,255), false);
         sub.setGravity(Gravity.RIGHT);
         titleBox.addView(sub);
 
@@ -706,6 +710,30 @@ public class MainActivity extends Activity {
         h.addView(row);
         wrap.addView(h, new LinearLayout.LayoutParams(-1, -2));
         return wrap;
+    }
+
+    private View networkLogoView(int sizeDp) {
+        String path = AppStore.getNetworkLogoPath(this);
+        if (path != null && !path.trim().isEmpty()) {
+            try {
+                File f = new File(path.trim());
+                if (f.exists()) {
+                    Bitmap bmp = BitmapFactory.decodeFile(f.getAbsolutePath());
+                    if (bmp != null) {
+                        ImageView iv = new ImageView(this);
+                        iv.setScaleType(ImageView.ScaleType.CENTER_CROP);
+                        iv.setImageBitmap(bmp);
+                        iv.setPadding(dp(3), dp(3), dp(3), dp(3));
+                        iv.setBackground(round(Color.argb(28, 255, 255, 255), dp(sizeDp / 2), Color.argb(140, 255, 255, 255), dp(1)));
+                        return iv;
+                    }
+                }
+            } catch (Exception ignored) {}
+        }
+        TextView fallback = tv("4U", Math.max(14, sizeDp / 3), Color.rgb(40, 27, 7), true);
+        fallback.setGravity(Gravity.CENTER);
+        fallback.setBackground(round(gold, dp(sizeDp / 2), Color.argb(180, 255, 235, 167), dp(1)));
+        return fallback;
     }
 
     private void rebuildNav() {
@@ -2261,7 +2289,7 @@ public class MainActivity extends Activity {
 
         if (summaryOnly) {
             out.append("ملاحظة: اختر التقرير المفصل لعرض بيانات العمليات والكروت والرسائل.\n");
-            out.append("شبكة لان فور يو\n");
+            out.append(AppStore.getNetworkName(this)).append("\n");
             return out.toString();
         }
 
@@ -2285,7 +2313,7 @@ public class MainActivity extends Activity {
                     note
             )).append("\n");
         }
-        out.append("شبكة لان فور يو\n");
+        out.append(AppStore.getNetworkName(this)).append("\n");
         return out.toString();
     }
 
@@ -2472,9 +2500,17 @@ public class MainActivity extends Activity {
         content.addView(license);
 
         LinearLayout appName = cardBox();
-        appName.addView(tv("اسم الشبكة داخل التطبيق", 17, text, true));
-        appName.addView(small("الاسم الحالي: " + AppStore.getNetworkName(this) + "\nإذا كتبت: فور يو، سيحفظه التطبيق تلقائيًا: فور يو اونلاين. اسم التطبيق تحت الأيقونة أصبح: ONLINE."));
-        appName.addView(action("تعديل اسم الشبكة", purple, Color.WHITE, v -> showNetworkNameDialog()));
+        appName.addView(tv("بيانات الشبكة", 17, text, true));
+        appName.addView(small("اسم الشبكة: " + AppStore.getNetworkName(this)
+                + "\nرقم الجوال: " + (AppStore.getNetworkPhone(this).trim().isEmpty() ? "غير محدد" : AppStore.getNetworkPhone(this))
+                + "\nالشعار: " + (AppStore.getNetworkLogoPath(this).trim().isEmpty() ? "الشعار الافتراضي" : "شعار مخصص")
+                + "\nتوقيع الرسائل: " + AppStore.getMessageSignature(this).replace("\n", " / ")));
+        LinearLayout idActions = new LinearLayout(this);
+        idActions.setOrientation(LinearLayout.HORIZONTAL);
+        idActions.addView(action("تعديل البيانات", purple, Color.WHITE, v -> showNetworkIdentityDialog()), new LinearLayout.LayoutParams(0, dp(52), 1));
+        idActions.addView(action("اختيار شعار", Color.rgb(31, 91, 122), Color.WHITE, v -> pickNetworkLogo()), new LinearLayout.LayoutParams(0, dp(52), 1));
+        appName.addView(idActions);
+        appName.addView(action("حذف الشعار", card2, text, v -> { AppStore.clearNetworkLogo(this); toast("تم حذف الشعار"); buildLayout(); showSettings(); }));
         content.addView(appName);
 
         LinearLayout backupRestore = cardBox();
@@ -3453,22 +3489,78 @@ public class MainActivity extends Activity {
                 .show();
     }
 
-    private void showNetworkNameDialog() {
-        EditText input = new EditText(this);
-        input.setInputType(InputType.TYPE_CLASS_TEXT);
-        input.setGravity(Gravity.RIGHT);
-        input.setText(AppStore.getNetworkName(this));
+    private void showNetworkIdentityDialog() {
+        LinearLayout layout = new LinearLayout(this);
+        layout.setOrientation(LinearLayout.VERTICAL);
+        layout.setPadding(dp(4), dp(4), dp(4), dp(4));
+
+        EditText name = new EditText(this);
+        name.setInputType(InputType.TYPE_CLASS_TEXT);
+        name.setGravity(Gravity.RIGHT);
+        name.setHint("اسم الشبكة");
+        name.setText(AppStore.getNetworkName(this));
+        layout.addView(name);
+
+        EditText phone = new EditText(this);
+        phone.setInputType(InputType.TYPE_CLASS_PHONE);
+        phone.setGravity(Gravity.RIGHT);
+        phone.setHint("رقم جوال الشبكة");
+        phone.setText(AppStore.getNetworkPhone(this));
+        layout.addView(phone);
+
+        CheckBox showPhone = new CheckBox(this);
+        showPhone.setText("إظهار رقم الجوال في توقيع الرسائل");
+        showPhone.setChecked(AppStore.isShowPhoneInSignature(this));
+        layout.addView(showPhone);
+
+        layout.addView(small("سيظهر اسم الشبكة ورقم الجوال في الواجهة، الرسائل، واتساب، ورأس تقارير PDF. ويمكن اختيار الشعار من زر اختيار شعار في صفحة الإعدادات."));
+
         new AlertDialog.Builder(this)
-                .setTitle("تعديل اسم التطبيق والشبكة")
-                .setView(input)
+                .setTitle("بيانات الشبكة")
+                .setView(layout)
                 .setPositiveButton("حفظ", (d,w) -> {
-                    AppStore.setNetworkName(this, input.getText().toString());
-                    toast("تم حفظ الاسم: " + AppStore.getNetworkName(this));
+                    AppStore.setNetworkName(this, name.getText().toString());
+                    AppStore.setNetworkPhone(this, phone.getText().toString());
+                    AppStore.setShowPhoneInSignature(this, showPhone.isChecked());
+                    toast("تم حفظ بيانات الشبكة");
                     buildLayout();
                     showSettings();
                 })
                 .setNegativeButton("إلغاء", null)
                 .show();
+    }
+
+    private void pickNetworkLogo() {
+        Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT);
+        intent.addCategory(Intent.CATEGORY_OPENABLE);
+        intent.setType("image/*");
+        startActivityForResult(Intent.createChooser(intent, "اختر شعار الشبكة"), REQ_NETWORK_LOGO);
+    }
+
+    private void saveNetworkLogoFromUri(Uri uri) {
+        if (uri == null) { toast("لم يتم اختيار شعار"); return; }
+        try {
+            InputStream in = getContentResolver().openInputStream(uri);
+            if (in == null) { toast("تعذر قراءة الشعار"); return; }
+            File outFile = new File(getFilesDir(), "network_logo.png");
+            FileOutputStream out = new FileOutputStream(outFile);
+            byte[] buf = new byte[8192];
+            int n;
+            while ((n = in.read(buf)) > 0) out.write(buf, 0, n);
+            out.flush();
+            out.close();
+            in.close();
+            AppStore.setNetworkLogoPath(this, outFile.getAbsolutePath());
+            toast("تم حفظ شعار الشبكة");
+            buildLayout();
+            showSettings();
+        } catch (Exception e) {
+            toast("فشل حفظ الشعار: " + e.getMessage());
+        }
+    }
+
+    private void showNetworkNameDialog() {
+        showNetworkIdentityDialog();
     }
 
 
@@ -4892,6 +4984,9 @@ public class MainActivity extends Activity {
         if (requestCode == REQ_PICK_CONTACT && resultCode == RESULT_OK && data != null) {
             fillContactFromUri(data.getData());
         }
+        if (requestCode == REQ_NETWORK_LOGO && resultCode == RESULT_OK && data != null) {
+            saveNetworkLogoFromUri(data.getData());
+        }
     }
 
     private void collectCardsFromTextLine(ArrayList<String> out, String line) {
@@ -5216,7 +5311,7 @@ public class MainActivity extends Activity {
         out.append("ملاحظة النظام:\n").append(safe(log.message)).append("\n");
         out.append("==============================\n");
         out.append("تم إنشاء التقرير: ").append(AppStore.now()).append("\n");
-        out.append("شبكة لان فور يو\n");
+        out.append(AppStore.getNetworkName(this)).append("\n");
         return out.toString();
     }
 
@@ -5297,7 +5392,7 @@ public class MainActivity extends Activity {
         out.append("------------------------------\n");
         if (count == 0) out.append("لا توجد عمليات ضمن الفترة المحددة.\n");
         else out.append(details);
-        out.append("شبكة لان فور يو\n");
+        out.append(AppStore.getNetworkName(this)).append("\n");
         return out.toString();
     }
 
@@ -5318,7 +5413,7 @@ public class MainActivity extends Activity {
         if (provider.toLowerCase(Locale.US).contains("sms") || msg.toLowerCase(Locale.US).contains("sms")) return "شراء عبر رسالة SMS";
         if ("admin".equalsIgnoreCase(sender)) return "عملية إدارية داخل التطبيق";
         if (provider.contains("مباشر")) return "بيع مباشر من الإدارة";
-        return "شراء من مخزون كروت فور يو";
+        return "شراء من مخزون كروت " + AppStore.getNetworkName(this);
     }
 
     private static class PdfRenderState {
@@ -5403,17 +5498,31 @@ public class MainActivity extends Activity {
         bgPaint.setColor(Color.rgb(80, 55, 132));
         c.drawRoundRect(new RectF(st.margin, st.y, st.w - st.margin, st.y + 82), 18, 18, bgPaint);
 
-        Paint goldPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
-        goldPaint.setColor(Color.rgb(218, 170, 72));
-        c.drawCircle(st.w - st.margin - 38, st.y + 41, 25, goldPaint);
-        Paint logoText = pdfPaint(Color.WHITE, 19, true, Paint.Align.CENTER);
-        c.drawText("4U", st.w - st.margin - 38, st.y + 48, logoText);
+        boolean logoDrawn = false;
+        String logoPath = AppStore.getNetworkLogoPath(this);
+        if (logoPath != null && !logoPath.trim().isEmpty()) {
+            try {
+                Bitmap bmp = BitmapFactory.decodeFile(logoPath.trim());
+                if (bmp != null) {
+                    RectF logoRect = new RectF(st.w - st.margin - 63, st.y + 16, st.w - st.margin - 13, st.y + 66);
+                    c.drawBitmap(bmp, null, logoRect, new Paint(Paint.ANTI_ALIAS_FLAG));
+                    logoDrawn = true;
+                }
+            } catch (Exception ignored) {}
+        }
+        if (!logoDrawn) {
+            Paint goldPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+            goldPaint.setColor(Color.rgb(218, 170, 72));
+            c.drawCircle(st.w - st.margin - 38, st.y + 41, 25, goldPaint);
+            Paint logoText = pdfPaint(Color.WHITE, 19, true, Paint.Align.CENTER);
+            c.drawText("4U", st.w - st.margin - 38, st.y + 48, logoText);
+        }
 
         Paint titlePaint = pdfPaint(Color.WHITE, 20, true, Paint.Align.RIGHT);
-        c.drawText("لان فور يو", st.w - st.margin - 76, st.y + 31, titlePaint);
+        c.drawText(cleanPdfText(AppStore.getNetworkName(this)), st.w - st.margin - 76, st.y + 31, titlePaint);
         Paint subPaint = pdfPaint(Color.rgb(238, 230, 255), 10, false, Paint.Align.RIGHT);
-        c.drawText("شبكة لان فور يو - إدارة وبيع كروت الإنترنت تلقائياً", st.w - st.margin - 76, st.y + 50, subPaint);
-        c.drawText(title == null || title.trim().isEmpty() ? "تقرير" : title, st.w - st.margin - 76, st.y + 68, subPaint);
+        c.drawText(cleanPdfText(AppStore.getPdfHeaderSubtitle(this)), st.w - st.margin - 76, st.y + 50, subPaint);
+        c.drawText(title == null || title.trim().isEmpty() ? "تقرير" : cleanPdfText(title), st.w - st.margin - 76, st.y + 68, subPaint);
 
         Paint datePaint = pdfPaint(Color.WHITE, 9, false, Paint.Align.LEFT);
         c.drawText("تاريخ الإنشاء: " + AppStore.now(), st.margin + 14, st.y + 32, datePaint);
@@ -5428,7 +5537,7 @@ public class MainActivity extends Activity {
         linePaint.setStrokeWidth(1f);
         c.drawLine(st.margin, st.h - 42, st.w - st.margin, st.h - 42, linePaint);
         Paint p = pdfPaint(Color.rgb(90, 88, 96), 9, false, Paint.Align.RIGHT);
-        c.drawText("شبكة لان فور يو - تقرير صادر من النظام", st.w - st.margin, st.h - 24, p);
+        c.drawText(cleanPdfText(AppStore.getNetworkName(this)) + " - تقرير صادر من النظام", st.w - st.margin, st.h - 24, p);
         Paint pagePaint = pdfPaint(Color.rgb(90, 88, 96), 9, false, Paint.Align.LEFT);
         c.drawText("صفحة " + st.pageNo, st.margin, st.h - 24, pagePaint);
     }
@@ -5526,7 +5635,7 @@ public class MainActivity extends Activity {
         Paint label = pdfPaint(Color.rgb(30, 42, 74), 15, true, Paint.Align.RIGHT);
         Paint val = pdfPaint(Color.rgb(45, 53, 68), 10, false, Paint.Align.RIGHT);
         st.canvas.drawText(cleanPdfText(title == null || title.trim().isEmpty() ? "تقرير المعاملات" : title), x + w - 18, st.y + 25, label);
-        st.canvas.drawText("شبكة لان فور يو - تقرير منظم بالأعمدة المعتمدة", x + w - 18, st.y + 44, val);
+        st.canvas.drawText(cleanPdfText(AppStore.getNetworkName(this)) + " - تقرير منظم بالأعمدة المعتمدة", x + w - 18, st.y + 44, val);
         st.canvas.drawText("التاريخ: " + AppStore.now(), x + w - 18, st.y + 61, val);
         st.y += 88;
     }
@@ -5773,7 +5882,7 @@ public class MainActivity extends Activity {
             }
         }
         drawPdfSectionTitle(st, "التوقيع");
-        drawPdfInfoRow(st, "توقيع النظام", "شبكة لان فور يو", Color.rgb(80, 55, 132));
+        drawPdfInfoRow(st, "توقيع النظام", AppStore.getNetworkName(this), Color.rgb(80, 55, 132));
     }
 
     private boolean isPdfDividerLine(String line) {
@@ -5993,7 +6102,7 @@ public class MainActivity extends Activity {
             Intent intent = new Intent(Intent.ACTION_SEND);
             intent.setType("application/pdf");
             intent.putExtra(Intent.EXTRA_STREAM, uri);
-            intent.putExtra(Intent.EXTRA_TEXT, title == null ? "تقرير PDF - فور يو" : title);
+            intent.putExtra(Intent.EXTRA_TEXT, title == null ? "تقرير PDF - " + AppStore.getNetworkName(this) : title);
             intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
             startActivity(Intent.createChooser(intent, "إرسال التقرير PDF عبر واتساب أو أي تطبيق"));
         } catch (Exception e) {
@@ -6145,7 +6254,7 @@ public class MainActivity extends Activity {
         out.append("--------------------------------\n");
         if (count == 0) out.append("لا توجد عمليات مطابقة لهذه النقطة ضمن التاريخ المحدد.");
         else out.append(rows);
-        out.append("شبكة لان فور يو\n");
+        out.append(AppStore.getNetworkName(this)).append("\n");
         return out.toString();
     }
 
@@ -6154,7 +6263,7 @@ public class MainActivity extends Activity {
         LinearLayout layout = new LinearLayout(this);
         layout.setOrientation(LinearLayout.VERTICAL);
         layout.setPadding(dp(8), dp(8), dp(8), dp(8));
-        layout.addView(small("سيتم إضافة المبلغ فوق السقف/الرصيد السابق لنقطة البيع، ولن يتم تصفير المستخدم السابق. ستصل رسالة إلى نقطة البيع بتوقيع شبكة لان فور يو."));
+        layout.addView(small("سيتم إضافة المبلغ فوق السقف/الرصيد السابق لنقطة البيع، ولن يتم تصفير المستخدم السابق. ستصل رسالة إلى نقطة البيع بتوقيع " + AppStore.getNetworkName(this) + "."));
         EditText amount = new EditText(this);
         amount.setHint("مبلغ التعبئة مثل 5000");
         amount.setGravity(Gravity.RIGHT);

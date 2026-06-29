@@ -286,18 +286,18 @@ class SmsProcessor {
                             + "✅ وصل " + payment.amount + "ر.ي\n"
                             + "💰تم السداد كاملًا\n"
                             + "رصيدك:" + updated.creditBalance + "ر.ي\n"
-                            + AppStore.SYSTEM_SIGNATURE;
+                            + AppStore.getMessageSignature(context);
                 } else if (updated.debt <= 0) {
                     msg = "مرحبًا " + displayName + "👋\n"
                             + "✅ وصل " + payment.amount + "ر.ي\n"
                             + "💰تم السداد كاملًا\n"
                             + "عليك:0ر.ي\n"
-                            + AppStore.SYSTEM_SIGNATURE;
+                            + AppStore.getMessageSignature(context);
                 } else {
                     msg = "مرحبًا " + displayName + "👋\n"
                             + "✅ وصل " + payment.amount + "ر.ي\n"
                             + "💰المتبقي:" + updated.debt + "ر.ي\n"
-                            + AppStore.SYSTEM_SIGNATURE;
+                            + AppStore.getMessageSignature(context);
                 }
                 String logId = addLog(context, payment.provider, sender, payment.customerName, receiver, payment.amount,
                         "جاري إرسال SMS", messageNote + "\nتم ترحيل الإيداع كسداد في الدفتر. الدين السابق: " + debtBefore
@@ -366,35 +366,35 @@ class SmsProcessor {
         LedgerCustomer customer = AppStore.findLedgerCustomerByPhone(context, customerPhone);
         if (customer == null) {
             String logId = addLog(context, "الدفتر المحاسبي", sender, "", customerPhone, amount, "سلفة مرفوضة", "الرقم غير موجود في الدفتر المحاسبي. النص:\n" + body, "");
-            String msg = "تعذر تنفيذ الطلب.\nالرقم غير مسجل في الدفتر.\n" + AppStore.SYSTEM_SIGNATURE;
+            String msg = "تعذر تنفيذ الطلب.\nالرقم غير مسجل في الدفتر.\n" + AppStore.getMessageSignature(context);
             sendSmsWithTracking(context, customerPhone, msg, logId, amount, "", false,
                     "تم إرسال سبب رفض السلفة", "فشل إرسال سبب رفض السلفة");
             return;
         }
         if (!customer.active || customer.isStopped()) {
             String logId = addLog(context, "الدفتر المحاسبي", sender, customer.name, customerPhone, amount, "سلفة مرفوضة", "حساب العميل موقوف. النص:\n" + body, "");
-            String msg = "تعذر تنفيذ الطلب.\nحسابك موقوف مؤقتًا.\n" + AppStore.SYSTEM_SIGNATURE;
+            String msg = "تعذر تنفيذ الطلب.\nحسابك موقوف مؤقتًا.\n" + AppStore.getMessageSignature(context);
             sendSmsWithTracking(context, customerPhone, msg, logId, amount, "", false,
                     "تم إرسال سبب رفض السلفة", "فشل إرسال سبب رفض السلفة");
             return;
         }
         if (customer.isSettleOnly()) {
             String logId = addLog(context, "الدفتر المحاسبي", sender, customer.name, customerPhone, amount, "سلفة مرفوضة", "العميل على وضع سداد فقط / إيقاف السلف. النص:\n" + body, "");
-            String msg = "السلفة موقوفة لحسابك.\nيمكن استقبال السداد فقط.\nالمتبقي عليك:" + customer.debt + "ر.ي\n" + AppStore.SYSTEM_SIGNATURE;
+            String msg = "السلفة موقوفة لحسابك.\nيمكن استقبال السداد فقط.\nالمتبقي عليك:" + customer.debt + "ر.ي\n" + AppStore.getMessageSignature(context);
             sendSmsWithTracking(context, customerPhone, msg, logId, amount, "", false,
                     "تم إرسال تنبيه إيقاف السلف", "فشل إرسال تنبيه إيقاف السلف");
             return;
         }
         if (!customer.canAutoLoan()) {
             String logId = addLog(context, "الدفتر المحاسبي", sender, customer.name, customerPhone, amount, "سلفة مرفوضة", "العميل ليس في وضع آلي كامل. الوضع الحالي: " + AppStore.ledgerModeLabel(customer.effectiveMode()), "");
-            String msg = "تعذر تنفيذ طلب السلفة.\nوضع حسابك لا يسمح بالسلف.\n" + AppStore.SYSTEM_SIGNATURE;
+            String msg = "تعذر تنفيذ طلب السلفة.\nوضع حسابك لا يسمح بالسلف.\n" + AppStore.getMessageSignature(context);
             sendSmsWithTracking(context, customerPhone, msg, logId, amount, "", false,
                     "تم إرسال سبب رفض السلفة", "فشل إرسال سبب رفض السلفة");
             return;
         }
         if (amount <= 0) {
             String logId = addLog(context, "الدفتر المحاسبي", sender, customer.name, customerPhone, 0, "سلفة مرفوضة", "لم يتم تحديد فئة صحيحة في رسالة السلفة. النص:\n" + body, "");
-            String msg = "صيغة الطلب غير صحيحة.\nاكتب رقم الفئة فقط مثل: 100\n" + AppStore.SYSTEM_SIGNATURE;
+            String msg = "صيغة الطلب غير صحيحة.\nاكتب رقم الفئة فقط مثل: 100\n" + AppStore.getMessageSignature(context);
             sendSmsWithTracking(context, customerPhone, msg, logId, 0, "", false,
                     "تم إرسال تنبيه صيغة السلفة", "فشل إرسال تنبيه صيغة السلفة");
             return;
@@ -411,7 +411,7 @@ class SmsProcessor {
                     + "رصيدك:" + customer.creditBalance + "ر.ي\n"
                     + "المطلوب:" + amount + "ر.ي\n"
                     + "العملية تتجاوز السقف.\n"
-                    + AppStore.SYSTEM_SIGNATURE;
+                    + AppStore.getMessageSignature(context);
             sendSmsWithTracking(context, customerPhone, msg, logId, amount, "", false,
                     "تم إرسال تنبيه تجاوز حد السلفة", "فشل إرسال تنبيه تجاوز حد السلفة");
             return;
@@ -440,7 +440,7 @@ class SmsProcessor {
                 + card.code + "\n"
                 + "💰عليك:" + updated.debt + "ر.ي\n"
                 + (actualUseCredit > 0 ? "رصيد مستخدم:" + actualUseCredit + "ر.ي\n" : "")
-                + AppStore.SYSTEM_SIGNATURE;
+                + AppStore.getMessageSignature(context);
         String logId = addLog(context, "الدفتر المحاسبي", sender, customer.name, customerPhone, amount, "جاري إرسال SMS",
                 "تم صرف كرت كسلفة. استخدم من الرصيد: " + actualUseCredit + " | المتبقي على الزبون: " + updated.debt + " | رصيد العميل الحالي: " + updated.creditBalance, card.code);
         sendSmsWithTracking(context, customerPhone, msg, logId, amount, card.code, false,

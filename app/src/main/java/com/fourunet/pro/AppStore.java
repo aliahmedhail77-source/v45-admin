@@ -62,6 +62,8 @@ class AppStore {
     private static final String KEY_POS_AMBIGUOUS_TEMPLATE = "pos_ambiguous_message_template_v50";
     private static final String KEY_NETWORK_NAME = "network_name";
     private static final String KEY_ADMIN_PHONE = "admin_phone";
+    private static final String KEY_NETWORK_LOGO_PATH = "network_logo_path_v134";
+    private static final String KEY_SHOW_PHONE_IN_SIGNATURE = "show_phone_in_signature_v134";
     private static final String KEY_MIKROTIK_HOST = "mikrotik_host";
     private static final String KEY_MIKROTIK_PORT = "mikrotik_port";
     private static final String KEY_MIKROTIK_USER = "mikrotik_user";
@@ -108,8 +110,8 @@ class AppStore {
     static final String LOCK_METHOD_PIN = "pin";
     static final String LOCK_METHOD_FINGERPRINT_PIN = "fingerprint_pin";
 
-    private static final String DEFAULT_NETWORK_NAME = "لان فور يو";
-    private static final String DEFAULT_ADMIN_PHONE = "776901570";
+    private static final String DEFAULT_NETWORK_NAME = "فور يو";
+    private static final String DEFAULT_ADMIN_PHONE = "";
     private static final String OFFLINE_LIFETIME_SECRET = "ONLINE_V14_PRIVATE_LIFETIME_SECRET_776901570";
     private static final String OFFLINE_TRIAL_SECRET = "ONLINE_V29_PRIVATE_TRIAL_30_DAYS_SECRET_776901570";
     private static final String OFFLINE_ANNUAL_SECRET = "ONLINE_V29_PRIVATE_ANNUAL_365_DAYS_SECRET_776901570";
@@ -139,11 +141,11 @@ class AppStore {
 
     static final String DEFAULT_SUCCESS_TEMPLATE = "كرتك فئة {amount}:\n"
             + "{card}\n"
-            + SYSTEM_SIGNATURE;
+            + "{network}";
 
     static final String DEFAULT_DIRECT_SALE_TEMPLATE = "كرتك فئة {amount}:\n"
             + "{card}\n"
-            + SYSTEM_SIGNATURE;
+            + "{network}";
 
     static final String DEFAULT_NO_STOCK_TEMPLATE = "نفدت فئة {amount} ريال. راجع الإدارة: {adminPhone}";
 
@@ -151,13 +153,13 @@ class AppStore {
             + "العميل: {customer_phone}\n"
             + "الفئات: {categories}\n"
             + "المتبقي: {remaining_limit}\n"
-            + SYSTEM_SIGNATURE;
-    static final String DEFAULT_POS_DUPLICATE_TEMPLATE = "طلب مكرر خلال {window_minutes} دقائق. انتظر أو غيّر الطلب.\n" + SYSTEM_SIGNATURE;
-    static final String DEFAULT_POS_INVALID_PHONE_TEMPLATE = "رقم العميل غير صحيح. يجب أن يكون 9 أرقام ويبدأ بـ 7.\n" + SYSTEM_SIGNATURE;
-    static final String DEFAULT_POS_LIMIT_TEMPLATE = "تعذر التنفيذ: تجاوز السقف. السقف:{credit_limit} المستخدم:{used_amount} الطلب:{total_amount}\n" + SYSTEM_SIGNATURE;
-    static final String DEFAULT_POS_NO_STOCK_TEMPLATE = "تعذر التنفيذ: لا توجد كروت كافية للفئات {categories}.\n" + SYSTEM_SIGNATURE;
-    static final String DEFAULT_POS_INVALID_CATEGORY_TEMPLATE = "تعذر التنفيذ: فئة غير معتمدة. {reason}\n" + SYSTEM_SIGNATURE;
-    static final String DEFAULT_POS_AMBIGUOUS_TEMPLATE = "تعذر التنفيذ: الطلب غير واضح وتم تحويله للمراجعة. {reason}\n" + SYSTEM_SIGNATURE;
+            + "{network}";
+    static final String DEFAULT_POS_DUPLICATE_TEMPLATE = "طلب مكرر خلال {window_minutes} دقائق. انتظر أو غيّر الطلب.\n" + "{network}";
+    static final String DEFAULT_POS_INVALID_PHONE_TEMPLATE = "رقم العميل غير صحيح. يجب أن يكون 9 أرقام ويبدأ بـ 7.\n" + "{network}";
+    static final String DEFAULT_POS_LIMIT_TEMPLATE = "تعذر التنفيذ: تجاوز السقف. السقف:{credit_limit} المستخدم:{used_amount} الطلب:{total_amount}\n" + "{network}";
+    static final String DEFAULT_POS_NO_STOCK_TEMPLATE = "تعذر التنفيذ: لا توجد كروت كافية للفئات {categories}.\n" + "{network}";
+    static final String DEFAULT_POS_INVALID_CATEGORY_TEMPLATE = "تعذر التنفيذ: فئة غير معتمدة. {reason}\n" + "{network}";
+    static final String DEFAULT_POS_AMBIGUOUS_TEMPLATE = "تعذر التنفيذ: الطلب غير واضح وتم تحويله للمراجعة. {reason}\n" + "{network}";
 
     static final int[] DEFAULT_AMOUNTS = new int[]{50, 100, 150, 200, 250, 300, 500};
     static final int DEFAULT_REWARD_PERCENT = 8;
@@ -244,13 +246,55 @@ class AppStore {
         value = value.replace("أونلاين", "اونلاين").replace("انلاين", "اونلاين");
         value = value.replace("ONLINE", "اونلاين").replace("Online", "اونلاين").replace("online", "اونلاين");
         while (value.contains("  ")) value = value.replace("  ", " ");
-        String lower = value.toLowerCase(Locale.US);
-        if (!lower.contains("اونلاين") && !lower.contains("online")) value = value + " اونلاين";
         return value.trim();
     }
 
     static void setNetworkName(Context c, String name) {
         prefs(c).edit().putString(KEY_NETWORK_NAME, formatNetworkName(name)).apply();
+    }
+
+    // Stage 13.4: هوية الشبكة العامة - الاسم والرقم والشعار والتوقيع.
+    static String getNetworkLogoPath(Context c) {
+        return prefs(c).getString(KEY_NETWORK_LOGO_PATH, "");
+    }
+
+    static void setNetworkLogoPath(Context c, String path) {
+        prefs(c).edit().putString(KEY_NETWORK_LOGO_PATH, path == null ? "" : path.trim()).apply();
+    }
+
+    static void clearNetworkLogo(Context c) {
+        prefs(c).edit().remove(KEY_NETWORK_LOGO_PATH).apply();
+    }
+
+    static boolean isShowPhoneInSignature(Context c) {
+        return prefs(c).getBoolean(KEY_SHOW_PHONE_IN_SIGNATURE, false);
+    }
+
+    static void setShowPhoneInSignature(Context c, boolean enabled) {
+        prefs(c).edit().putBoolean(KEY_SHOW_PHONE_IN_SIGNATURE, enabled).apply();
+    }
+
+    static String getNetworkPhone(Context c) {
+        return getAdminPhone(c);
+    }
+
+    static void setNetworkPhone(Context c, String phone) {
+        setAdminPhone(c, phone);
+    }
+
+    static String getMessageSignature(Context c) {
+        String name = getNetworkName(c);
+        String phone = getNetworkPhone(c);
+        if (isShowPhoneInSignature(c) && phone != null && !phone.trim().isEmpty()) {
+            return name + "\n" + phone.trim();
+        }
+        return name;
+    }
+
+    static String getPdfHeaderSubtitle(Context c) {
+        String phone = getNetworkPhone(c);
+        if (phone != null && !phone.trim().isEmpty()) return "رقم التواصل: " + phone.trim();
+        return "إدارة وبيع كروت الإنترنت تلقائياً";
     }
 
     static boolean isActivated(Context c) {
@@ -881,11 +925,11 @@ class AppStore {
     }
 
     static String buildSuccessMessage(Context c, int amount, String cardCode) {
-        return normalizeSingleCardPhrase(ensureSystemSignature(applyTemplate(c, getSuccessTemplate(c), amount, cardCode)));
+        return normalizeSingleCardPhrase(ensureSystemSignature(c, applyTemplate(c, getSuccessTemplate(c), amount, cardCode)));
     }
 
     static String buildDirectSaleMessage(Context c, int amount, String cardCode) {
-        return normalizeSingleCardPhrase(ensureSystemSignature(applyTemplate(c, getDirectSaleTemplate(c), amount, cardCode)));
+        return normalizeSingleCardPhrase(ensureSystemSignature(c, applyTemplate(c, getDirectSaleTemplate(c), amount, cardCode)));
     }
 
     private static String normalizeSingleCardPhrase(String message) {
@@ -898,7 +942,7 @@ class AppStore {
     }
 
     static String buildGroupedCardsMessage(Context c, ArrayList<CardItem> cards, String extraMessagePart) {
-        if (cards == null || cards.isEmpty()) return ensureSystemSignature("");
+        if (cards == null || cards.isEmpty()) return ensureSystemSignature(c, "");
         java.util.TreeMap<Integer, ArrayList<String>> grouped = new java.util.TreeMap<>(java.util.Collections.reverseOrder());
         int totalCodes = 0;
         for (CardItem card : cards) {
@@ -928,7 +972,7 @@ class AppStore {
         }
         String extra = extraMessagePart == null ? "" : extraMessagePart.trim();
         if (!extra.isEmpty()) sb.append("\n\n").append(extra);
-        return ensureSystemSignature(sb.toString());
+        return ensureSystemSignature(c, sb.toString());
     }
 
     static String withoutSystemSignature(String message) {
@@ -942,7 +986,7 @@ class AppStore {
         String base = withoutSystemSignature(buildGroupedCardsMessage(c, cards, extraMessagePart));
         if (!base.isEmpty()) base += "\n\n";
         base += "المتبقي: " + Math.max(0, remainingLimit);
-        return ensureSystemSignature(base);
+        return ensureSystemSignature(c, base);
     }
 
     static String buildTrustedCreditTopUpMessage(Context c, TrustedCreditAgent a, int addedAmount) {
@@ -950,11 +994,11 @@ class AppStore {
         return "تمت تعبئة رصيدك"
                 + "\nالمبلغ: " + Math.max(0, addedAmount)
                 + "\nالرصيد المتاح: " + remain
-                + "\n" + NETWORK_SIGNATURE;
+                + "\n" + getMessageSignature(c);
     }
 
     static String buildNoStockMessage(Context c, int amount) {
-        return ensureSystemSignature(applyTemplate(c, getNoStockTemplate(c), amount, ""));
+        return ensureSystemSignature(c, applyTemplate(c, getNoStockTemplate(c), amount, ""));
     }
 
     static boolean hasSystemSignature(String message) {
@@ -973,8 +1017,18 @@ class AppStore {
     static String ensureSystemSignature(String message) {
         String m = message == null ? "" : message.trim();
         if (m.isEmpty()) return SYSTEM_SIGNATURE;
-        if (m.contains(SYSTEM_SIGNATURE)) return m;
+        if (m.contains(SYSTEM_SIGNATURE) || m.contains(NETWORK_SIGNATURE)) return m;
         return m + "\n" + SYSTEM_SIGNATURE;
+    }
+
+    static String ensureSystemSignature(Context c, String message) {
+        String m = message == null ? "" : message.trim();
+        String sig = getMessageSignature(c);
+        if (m.isEmpty()) return sig;
+        if (m.contains(sig) || m.contains(getNetworkName(c)) || m.contains(SYSTEM_SIGNATURE) || m.contains(NETWORK_SIGNATURE)) {
+            return m.replace(NETWORK_SIGNATURE, sig).replace(SYSTEM_SIGNATURE, sig).trim();
+        }
+        return m + "\n" + sig;
     }
 
     private static String cleanLongTemplate(String value, String fallback) {
@@ -1010,31 +1064,31 @@ class AppStore {
     }
 
     static String buildPosSuccessMessage(Context c, TrustedCreditAgent a, ParsedCreditRequest req, int remainingLimit) {
-        return ensureSystemSignature(applyPosTemplate(c, getPosSuccessTemplate(c), a, req, remainingLimit, ""));
+        return ensureSystemSignature(c, applyPosTemplate(c, getPosSuccessTemplate(c), a, req, remainingLimit, ""));
     }
 
     static String buildPosDuplicateMessage(Context c, TrustedCreditAgent a, ParsedCreditRequest req) {
-        return ensureSystemSignature(applyPosTemplate(c, getPosDuplicateTemplate(c), a, req, a == null ? 0 : a.remaining(), ""));
+        return ensureSystemSignature(c, applyPosTemplate(c, getPosDuplicateTemplate(c), a, req, a == null ? 0 : a.remaining(), ""));
     }
 
     static String buildPosInvalidPhoneMessage(Context c, TrustedCreditAgent a, ParsedCreditRequest req, String reason) {
-        return ensureSystemSignature(applyPosTemplate(c, getPosInvalidPhoneTemplate(c), a, req, a == null ? 0 : a.remaining(), reason));
+        return ensureSystemSignature(c, applyPosTemplate(c, getPosInvalidPhoneTemplate(c), a, req, a == null ? 0 : a.remaining(), reason));
     }
 
     static String buildPosLimitMessage(Context c, TrustedCreditAgent a, ParsedCreditRequest req) {
-        return ensureSystemSignature(applyPosTemplate(c, getPosLimitTemplate(c), a, req, a == null ? 0 : a.remaining(), ""));
+        return ensureSystemSignature(c, applyPosTemplate(c, getPosLimitTemplate(c), a, req, a == null ? 0 : a.remaining(), ""));
     }
 
     static String buildPosNoStockMessage(Context c, TrustedCreditAgent a, ParsedCreditRequest req) {
-        return ensureSystemSignature(applyPosTemplate(c, getPosNoStockTemplate(c), a, req, a == null ? 0 : a.remaining(), ""));
+        return ensureSystemSignature(c, applyPosTemplate(c, getPosNoStockTemplate(c), a, req, a == null ? 0 : a.remaining(), ""));
     }
 
     static String buildPosInvalidCategoryMessage(Context c, TrustedCreditAgent a, ParsedCreditRequest req, String reason) {
-        return ensureSystemSignature(applyPosTemplate(c, getPosInvalidCategoryTemplate(c), a, req, a == null ? 0 : a.remaining(), reason));
+        return ensureSystemSignature(c, applyPosTemplate(c, getPosInvalidCategoryTemplate(c), a, req, a == null ? 0 : a.remaining(), reason));
     }
 
     static String buildPosAmbiguousMessage(Context c, TrustedCreditAgent a, ParsedCreditRequest req, String reason) {
-        return ensureSystemSignature(applyPosTemplate(c, getPosAmbiguousTemplate(c), a, req, a == null ? 0 : a.remaining(), reason));
+        return ensureSystemSignature(c, applyPosTemplate(c, getPosAmbiguousTemplate(c), a, req, a == null ? 0 : a.remaining(), reason));
     }
 
     static String applyPosTemplate(Context c, String template, TrustedCreditAgent a, ParsedCreditRequest req, int remainingLimit, String reason) {
@@ -1058,7 +1112,7 @@ class AppStore {
         out = out.replace("{used_amount}", String.valueOf(Math.max(0, usedAmount)));
         out = out.replace("{reason}", reason == null ? "" : reason);
         out = out.replace("{window_minutes}", "5");
-        out = out.replace("{network}", getNetworkName(c));
+        out = out.replace("{network}", getMessageSignature(c));
         out = out.replace("{adminPhone}", getAdminPhone(c));
         return out;
     }
@@ -1076,7 +1130,7 @@ class AppStore {
         String out = template == null ? "" : template;
         out = out.replace("{amount}", String.valueOf(amount));
         out = out.replace("{card}", cardCode == null ? "" : cardCode);
-        out = out.replace("{network}", getNetworkName(c));
+        out = out.replace("{network}", getMessageSignature(c));
         out = out.replace("{adminPhone}", getAdminPhone(c));
         return out;
     }
@@ -2618,7 +2672,7 @@ class AppStore {
         String clean = normalizeLocalPhone(customer.phone);
         String name = (customer.name == null || customer.name.trim().isEmpty()) ? clean : customer.name.trim();
         StringBuilder sb = new StringBuilder();
-        sb.append("تقرير إجراءات العميل - شبكة لان فور يو\n\n");
+        sb.append("تقرير إجراءات العميل - ").append(getNetworkName(c)).append("\n\n");
         sb.append("العميل: ").append(name).append("\n");
         sb.append("الرقم: ").append(clean).append("\n");
         sb.append("وضع التعامل: ").append(ledgerModeLabel(customer.effectiveMode())).append("\n");
@@ -3038,6 +3092,8 @@ class AppStore {
         JSONObject settings = new JSONObject();
         settings.put(KEY_NETWORK_NAME, getNetworkName(c));
         settings.put(KEY_ADMIN_PHONE, getAdminPhone(c));
+        settings.put(KEY_NETWORK_LOGO_PATH, getNetworkLogoPath(c));
+        settings.put(KEY_SHOW_PHONE_IN_SIGNATURE, isShowPhoneInSignature(c));
         settings.put(KEY_AUTO_SEND, isAutoSendEnabled(c));
         settings.put(KEY_SUCCESS_TEMPLATE, getSuccessTemplate(c));
         settings.put(KEY_NO_STOCK_TEMPLATE, getNoStockTemplate(c));
@@ -3472,6 +3528,8 @@ class AppStore {
         if (settings != null) {
             if (settings.has(KEY_NETWORK_NAME)) editor.putString(KEY_NETWORK_NAME, formatNetworkName(settings.optString(KEY_NETWORK_NAME, DEFAULT_NETWORK_NAME)));
             if (settings.has(KEY_ADMIN_PHONE)) editor.putString(KEY_ADMIN_PHONE, settings.optString(KEY_ADMIN_PHONE, DEFAULT_ADMIN_PHONE));
+            if (settings.has(KEY_NETWORK_LOGO_PATH)) editor.putString(KEY_NETWORK_LOGO_PATH, settings.optString(KEY_NETWORK_LOGO_PATH, ""));
+            if (settings.has(KEY_SHOW_PHONE_IN_SIGNATURE)) editor.putBoolean(KEY_SHOW_PHONE_IN_SIGNATURE, settings.optBoolean(KEY_SHOW_PHONE_IN_SIGNATURE, false));
             if (settings.has(KEY_AUTO_SEND)) editor.putBoolean(KEY_AUTO_SEND, settings.optBoolean(KEY_AUTO_SEND, true));
             if (settings.has(KEY_SUCCESS_TEMPLATE)) editor.putString(KEY_SUCCESS_TEMPLATE, settings.optString(KEY_SUCCESS_TEMPLATE, DEFAULT_SUCCESS_TEMPLATE));
             if (settings.has(KEY_NO_STOCK_TEMPLATE)) editor.putString(KEY_NO_STOCK_TEMPLATE, settings.optString(KEY_NO_STOCK_TEMPLATE, DEFAULT_NO_STOCK_TEMPLATE));

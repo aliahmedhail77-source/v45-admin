@@ -23,7 +23,7 @@ class NotifyHelper {
 
     static void notifyCardSold(Context context, int amount, String code, String phone) {
         String title = "تم بيع كرت فئة " + amount + " ريال";
-        String body = "رقم الكرت: " + code + "\nالعميل: " + (phone == null || phone.isEmpty() ? "-" : phone) + "\nالشبكة: فور يو نت";
+        String body = "رقم الكرت: " + code + "\nالعميل: " + (phone == null || phone.isEmpty() ? "-" : phone) + "\nالشبكة: " + AppStore.getNetworkName(context);
         show(context, title, body);
     }
 
