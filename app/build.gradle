@@ -10,8 +10,8 @@ android {
         applicationId 'com.fourunet.onlineadmin.stable'
         minSdk 23
         targetSdk 34
-        versionCode 56
-        versionName '45.0-stage14-stability-hardening'
+        versionCode 57
+        versionName '45.0-stage14.1-direct-sale-ui-polish-low-stock-glow'
     }
 
     signingConfigs {
