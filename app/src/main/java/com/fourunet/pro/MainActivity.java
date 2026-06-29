@@ -5138,10 +5138,10 @@ public class MainActivity extends Activity {
                             flushImportBatch(selectedAmount, batch, "manual", stats, false, 0, progressDialog);
                             runOnUiThread(() -> {
                                 TextView status = findImportStatusText(progressDialog);
-                                if (status != null) status.setText("اكتملت الإضافة اليدوية
-تمت القراءة: " + stats.scanned + "
-تمت الإضافة: " + stats.added + "
-المكرر/الموجود مسبقًا: " + stats.duplicates);
+                                if (status != null) status.setText("اكتملت الإضافة اليدوية\n"
+                                        + "تمت القراءة: " + stats.scanned + "\n"
+                                        + "تمت الإضافة: " + stats.added + "\n"
+                                        + "المكرر/الموجود مسبقًا: " + stats.duplicates);
                                 toneOk();
                                 new Handler(Looper.getMainLooper()).postDelayed(() -> {
                                     try { progressDialog.dismiss(); } catch(Exception ignored) {}
@@ -5349,14 +5349,10 @@ public class MainActivity extends Activity {
             TextView status = findImportStatusText(dialog);
             if (status != null) {
                 status.setText((phase == null ? "جاري الاستيراد..." : phase)
-                        + "
-تمت القراءة: " + stats.scanned
-                        + "
-تمت الإضافة: " + stats.added
-                        + "
-المكرر/الموجود مسبقًا: " + stats.duplicates
-                        + (stats.failed > 0 ? "
-فشل: " + stats.failed : ""));
+                        + "\nتمت القراءة: " + stats.scanned
+                        + "\nتمت الإضافة: " + stats.added
+                        + "\nالمكرر/الموجود مسبقًا: " + stats.duplicates
+                        + (stats.failed > 0 ? "\nفشل: " + stats.failed : ""));
             }
         });
     }
@@ -5403,10 +5399,10 @@ public class MainActivity extends Activity {
                 runOnUiThread(() -> {
                     pendingRewardImport = false;
                     TextView status = findImportStatusText(progressDialog);
-                    if (status != null) status.setText("اكتمل الاستيراد بنجاح
-تمت القراءة: " + stats.scanned + "
-تمت الإضافة: " + stats.added + "
-المكرر/الموجود مسبقًا: " + stats.duplicates);
+                    if (status != null) status.setText("اكتمل الاستيراد بنجاح\n"
+                            + "تمت القراءة: " + stats.scanned + "\n"
+                            + "تمت الإضافة: " + stats.added + "\n"
+                            + "المكرر/الموجود مسبقًا: " + stats.duplicates);
                     toneOk();
                     new Handler(Looper.getMainLooper()).postDelayed(() -> {
                         try { progressDialog.dismiss(); } catch (Exception ignored) {}
@@ -5462,10 +5458,10 @@ public class MainActivity extends Activity {
                 runOnUiThread(() -> {
                     pendingRewardImport = false;
                     TextView status = findImportStatusText(progressDialog);
-                    if (status != null) status.setText("اكتمل الاستيراد بنجاح
-تمت القراءة: " + stats.scanned + "
-تمت الإضافة: " + stats.added + "
-المكرر/الموجود مسبقًا: " + stats.duplicates);
+                    if (status != null) status.setText("اكتمل الاستيراد بنجاح\n"
+                            + "تمت القراءة: " + stats.scanned + "\n"
+                            + "تمت الإضافة: " + stats.added + "\n"
+                            + "المكرر/الموجود مسبقًا: " + stats.duplicates);
                     toneOk();
                     new Handler(Looper.getMainLooper()).postDelayed(() -> {
                         try { progressDialog.dismiss(); } catch (Exception ignored) {}
