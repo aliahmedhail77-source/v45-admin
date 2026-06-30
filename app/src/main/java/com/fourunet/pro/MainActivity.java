@@ -105,6 +105,14 @@ public class MainActivity extends Activity {
     int ledgerEntriesVisibleLimit = 5;
     int cardsVisibleLimit = AppStore.performanceCardPageSize();
     int cardsVisibleAmount = -1;
+    int homeRecentVisibleLimit = 5;
+    int dashboardReportLimit = 10;
+    String dashboardReportMode = "all";
+    String dashboardReportFrom = "";
+    String dashboardReportTo = "";
+
+    // Stage 14.2 DASHBOARD IDENTITY + METRICS NAVIGATION + THEME CONTROL.
+    // هيدر كرت برو، شعار واي فاي قابل للتغيير، لوحة تحكم 6 خانات، تنقل للتقارير، وآخر العمليات تدريجي.
 
     // Stage 14.1 DIRECT SALE UI POLISHING + LOW STOCK GLOW.
     // تلميع البيع المباشر: زر البحث يسارًا، إصلاح الحواف، اختيار نقد/آجل واحد، وإضاءة متحركة للمخزون الأقل من 10.
@@ -680,17 +688,17 @@ public class MainActivity extends Activity {
     private void buildLayout() {
         root = new LinearLayout(this);
         root.setOrientation(LinearLayout.VERTICAL);
-        root.setBackgroundColor(bg);
+        root.setBackgroundColor(currentBgColor());
         setContentView(root);
         if (Build.VERSION.SDK_INT >= 21) {
-            getWindow().setStatusBarColor(bg);
+            getWindow().setStatusBarColor(currentBgColor());
             getWindow().setNavigationBarColor(Color.BLACK);
         }
 
         root.addView(header(), new LinearLayout.LayoutParams(-1, -2));
 
         ScrollView scroll = new ScrollView(this);
-        scroll.setBackgroundColor(bg);
+        scroll.setBackgroundColor(currentBgColor());
         content = new LinearLayout(this);
         content.setOrientation(LinearLayout.VERTICAL);
         content.setPadding(dp(16), dp(18), dp(16), dp(18));
@@ -706,18 +714,22 @@ public class MainActivity extends Activity {
     }
 
     private View header() {
+        boolean autoOn = AppStore.isAutoSendEnabled(this);
+        int accent = currentAccentColor();
         LinearLayout wrap = new LinearLayout(this);
         wrap.setOrientation(LinearLayout.VERTICAL);
         wrap.setPadding(dp(14), dp(16), dp(14), dp(10));
-        wrap.setBackgroundColor(bg);
+        wrap.setBackgroundColor(currentBgColor());
 
         LinearLayout h = new LinearLayout(this);
         h.setOrientation(LinearLayout.VERTICAL);
         h.setPadding(dp(18), dp(20), dp(18), dp(20));
         GradientDrawable gd = new GradientDrawable(GradientDrawable.Orientation.LEFT_RIGHT,
-                new int[]{Color.rgb(5, 24, 18), Color.rgb(0, 118, 64), Color.rgb(0, 230, 118)});
+                autoOn
+                        ? new int[]{Color.rgb(5, 24, 18), darkerAccent(accent), accent}
+                        : new int[]{Color.rgb(47, 8, 16), Color.rgb(143, 22, 44), Color.rgb(255, 72, 96)});
         gd.setCornerRadius(dp(30));
-        gd.setStroke(dp(2), Color.argb(210, 0, 255, 148));
+        gd.setStroke(dp(2), autoOn ? Color.argb(215, 0, 255, 148) : Color.argb(230, 255, 92, 112));
         h.setBackground(gd);
         if (Build.VERSION.SDK_INT >= 21) h.setElevation(dp(7));
 
@@ -725,14 +737,15 @@ public class MainActivity extends Activity {
         row.setOrientation(LinearLayout.HORIZONTAL);
         row.setGravity(Gravity.CENTER_VERTICAL);
 
-        View avatar = networkLogoView(54);
-        row.addView(avatar, new LinearLayout.LayoutParams(dp(54), dp(54)));
+        // اليسار: شعار الشبكة/الواي فاي، ويستطيع صاحب الشبكة تغييره من بيانات الشبكة.
+        View networkLogo = networkLogoView(54);
+        row.addView(networkLogo, new LinearLayout.LayoutParams(dp(54), dp(54)));
 
         LinearLayout titleBox = new LinearLayout(this);
         titleBox.setOrientation(LinearLayout.VERTICAL);
         titleBox.setGravity(Gravity.RIGHT);
-        titleBox.addView(tv("4U NET", 14, Color.argb(235, 220, 255, 235), true));
-        TextView title = tv("نحن نتولى المهمة", 28, Color.WHITE, true);
+        titleBox.addView(tv("كرت برو", 14, Color.argb(235, 230, 255, 239), true));
+        TextView title = tv(autoOn ? "نحن نتولى المهمة" : "أنت تتولى المهمة الآن", 27, Color.WHITE, true);
         title.setGravity(Gravity.RIGHT);
         titleBox.addView(title);
         String phone = AppStore.getNetworkPhone(this);
@@ -743,14 +756,53 @@ public class MainActivity extends Activity {
 
         row.addView(titleBox, new LinearLayout.LayoutParams(0, -2, 1));
 
-        TextView badge = tv("4U", 16, Color.rgb(4, 26, 15), true);
-        badge.setGravity(Gravity.CENTER);
-        badge.setBackground(round(Color.rgb(0, 255, 148), dp(24), Color.argb(230, 210, 255, 226), dp(2)));
-        row.addView(badge, new LinearLayout.LayoutParams(dp(52), dp(52)));
+        // اليمين: شعار كرت برو الافتراضي.
+        row.addView(kartProLogoView(54), new LinearLayout.LayoutParams(dp(54), dp(54)));
 
         h.addView(row);
         wrap.addView(h, new LinearLayout.LayoutParams(-1, -2));
         return wrap;
+    }
+
+    private int currentAccentColor() {
+        String color = AppStore.getUiAccentColor(this);
+        if ("cyan".equals(color)) return neonCyan;
+        if ("gold".equals(color)) return gold;
+        if ("purple".equals(color)) return purple;
+        return green;
+    }
+
+    private int darkerAccent(int color) {
+        return Color.rgb(Math.max(0, Color.red(color) / 3), Math.max(0, Color.green(color) / 3), Math.max(0, Color.blue(color) / 3));
+    }
+
+    private int currentBgColor() {
+        return AppStore.isLightUi(this) ? Color.rgb(236, 244, 244) : bg;
+    }
+
+    private int currentCardColor() {
+        return AppStore.isLightUi(this) ? Color.rgb(248, 250, 252) : card;
+    }
+
+    private int currentTextColor() {
+        return AppStore.isLightUi(this) ? Color.rgb(18, 26, 38) : text;
+    }
+
+    private int currentMutedColor() {
+        return AppStore.isLightUi(this) ? Color.rgb(76, 88, 110) : muted;
+    }
+
+    private View kartProLogoView(int sizeDp) {
+        FrameLayout frame = new FrameLayout(this);
+        frame.setPadding(dp(3), dp(3), dp(3), dp(3));
+        frame.setBackground(round(Color.argb(40, 255, 255, 255), dp(sizeDp / 2), Color.argb(220, 230, 255, 239), dp(2)));
+        if (Build.VERSION.SDK_INT >= 21) frame.setElevation(dp(6));
+        TextView logo = tv("كرت\nبرو", 11, Color.rgb(5, 31, 18), true);
+        logo.setGravity(Gravity.CENTER);
+        logo.setLineSpacing(0, 0.9f);
+        logo.setBackground(round(Color.rgb(0, 255, 148), dp(sizeDp / 2), Color.argb(210, 255, 255, 255), dp(1)));
+        frame.addView(logo, new FrameLayout.LayoutParams(-1, -1, Gravity.CENTER));
+        return frame;
     }
 
     private View networkLogoView(int sizeDp) {
@@ -775,9 +827,9 @@ public class MainActivity extends Activity {
                 }
             } catch (Exception ignored) {}
         }
-        TextView fallback = tv("4U", Math.max(14, sizeDp / 3), Color.rgb(40, 27, 7), true);
+        TextView fallback = tv("📶", Math.max(18, sizeDp / 2), Color.WHITE, true);
         fallback.setGravity(Gravity.CENTER);
-        fallback.setBackground(round(gold, dp(sizeDp / 2), Color.argb(180, 255, 235, 167), dp(1)));
+        fallback.setBackground(round(Color.rgb(0, 136, 180), dp(sizeDp / 2), Color.argb(180, 180, 245, 255), dp(1)));
         frame.addView(fallback, new FrameLayout.LayoutParams(-1, -1, Gravity.CENTER));
         return frame;
     }
@@ -842,7 +894,7 @@ public class MainActivity extends Activity {
     }
 
     private void setTab(String key) { activeTab = key; rebuildNav(); }
-    private void clear() { content.removeAllViews(); content.setPadding(dp(18), dp(18), dp(18), dp(18)); content.setBackgroundColor(bg); }
+    private void clear() { content.removeAllViews(); content.setPadding(dp(18), dp(18), dp(18), dp(18)); content.setBackgroundColor(currentBgColor()); }
     private int dp(int v) { return (int)(v * getResources().getDisplayMetrics().density + 0.5f); }
 
     private GradientDrawable round(int color, int radius, int strokeColor, int strokeWidth) {
@@ -1050,43 +1102,48 @@ public class MainActivity extends Activity {
     }
 
     private View dashboardWelcomeCard() {
+        boolean autoOn = AppStore.isAutoSendEnabled(this);
         LinearLayout box = cardBox();
         box.setPadding(dp(18), dp(18), dp(18), dp(18));
         GradientDrawable gd = new GradientDrawable(GradientDrawable.Orientation.LEFT_RIGHT,
                 new int[]{Color.rgb(12, 18, 40), Color.rgb(18, 22, 52), Color.rgb(26, 18, 55)});
         gd.setCornerRadius(dp(28));
-        gd.setStroke(dp(1), Color.rgb(34, 53, 105));
+        gd.setStroke(dp(1), autoOn ? Color.rgb(34, 53, 105) : Color.rgb(255, 82, 118));
         box.setBackground(gd);
 
         LinearLayout top = new LinearLayout(this);
         top.setOrientation(LinearLayout.HORIZONTAL);
         top.setGravity(Gravity.CENTER_VERTICAL);
 
-        TextView state = tv((AppStore.isAutoSendEnabled(this) ? "نشط" : "متوقف") + "  ●", 14, AppStore.isAutoSendEnabled(this) ? green : red, true);
+        int stateColor = autoOn ? green : red;
+        TextView state = tv((autoOn ? "نشط" : "متوقف") + "  ●", 14, stateColor, true);
         state.setGravity(Gravity.CENTER);
         state.setPadding(dp(14), dp(8), dp(14), dp(8));
-        state.setBackground(round(Color.argb(32, Color.red(AppStore.isAutoSendEnabled(this) ? green : red), Color.green(AppStore.isAutoSendEnabled(this) ? green : red), Color.blue(AppStore.isAutoSendEnabled(this) ? green : red)), dp(24), AppStore.isAutoSendEnabled(this) ? green : red, dp(1)));
+        state.setBackground(round(Color.argb(32, Color.red(stateColor), Color.green(stateColor), Color.blue(stateColor)), dp(24), stateColor, dp(1)));
         top.addView(state);
 
         LinearLayout titleBox = new LinearLayout(this);
         titleBox.setOrientation(LinearLayout.VERTICAL);
         titleBox.setGravity(Gravity.RIGHT);
         titleBox.addView(tv("لوحة التحكم", 15, muted, false));
-        titleBox.addView(tv(AppStore.getNetworkName(this), 25, text, true));
+        titleBox.addView(tv("كرت برو", 25, text, true));
+        titleBox.addView(tv("شبكة " + AppStore.getNetworkName(this), 12, muted, false));
         top.addView(titleBox, new LinearLayout.LayoutParams(0, -2, 1));
 
         box.addView(top);
         box.addView(separator());
-        TextView note = small(AppStore.isAutoSendEnabled(this)
-                ? "النظام يعمل. تم تحديث الشكل فقط بأسلوب داكن متوهج بدون تغيير منطق السلف أو الرسائل."
-                : "الإرسال التلقائي متوقف. يمكنك تشغيله من الإعدادات عند الحاجة.");
+        TextView note = small(autoOn
+                ? "كرت برو يتابع الرسائل والطلبات تلقائيًا حسب إعداداتك."
+                : "الإرسال التلقائي متوقف، ويمكنك تنفيذ العمليات يدويًا.");
         box.addView(note);
 
         LinearLayout actions = new LinearLayout(this);
         actions.setOrientation(LinearLayout.HORIZONTAL);
         actions.setPadding(0, dp(12), 0, 0);
-        actions.addView(action("بيع كرت", Color.rgb(24, 197, 220), Color.rgb(2, 12, 22), v -> showDirectSale()), new LinearLayout.LayoutParams(0, dp(52), 1));
-        actions.addView(action("الدفتر", Color.rgb(42, 31, 84), Color.WHITE, v -> showSmartLedger()), new LinearLayout.LayoutParams(0, dp(52), 1));
+        LinearLayout.LayoutParams left = new LinearLayout.LayoutParams(0, dp(52), 1);
+        left.setMargins(dp(4), 0, dp(4), 0);
+        actions.addView(action("بيع كرت", Color.rgb(24, 197, 220), Color.rgb(2, 12, 22), v -> showDirectSale()), left);
+        actions.addView(action("الدفتر", Color.rgb(42, 31, 84), Color.WHITE, v -> showSmartLedger()), left);
         box.addView(actions);
         return box;
     }
@@ -1094,38 +1151,252 @@ public class MainActivity extends Activity {
     private View dashboardStatsGrid() {
         LinearLayout grid = new LinearLayout(this);
         grid.setOrientation(LinearLayout.VERTICAL);
-        LinearLayout row1 = new LinearLayout(this);
-        row1.setOrientation(LinearLayout.HORIZONTAL);
-        LinearLayout row2 = new LinearLayout(this);
-        row2.setOrientation(LinearLayout.HORIZONTAL);
+        grid.setPadding(0, dp(2), 0, dp(5));
+        LinearLayout row1 = dashboardMetricRow();
+        LinearLayout row2 = dashboardMetricRow();
 
-        row1.addView(dashboardStatCard("كروت مباعة", String.valueOf(AppStore.sentOperationsCount(this)), "💳", purple), new LinearLayout.LayoutParams(0, -2, 1));
-        row1.addView(dashboardStatCard("العمليات", String.valueOf(AppStore.processedOperationsCount(this)), "📊", gold), new LinearLayout.LayoutParams(0, -2, 1));
-        row2.addView(dashboardStatCard("الزبائن", String.valueOf(AppStore.loadLedgerCustomers(this).size()), "👥", purpleDark), new LinearLayout.LayoutParams(0, -2, 1));
-        row2.addView(dashboardStatCard("الديون", AppStore.ledgerTotalDebt(this) + " ر.ي", "📒", orange), new LinearLayout.LayoutParams(0, -2, 1));
+        row1.addView(dashboardStatCard("إجمالي العمليات", String.valueOf(AppStore.visibleLogsCount(this)), "📊", gold, v -> openDashboardReport("all")), statCellLp());
+        row1.addView(dashboardStatCard("كروت مباعة", String.valueOf(AppStore.sentOperationsCount(this)), "💳", neonCyan, v -> openDashboardReport("sold")), statCellLp());
+        row1.addView(dashboardStatCard("مبيعات اليوم", todaySalesSummary(), "💵", green, v -> openDashboardReport("today")), statCellLp());
+
+        row2.addView(dashboardStatCard("الديون", AppStore.ledgerTotalDebt(this) + " ر.ي", "📒", orange, v -> showDebtCustomers()), statCellLp());
+        row2.addView(dashboardStatCard("المكافآت", rewardsSummary(), "⭐", gold, v -> openDashboardReport("rewards")), statCellLp());
+        row2.addView(dashboardStatCard("الزبائن", String.valueOf(AppStore.loadLedgerCustomers(this).size()), "👥", purpleLight, v -> showSmartLedger()), statCellLp());
 
         grid.addView(row1);
         grid.addView(row2);
         return grid;
     }
 
-    private View dashboardStatCard(String label, String value, String icon, int accent) {
+    private LinearLayout dashboardMetricRow() {
+        LinearLayout row = new LinearLayout(this);
+        row.setOrientation(LinearLayout.HORIZONTAL);
+        row.setLayoutDirection(View.LAYOUT_DIRECTION_RTL);
+        row.setBaselineAligned(false);
+        return row;
+    }
+
+    private LinearLayout.LayoutParams statCellLp() {
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0, dp(116), 1);
+        lp.setMargins(dp(4), dp(5), dp(4), dp(7));
+        return lp;
+    }
+
+    private View dashboardStatCard(String label, String value, String icon, int accent, View.OnClickListener listener) {
         LinearLayout box = cardBox();
-        LinearLayout.LayoutParams blp = new LinearLayout.LayoutParams(-1, -2);
-        blp.setMargins(dp(5), dp(5), dp(5), dp(9));
-        box.setLayoutParams(blp);
         box.setGravity(Gravity.CENTER);
+        box.setPadding(dp(5), dp(10), dp(5), dp(10));
         box.setBackground(round(Color.rgb(18, 23, 43), dp(24), Color.argb(145, Color.red(accent), Color.green(accent), Color.blue(accent)), dp(1)));
-        TextView iconView = tv(icon, 22, accent, true);
+        box.setOnClickListener(listener);
+        applyNeonPress(box);
+        TextView iconView = tv(icon, 21, accent, true);
         iconView.setGravity(Gravity.CENTER);
         box.addView(iconView);
-        TextView number = tv(value, 22, text, true);
+        TextView number = tv(value, 18, text, true);
         number.setGravity(Gravity.CENTER);
         box.addView(number);
-        TextView caption = tv(label, 12, muted, false);
+        TextView caption = tv(label, 11, muted, false);
         caption.setGravity(Gravity.CENTER);
         box.addView(caption);
         return box;
+    }
+
+    private String todaySalesSummary() {
+        int count = 0;
+        int amount = 0;
+        String today = todayDatePrefix();
+        for (OperationLog log : AppStore.loadRecentVisibleLogs(this, 100000)) {
+            if (isSoldLog(log) && log.createdAt != null && log.createdAt.startsWith(today)) {
+                count++;
+                amount += Math.max(0, log.amount);
+            }
+        }
+        return count + " / " + amount;
+    }
+
+    private String rewardsSummary() {
+        int points = 0;
+        int cards = 0;
+        for (CustomerReward cr : AppStore.loadCustomerRewards(this)) {
+            points += Math.max(0, cr.points);
+            cards += Math.max(0, cr.rewardCards);
+        }
+        return points + " نقطة" + (cards > 0 ? " / " + cards : "");
+    }
+
+
+    private void openDashboardReport(String mode) {
+        dashboardReportMode = mode == null ? "all" : mode;
+        dashboardReportLimit = 10;
+        dashboardReportFrom = "";
+        dashboardReportTo = "";
+        showDashboardReport();
+    }
+
+    private void showDashboardReport() {
+        setTab("home");
+        clear();
+        String screenTitle = dashboardReportTitle(dashboardReportMode);
+        content.addView(title(screenTitle));
+
+        LinearLayout tools = cardBox();
+        tools.addView(tv("خيارات العرض", 17, text, true));
+        tools.addView(small("اختر الفترة وعدد العمليات المعروضة. لا يتم تحميل كل السجلات دفعة واحدة حتى يبقى التطبيق سلسًا."));
+
+        LinearLayout filterRow = new LinearLayout(this);
+        filterRow.setOrientation(LinearLayout.HORIZONTAL);
+        filterRow.setLayoutDirection(View.LAYOUT_DIRECTION_RTL);
+        filterRow.addView(action("اليوم", green, Color.rgb(3, 22, 12), v -> { dashboardReportMode = "today"; dashboardReportLimit = 10; showDashboardReport(); }), new LinearLayout.LayoutParams(0, dp(48), 1));
+        filterRow.addView(action("الأسبوع", card2, text, v -> { dashboardReportMode = "week"; dashboardReportLimit = 10; showDashboardReport(); }), new LinearLayout.LayoutParams(0, dp(48), 1));
+        filterRow.addView(action("الكل", card2, text, v -> { dashboardReportMode = "sold"; dashboardReportLimit = 10; dashboardReportFrom = ""; dashboardReportTo = ""; showDashboardReport(); }), new LinearLayout.LayoutParams(0, dp(48), 1));
+        tools.addView(filterRow);
+
+        LinearLayout limitRow = new LinearLayout(this);
+        limitRow.setOrientation(LinearLayout.HORIZONTAL);
+        limitRow.setLayoutDirection(View.LAYOUT_DIRECTION_RTL);
+        limitRow.addView(action("10", dashboardReportLimit == 10 ? gold : card2, dashboardReportLimit == 10 ? Color.rgb(35,24,8) : text, v -> { dashboardReportLimit = 10; showDashboardReport(); }), new LinearLayout.LayoutParams(0, dp(46), 1));
+        limitRow.addView(action("50", dashboardReportLimit == 50 ? gold : card2, dashboardReportLimit == 50 ? Color.rgb(35,24,8) : text, v -> { dashboardReportLimit = 50; showDashboardReport(); }), new LinearLayout.LayoutParams(0, dp(46), 1));
+        limitRow.addView(action("100", dashboardReportLimit == 100 ? gold : card2, dashboardReportLimit == 100 ? Color.rgb(35,24,8) : text, v -> { dashboardReportLimit = 100; showDashboardReport(); }), new LinearLayout.LayoutParams(0, dp(46), 1));
+        tools.addView(limitRow);
+        tools.addView(action("فترة مخصصة", purple, Color.WHITE, v -> showDashboardDateRangeDialog()));
+        tools.addView(action("رجوع للرئيسية", card2, text, v -> showHome()));
+        content.addView(tools);
+
+        ArrayList<OperationLog> filtered = filteredDashboardLogs(dashboardReportMode, dashboardReportFrom, dashboardReportTo);
+        LinearLayout summary = cardBox();
+        int totalAmount = 0;
+        for (OperationLog log : filtered) totalAmount += Math.max(0, log.amount);
+        summary.addView(tv("النتيجة", 17, text, true));
+        String range = (!dashboardReportFrom.isEmpty() || !dashboardReportTo.isEmpty()) ? "\nالفترة: " + dashboardReportFrom + " إلى " + dashboardReportTo : "";
+        summary.addView(small("عدد العمليات: " + filtered.size() + "\nالإجمالي: " + totalAmount + " ريال" + range));
+        content.addView(summary);
+
+        int max = Math.min(filtered.size(), Math.max(10, dashboardReportLimit));
+        for (int i = 0; i < max; i++) content.addView(operationMiniCard(filtered.get(i)));
+        if (filtered.size() > max) {
+            LinearLayout more = cardBox();
+            more.addView(action("المزيد: عرض 20 عملية أخرى", card2, text, v -> { dashboardReportLimit += 20; showDashboardReport(); }), new LinearLayout.LayoutParams(-1, dp(50)));
+            content.addView(more);
+        }
+    }
+
+    private String dashboardReportTitle(String mode) {
+        if ("today".equals(mode)) return "مبيعات اليوم";
+        if ("week".equals(mode)) return "مبيعات الأسبوع";
+        if ("sold".equals(mode)) return "الكروت المباعة";
+        if ("rewards".equals(mode)) return "عمليات المكافآت";
+        return "إجمالي العمليات";
+    }
+
+    private ArrayList<OperationLog> filteredDashboardLogs(String mode, String from, String to) {
+        ArrayList<OperationLog> out = new ArrayList<>();
+        String today = todayDatePrefix();
+        long weekStart = System.currentTimeMillis() - 6L * 24L * 60L * 60L * 1000L;
+        for (OperationLog log : AppStore.loadRecentVisibleLogs(this, 100000)) {
+            boolean ok = true;
+            if ("sold".equals(mode)) ok = isSoldLog(log);
+            else if ("today".equals(mode)) ok = isSoldLog(log) && log.createdAt != null && log.createdAt.startsWith(today);
+            else if ("week".equals(mode)) ok = isSoldLog(log) && parseLogTime(log.createdAt) >= weekStart;
+            else if ("rewards".equals(mode)) ok = isRewardLog(log);
+            if (ok && (!from.isEmpty() || !to.isEmpty())) ok = isLogInRange(log, from, to);
+            if (ok) out.add(log);
+        }
+        return out;
+    }
+
+    private boolean isSoldLog(OperationLog log) {
+        if (log == null) return false;
+        String s = (safe(log.status) + " " + safe(log.provider) + " " + safe(log.message)).toLowerCase(Locale.US);
+        return s.contains("تم إرسال") || s.contains("تم الارسال") || s.contains("تم تسليم") || s.contains("بيع") || s.contains("كرت");
+    }
+
+    private boolean isRewardLog(OperationLog log) {
+        if (log == null) return false;
+        String s = safe(log.status) + " " + safe(log.provider) + " " + safe(log.sender) + " " + safe(log.message);
+        return s.contains("مكاف") || s.contains("نقاط") || s.contains("reward");
+    }
+
+    private String todayDatePrefix() {
+        return new SimpleDateFormat("yyyy/MM/dd", Locale.US).format(new Date());
+    }
+
+    private long parseLogTime(String createdAt) {
+        if (createdAt == null || createdAt.trim().isEmpty()) return 0L;
+        try { return new SimpleDateFormat("yyyy/MM/dd HH:mm:ss", Locale.US).parse(createdAt.trim()).getTime(); } catch (Exception ignored) {}
+        try { return new SimpleDateFormat("yyyy/MM/dd", Locale.US).parse(createdAt.trim()).getTime(); } catch (Exception ignored) {}
+        return 0L;
+    }
+
+    private boolean isLogInRange(OperationLog log, String from, String to) {
+        long t = parseLogTime(log == null ? "" : log.createdAt);
+        if (t <= 0) return false;
+        long f = from == null || from.trim().isEmpty() ? 0L : parseLogTime(from.trim() + " 00:00:00");
+        long e = to == null || to.trim().isEmpty() ? Long.MAX_VALUE : parseLogTime(to.trim() + " 23:59:59");
+        return t >= f && t <= e;
+    }
+
+    private void showDashboardDateRangeDialog() {
+        LinearLayout layout = new LinearLayout(this);
+        layout.setOrientation(LinearLayout.VERTICAL);
+        layout.setPadding(dp(14), dp(10), dp(14), dp(4));
+        EditText from = new EditText(this);
+        from.setHint("من تاريخ: yyyy/MM/dd");
+        from.setGravity(Gravity.RIGHT);
+        from.setText(dashboardReportFrom);
+        EditText to = new EditText(this);
+        to.setHint("إلى تاريخ: yyyy/MM/dd");
+        to.setGravity(Gravity.RIGHT);
+        to.setText(dashboardReportTo);
+        layout.addView(from);
+        layout.addView(to);
+        new AlertDialog.Builder(this)
+                .setTitle("فترة مخصصة")
+                .setView(layout)
+                .setPositiveButton("عرض", (d, w) -> {
+                    dashboardReportFrom = from.getText().toString().trim();
+                    dashboardReportTo = to.getText().toString().trim();
+                    dashboardReportLimit = 10;
+                    showDashboardReport();
+                })
+                .setNegativeButton("إلغاء", null)
+                .show();
+    }
+
+    private View operationMiniCard(OperationLog log) {
+        LinearLayout box = cardBox();
+        int accent = isPendingAlertStatus(log) ? red : (isRewardLog(log) ? gold : (isSoldLog(log) ? green : neonCyan));
+        box.setBackground(round(Color.rgb(17, 22, 40), dp(20), accent, dp(1)));
+        box.addView(tv(safe(log.status).isEmpty() ? "عملية" : log.status, 15, text, true));
+        box.addView(small("المبلغ: " + log.amount + " ريال"
+                + "\nالرقم: " + (safe(log.customerPhone).isEmpty() ? "-" : log.customerPhone)
+                + "\nالاسم: " + (safe(log.customerName).isEmpty() ? "-" : log.customerName)
+                + "\nالوقت: " + safe(log.createdAt)));
+        return box;
+    }
+
+    private void showDebtCustomers() {
+        setTab("ledger");
+        clear();
+        content.addView(title("زبائن عليهم ديون"));
+        ArrayList<LedgerCustomer> list = AppStore.loadLedgerCustomers(this);
+        int count = 0;
+        int total = 0;
+        for (LedgerCustomer c : list) {
+            if (c.debt <= 0) continue;
+            count++;
+            total += c.debt;
+            content.addView(ledgerCustomerRow(c));
+        }
+        if (count == 0) {
+            LinearLayout empty = cardBox();
+            empty.addView(small("لا توجد ديون حالية على الزبائن."));
+            content.addView(empty);
+        } else {
+            LinearLayout summary = cardBox();
+            summary.addView(tv("الإجمالي", 17, text, true));
+            summary.addView(small("عدد الزبائن المدينين: " + count + "\nإجمالي الديون: " + total + " ريال"));
+            content.addView(summary);
+        }
     }
 
     private View dashboardServicesGrid() {
@@ -1210,16 +1481,25 @@ public class MainActivity extends Activity {
 
     private View recentTransactionsCard() {
         LinearLayout box = cardBox();
-        ArrayList<OperationLog> logs = AppStore.loadRecentVisibleLogs(this, 5);
+        int total = AppStore.visibleLogsCount(this);
+        ArrayList<OperationLog> logs = AppStore.loadRecentVisibleLogs(this, homeRecentVisibleLimit);
         if (logs.isEmpty()) {
             box.addView(small("لا توجد عمليات حديثة حتى الآن."));
             return box;
         }
-        int max = Math.min(5, logs.size());
+        int max = Math.min(homeRecentVisibleLimit, logs.size());
+        box.addView(small("المعروض الآن: " + max + " من " + total + " عملية."));
+        box.addView(separator());
         for (int i = 0; i < max; i++) {
             box.addView(recentOperationRow(logs.get(i), i < max - 1));
         }
-        box.addView(action("عرض السجل كاملًا", purpleLight, purple, v -> showLogs()), new LinearLayout.LayoutParams(-1, dp(48)));
+        if (total > max) {
+            box.addView(action("المزيد", purpleLight, purple, v -> {
+                homeRecentVisibleLimit = homeRecentVisibleLimit <= 5 ? 10 : homeRecentVisibleLimit + 20;
+                showHome();
+            }), new LinearLayout.LayoutParams(-1, dp(48)));
+        }
+        box.addView(action("فتح السجل كاملًا", card2, text, v -> showLogs()), new LinearLayout.LayoutParams(-1, dp(46)));
         return box;
     }
 
@@ -3029,7 +3309,7 @@ public class MainActivity extends Activity {
 
         LinearLayout ui = cardBox();
         ui.addView(tv("تخصيص الواجهة", 17, text, true));
-        ui.addView(small("تحكم سريع بثلاث واجهات: الواجهة الرئيسية، لوحة التحكم، والأقسام السريعة. التصميم الحالي يعتمد 9 خانات رئيسية، كل سطر 3 خانات، مع توهج وتكبير خفيف عند النقر."));
+        ui.addView(small("تحكم سريع في الهوية والألوان: داكن/نهاري، اللون الرئيسي، الهيدر، لوحة التحكم 6 خانات، وآخر العمليات التدريجي."));
         ui.addView(action("فتح التحكم في الواجهة", Color.rgb(0, 126, 78), Color.WHITE, v -> showUiControlPanel()));
         content.addView(ui);
 
@@ -3054,7 +3334,11 @@ public class MainActivity extends Activity {
         sw.setTextSize(17);
         sw.setTypeface(appTypeface(true));
         sw.setChecked(AppStore.isAutoSendEnabled(this));
-        sw.setOnCheckedChangeListener((b, enabled) -> AppStore.setAutoSendEnabled(this, enabled));
+        sw.setOnCheckedChangeListener((b, enabled) -> {
+            AppStore.setAutoSendEnabled(this, enabled);
+            buildLayout();
+            showSettings();
+        });
         auto.addView(sw);
         auto.addView(small("الرسائل الموثوقة: Jawali / Jaib / ONE Cash + أي محفظة تضيفها من إدارة المحافظ والأسماء الموثوقة."));
         content.addView(auto);
@@ -3127,7 +3411,7 @@ public class MainActivity extends Activity {
 
         LinearLayout top = cardBox();
         top.addView(tv("لوحة تحكم الواجهة", 18, text, true));
-        top.addView(small("تم تجهيزها بثلاث واجهات فقط حتى تبقى بسيطة ومستقرة: الواجهة الرئيسية، لوحة التحكم، والأقسام السريعة. كل قسم يتغير لونه ويكبر عند النقر عبر تأثير التوهج."));
+        top.addView(small("تم تجهيزها بثلاث واجهات فقط حتى تبقى بسيطة ومستقرة: الواجهة الرئيسية، لوحة التحكم، والأقسام السريعة. كما أضيف ضبط سريع للوضع الداكن/النهاري واللون الرئيسي."));
         content.addView(top);
 
         LinearLayout shell = new LinearLayout(this);
@@ -3192,6 +3476,23 @@ public class MainActivity extends Activity {
         pane.addView(tv("الواجهة الرئيسية", 17, text, true));
         pane.addView(small("النمط المعتمد الآن: 9 خانات، كل سطر 3 خانات، حواف متقاربة غير متلاصقة، وتوهج عند الضغط."));
         pane.addView(separator());
+        pane.addView(tv("المظهر العام", 15, text, true));
+        LinearLayout themeRow = new LinearLayout(this);
+        themeRow.setOrientation(LinearLayout.HORIZONTAL);
+        themeRow.setLayoutDirection(View.LAYOUT_DIRECTION_RTL);
+        themeRow.addView(action("داكن", AppStore.isLightUi(this) ? card2 : green, AppStore.isLightUi(this) ? text : Color.rgb(3, 22, 12), v -> { AppStore.setUiThemeMode(this, "dark"); buildLayout(); showUiControlPanel(); }), new LinearLayout.LayoutParams(0, dp(48), 1));
+        themeRow.addView(action("نهاري", AppStore.isLightUi(this) ? green : card2, AppStore.isLightUi(this) ? Color.rgb(3, 22, 12) : text, v -> { AppStore.setUiThemeMode(this, "light"); buildLayout(); showUiControlPanel(); }), new LinearLayout.LayoutParams(0, dp(48), 1));
+        pane.addView(themeRow);
+        pane.addView(tv("اللون الرئيسي", 15, text, true));
+        LinearLayout colorRow = new LinearLayout(this);
+        colorRow.setOrientation(LinearLayout.HORIZONTAL);
+        colorRow.setLayoutDirection(View.LAYOUT_DIRECTION_RTL);
+        colorRow.addView(action("أخضر", Color.rgb(0, 180, 98), Color.WHITE, v -> { AppStore.setUiAccentColor(this, "green"); buildLayout(); showUiControlPanel(); }), new LinearLayout.LayoutParams(0, dp(46), 1));
+        colorRow.addView(action("سماوي", neonCyan, Color.rgb(2, 12, 22), v -> { AppStore.setUiAccentColor(this, "cyan"); buildLayout(); showUiControlPanel(); }), new LinearLayout.LayoutParams(0, dp(46), 1));
+        colorRow.addView(action("ذهبي", gold, Color.rgb(35,24,8), v -> { AppStore.setUiAccentColor(this, "gold"); buildLayout(); showUiControlPanel(); }), new LinearLayout.LayoutParams(0, dp(46), 1));
+        colorRow.addView(action("بنفسجي", purple, Color.WHITE, v -> { AppStore.setUiAccentColor(this, "purple"); buildLayout(); showUiControlPanel(); }), new LinearLayout.LayoutParams(0, dp(46), 1));
+        pane.addView(colorRow);
+        pane.addView(separator());
         pane.addView(badge("3 × 3", green));
         pane.addView(badge("تكبير خفيف عند النقر", neonCyan));
         pane.addView(badge("حواف مضيئة", gold));
@@ -3200,7 +3501,7 @@ public class MainActivity extends Activity {
 
     private void renderUiDashboardControl(LinearLayout pane) {
         pane.addView(tv("لوحة التحكم", 17, text, true));
-        pane.addView(small("تحتوي على بطاقة الحالة والإحصائيات وآخر العمليات. أبقيناها مختصرة حتى لا تثقل الصفحة الرئيسية."));
+        pane.addView(small("تحتوي الآن على 6 خانات في سطرين، كل سطر 3 خانات. كل خانة تفتح القسم أو التقرير المناسب بدون تحميل كل البيانات دفعة واحدة."));
         pane.addView(separator());
         pane.addView(badge("الحالة", green));
         pane.addView(badge("إحصائيات", purpleLight));

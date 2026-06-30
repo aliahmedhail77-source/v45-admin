@@ -73,6 +73,8 @@ class AppStore {
     private static final String KEY_ADMIN_PHONE = "admin_phone";
     private static final String KEY_NETWORK_LOGO_PATH = "network_logo_path_v134";
     private static final String KEY_SHOW_PHONE_IN_SIGNATURE = "show_phone_in_signature_v134";
+    private static final String KEY_UI_THEME_MODE = "ui_theme_mode_v142";
+    private static final String KEY_UI_ACCENT_COLOR = "ui_accent_color_v142";
     private static final String KEY_MIKROTIK_HOST = "mikrotik_host";
     private static final String KEY_MIKROTIK_PORT = "mikrotik_port";
     private static final String KEY_MIKROTIK_USER = "mikrotik_user";
@@ -556,6 +558,31 @@ class AppStore {
             return name + "\n" + phone.trim();
         }
         return name;
+    }
+
+    // Stage 14.2: إعدادات واجهة خفيفة: داكن/نهاري + لون رئيسي.
+    static String getUiThemeMode(Context c) {
+        return prefs(c).getString(KEY_UI_THEME_MODE, "dark");
+    }
+
+    static void setUiThemeMode(Context c, String mode) {
+        String value = mode == null ? "dark" : mode.trim().toLowerCase(Locale.US);
+        if (!"light".equals(value)) value = "dark";
+        prefs(c).edit().putString(KEY_UI_THEME_MODE, value).apply();
+    }
+
+    static boolean isLightUi(Context c) {
+        return "light".equals(getUiThemeMode(c));
+    }
+
+    static String getUiAccentColor(Context c) {
+        return prefs(c).getString(KEY_UI_ACCENT_COLOR, "green");
+    }
+
+    static void setUiAccentColor(Context c, String color) {
+        String value = color == null ? "green" : color.trim().toLowerCase(Locale.US);
+        if (!("green".equals(value) || "cyan".equals(value) || "gold".equals(value) || "purple".equals(value))) value = "green";
+        prefs(c).edit().putString(KEY_UI_ACCENT_COLOR, value).apply();
     }
 
     static String getPdfHeaderSubtitle(Context c) {
