@@ -119,6 +119,9 @@ public class MainActivity extends Activity {
     String dashboardReportFrom = "";
     String dashboardReportTo = "";
 
+    // Stage 14.6 KART PRO BRANDING + KUFI TYPOGRAPHY.
+    // تغيير الاسم الظاهر إلى كرت برو واعتماد نمط كوفي للعناوين مع خط واضح للنصوص وPDF.
+
     // Stage 14.5 PREMIUM DIALOGS + SMART CUSTOMER FORM + PRO PDF REDESIGN.
     // توحيد النوافذ بإطار تجاري، إعادة ترتيب زبون الدفتر، وتحسين إخراج PDF المحاسبي.
 
@@ -378,11 +381,11 @@ public class MainActivity extends Activity {
         setContentView(page);
 
         TextView top = new TextView(this);
-        top.setText("ONLINE");
+        top.setText("كرت برو");
         top.setGravity(Gravity.RIGHT | Gravity.CENTER_VERTICAL);
         top.setPadding(0, 0, dp(24), 0);
         top.setTextSize(22);
-        top.setTypeface(appTypeface(true));
+        top.setTypeface(appTitleTypeface());
         top.setTextColor(Color.WHITE);
         top.setBackgroundColor(purpleLight);
         page.addView(top, new LinearLayout.LayoutParams(-1, dp(56)));
@@ -399,7 +402,8 @@ public class MainActivity extends Activity {
         lock.setGravity(Gravity.CENTER);
         body.addView(lock, new LinearLayout.LayoutParams(-1, -2));
 
-        TextView title = tv("تفعيل ONLINE", 30, text, true);
+        TextView title = tv("تفعيل كرت برو", 30, text, true);
+        title.setTypeface(appTitleTypeface());
         title.setGravity(Gravity.CENTER);
         LinearLayout.LayoutParams titleLp = new LinearLayout.LayoutParams(-1, -2);
         titleLp.setMargins(0, dp(18), 0, dp(8));
@@ -543,7 +547,7 @@ public class MainActivity extends Activity {
 
     private String supportMessage() {
         return "السلام عليكم " + SUPPORT_NAME + "\n"
-                + "طلب تفعيل تطبيق ONLINE Admin\n"
+                + "طلب تفعيل تطبيق كرت برو\n"
                 + "نوع الطلب: شهر تجريبي / سنة / مدى الحياة\n"
                 + "اسم الشبكة: " + AppStore.getNetworkName(this) + "\n"
                 + "كود الطلب: " + AppStore.getRequestCode(this) + "\n"
@@ -597,7 +601,7 @@ public class MainActivity extends Activity {
                 .setNegativeButton("نسخ", (d, w) -> {
                     try {
                         android.content.ClipboardManager cm = (android.content.ClipboardManager)getSystemService(CLIPBOARD_SERVICE);
-                        cm.setPrimaryClip(android.content.ClipData.newPlainText("ONLINE activation request", textToSend));
+                        cm.setPrimaryClip(android.content.ClipData.newPlainText("Kart Pro activation request", textToSend));
                         toast("تم نسخ بيانات التفعيل");
                     } catch (Exception e) {
                         toast("تعذر النسخ");
@@ -761,8 +765,11 @@ public class MainActivity extends Activity {
         LinearLayout titleBox = new LinearLayout(this);
         titleBox.setOrientation(LinearLayout.VERTICAL);
         titleBox.setGravity(Gravity.RIGHT);
-        titleBox.addView(tv("كرت برو", 14, Color.argb(235, 230, 255, 239), true));
+        TextView brand = tv("كرت برو", 14, Color.argb(235, 230, 255, 239), true);
+        brand.setTypeface(appTitleTypeface());
+        titleBox.addView(brand);
         TextView title = tv(autoOn ? "نحن نتولى المهمة" : "أنت تتولى المهمة الآن", 27, Color.WHITE, true);
+        title.setTypeface(appTitleTypeface());
         title.setGravity(Gravity.RIGHT);
         titleBox.addView(title);
         String phone = AppStore.getNetworkPhone(this);
@@ -936,7 +943,13 @@ public class MainActivity extends Activity {
     }
 
     private Typeface appTypeface(boolean bold) {
-        return Typeface.create(bold ? "sans-serif-medium" : "sans-serif", bold ? Typeface.BOLD : Typeface.NORMAL);
+        // Stage 14.6: نمط كوفي للعناوين والنصوص البارزة بدون تضمين ملفات خطوط خارجية.
+        // يحافظ على صغر حجم التطبيق، ويمكن لاحقًا استبداله بملف Noto Kufi Arabic إن توفر داخل Android Studio.
+        return Typeface.create(bold ? "sans-serif-condensed" : "sans-serif", bold ? Typeface.BOLD : Typeface.NORMAL);
+    }
+
+    private Typeface appTitleTypeface() {
+        return Typeface.create("sans-serif-condensed", Typeface.BOLD);
     }
 
     private TextView tv(String value, int size, int color, boolean bold) {
@@ -1262,7 +1275,9 @@ public class MainActivity extends Activity {
         titleBox.setOrientation(LinearLayout.VERTICAL);
         titleBox.setGravity(Gravity.RIGHT);
         titleBox.addView(tv("لوحة التحكم", 15, muted, false));
-        titleBox.addView(tv("كرت برو", 25, text, true));
+        TextView controlTitle = tv("كرت برو", 25, text, true);
+        controlTitle.setTypeface(appTitleTypeface());
+        titleBox.addView(controlTitle);
         titleBox.addView(tv("شبكة " + AppStore.getNetworkName(this), 12, muted, false));
         top.addView(titleBox, new LinearLayout.LayoutParams(0, -2, 1));
 
@@ -3083,7 +3098,7 @@ public class MainActivity extends Activity {
         group.check(1000 + checked);
         group.setOnCheckedChangeListener((g, id) -> selected[0] = id - 1000);
         layout.addView(group);
-        TextView note = small("يتم حفظ النسخ داخل مجلد التطبيق ONLINE_auto_backups عند فتح التطبيق أو تنفيذ عمليات مهمة بعد مرور الفترة المحددة.");
+        TextView note = small("يتم حفظ النسخ داخل مجلد التطبيق عند فتح التطبيق أو تنفيذ عمليات مهمة بعد مرور الفترة المحددة.");
         layout.addView(note);
         new AlertDialog.Builder(this)
                 .setTitle("إعدادات النسخ التلقائي")
@@ -4290,7 +4305,7 @@ public class MainActivity extends Activity {
 
         EditText name = new EditText(this); name.setHint("اسم نقطة البيع"); name.setText(existing == null ? "" : existing.name); name.setGravity(Gravity.RIGHT);
         EditText phone = new EditText(this); phone.setHint("رقم نقطة البيع"); phone.setText(existing == null ? "" : existing.phone); phone.setGravity(Gravity.RIGHT); phone.setInputType(InputType.TYPE_CLASS_PHONE);
-        EditText req = new EditText(this); req.setHint("كود الطلب من تطبيق ONLINE POS"); req.setText(existing == null ? "" : existing.requestCode); req.setGravity(Gravity.RIGHT);
+        EditText req = new EditText(this); req.setHint("كود الطلب من تطبيق كرت برو نقطة البيع"); req.setText(existing == null ? "" : existing.requestCode); req.setGravity(Gravity.RIGHT);
         EditText notes = new EditText(this); notes.setHint("ملاحظات اختيارية"); notes.setText(existing == null ? "" : existing.notes); notes.setGravity(Gravity.RIGHT);
         CheckBox active = new CheckBox(this); active.setText("نقطة البيع مفعلة"); active.setChecked(existing == null || existing.active);
         CheckBox rewards = new CheckBox(this); rewards.setText("مع تفعيل المكافآت لهذه النقطة"); rewards.setChecked(existing == null || existing.rewardsEnabled);
@@ -4362,7 +4377,7 @@ public class MainActivity extends Activity {
                 + "مكان الحفظ:\n" + filePath);
         layout.addView(info);
 
-        TextView note = small("ملاحظة: هذا هو ملف .onlpack الذي ترسله لنقطة البيع. لا يتم استيراده إلا من تطبيق ONLINE POS.");
+        TextView note = small("ملاحظة: هذا هو ملف .onlpack الذي ترسله لنقطة البيع. لا يتم استيراده إلا من تطبيق كرت برو نقطة البيع.");
         note.setPadding(0, dp(8), 0, dp(8));
         layout.addView(note);
 
@@ -4389,7 +4404,7 @@ public class MainActivity extends Activity {
             Intent intent = new Intent(Intent.ACTION_SEND);
             intent.setType("application/octet-stream");
             intent.putExtra(Intent.EXTRA_STREAM, Uri.fromFile(file));
-            intent.putExtra(Intent.EXTRA_TEXT, "ملف كروت ONLINE POS لنقطة البيع: " + pos.name + "\nيتم استيراده من داخل تطبيق نقطة البيع فقط.");
+            intent.putExtra(Intent.EXTRA_TEXT, "ملف كروت كرت برو لنقطة البيع: " + pos.name + "\nيتم استيراده من داخل تطبيق نقطة البيع فقط.");
             intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
             startActivity(Intent.createChooser(intent, "إرسال ملف نقطة البيع"));
         } catch (Exception e) {
@@ -6962,7 +6977,7 @@ public class MainActivity extends Activity {
         p.setColor(color);
         p.setTextSize(size);
         p.setTextAlign(align);
-        p.setTypeface(Typeface.create(Typeface.SANS_SERIF, bold ? Typeface.BOLD : Typeface.NORMAL));
+        p.setTypeface(Typeface.create(bold ? "sans-serif-condensed" : "sans-serif", bold ? Typeface.BOLD : Typeface.NORMAL));
         return p;
     }
 
@@ -7402,7 +7417,7 @@ public class MainActivity extends Activity {
         TextPaint tp = new TextPaint(Paint.ANTI_ALIAS_FLAG);
         tp.setColor(colorValue);
         tp.setTextSize(size);
-        tp.setTypeface(Typeface.create(Typeface.SANS_SERIF, bold ? Typeface.BOLD : Typeface.NORMAL));
+        tp.setTypeface(Typeface.create(bold ? "sans-serif-condensed" : "sans-serif", bold ? Typeface.BOLD : Typeface.NORMAL));
         String value = cleanPdfText(textValue == null || textValue.trim().isEmpty() ? "-" : textValue.trim());
         int save = canvas.save();
         canvas.translate(left, top);
