@@ -119,6 +119,9 @@ public class MainActivity extends Activity {
     String dashboardReportFrom = "";
     String dashboardReportTo = "";
 
+    // Stage 14.5 PREMIUM DIALOGS + SMART CUSTOMER FORM + PRO PDF REDESIGN.
+    // توحيد النوافذ بإطار تجاري، إعادة ترتيب زبون الدفتر، وتحسين إخراج PDF المحاسبي.
+
     // Stage 14.4 AUTO CARD SEARCH + CLEAN SALES FILTERS.
     // بحث الكروت تلقائيًا بدون زر، وتنظيف فلاتر المبيعات بقوائم منظمة ومزيد 20 فقط.
 
@@ -1040,25 +1043,144 @@ public class MainActivity extends Activity {
 
     private void styleNeonDialog(AlertDialog dlg, int accentColor) {
         if (dlg == null) return;
-        dlg.setOnShowListener(d -> {
-            try {
-                if (dlg.getWindow() != null) {
-                    dlg.getWindow().setBackgroundDrawable(round(Color.rgb(28, 31, 48), dp(22), accentColor, dp(1)));
-                }
-                Button pos = dlg.getButton(AlertDialog.BUTTON_POSITIVE);
-                Button neg = dlg.getButton(AlertDialog.BUTTON_NEGATIVE);
-                Button neu = dlg.getButton(AlertDialog.BUTTON_NEUTRAL);
-                if (pos != null) { pos.setTextColor(accentColor); pos.setTypeface(appTypeface(true)); }
-                if (neg != null) { neg.setTextColor(muted); neg.setTypeface(appTypeface(true)); }
-                if (neu != null) { neu.setTextColor(orange); neu.setTypeface(appTypeface(true)); }
-            } catch (Exception ignored) {}
-        });
+        dlg.setOnShowListener(d -> applyPremiumDialogChrome(dlg, accentColor));
+    }
+
+    private void applyPremiumDialogChrome(AlertDialog dlg, int accentColor) {
+        if (dlg == null) return;
+        try {
+            if (dlg.getWindow() != null) {
+                dlg.getWindow().setDimAmount(0.72f);
+                dlg.getWindow().setBackgroundDrawable(round(Color.rgb(11, 15, 31), dp(26), accentColor, dp(2)));
+            }
+            Button pos = dlg.getButton(AlertDialog.BUTTON_POSITIVE);
+            Button neg = dlg.getButton(AlertDialog.BUTTON_NEGATIVE);
+            Button neu = dlg.getButton(AlertDialog.BUTTON_NEUTRAL);
+            styleDialogButton(pos, accentColor, Color.rgb(4, 15, 18));
+            styleDialogButton(neg, Color.rgb(54, 66, 98), text);
+            styleDialogButton(neu, gold, Color.rgb(35, 24, 8));
+        } catch (Exception ignored) {}
+    }
+
+    private void styleDialogButton(Button b, int bgColor, int fgColor) {
+        if (b == null) return;
+        b.setTextColor(fgColor);
+        b.setTypeface(appTypeface(true));
+        b.setAllCaps(false);
+        b.setTextSize(14);
+        b.setPadding(dp(12), dp(6), dp(12), dp(6));
+        b.setBackground(round(bgColor, dp(14), Color.argb(90, 255, 255, 255), dp(1)));
+    }
+
+    private AlertDialog showPremiumDialog(String titleText, View body, String positive, android.content.DialogInterface.OnClickListener positiveClick, String negative, int accentColor) {
+        AlertDialog dlg = new AlertDialog.Builder(this)
+                .setTitle(titleText)
+                .setView(body)
+                .setPositiveButton(positive, positiveClick)
+                .setNegativeButton(negative == null ? "إلغاء" : negative, null)
+                .create();
+        styleNeonDialog(dlg, accentColor);
+        dlg.show();
+        makeDialogKeyboardFriendly(dlg);
+        return dlg;
+    }
+
+    private interface PremiumChoiceCallback { void onPick(int which); }
+
+    private void showPremiumChoiceDialog(String titleText, String[] labels, String selectedLabel, int accentColor, PremiumChoiceCallback callback) {
+        LinearLayout layout = new LinearLayout(this);
+        layout.setOrientation(LinearLayout.VERTICAL);
+        layout.setPadding(dp(12), dp(10), dp(12), dp(12));
+        layout.setBackground(round(Color.rgb(11, 15, 31), dp(22), accentColor, dp(1)));
+        TextView head = tv(titleText, 20, text, true);
+        head.setGravity(Gravity.RIGHT);
+        head.setPadding(dp(8), dp(6), dp(8), dp(10));
+        layout.addView(head);
+        layout.addView(separator());
+        final AlertDialog[] holder = new AlertDialog[1];
+        for (int i = 0; i < labels.length; i++) {
+            final int idx = i;
+            String shown = "all".equalsIgnoreCase(labels[i]) ? "الكل" : labels[i];
+            boolean selected = shown.equals(selectedLabel) || labels[i].equals(selectedLabel) || ("all".equalsIgnoreCase(labels[i]) && "كل المحافظ".equals(selectedLabel));
+            TextView row = tv((selected ? "✓  " : "   ") + shown, 17, selected ? accentColor : text, selected);
+            row.setGravity(Gravity.RIGHT | Gravity.CENTER_VERTICAL);
+            row.setPadding(dp(14), dp(12), dp(14), dp(12));
+            row.setBackground(round(selected ? Color.argb(45, Color.red(accentColor), Color.green(accentColor), Color.blue(accentColor)) : Color.rgb(16, 21, 41), dp(16), selected ? accentColor : borderSoft, dp(1)));
+            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, dp(54));
+            lp.setMargins(0, dp(4), 0, dp(4));
+            layout.addView(row, lp);
+            row.setOnClickListener(v -> {
+                try { if (holder[0] != null) holder[0].dismiss(); } catch(Exception ignored) {}
+                if (callback != null) callback.onPick(idx);
+            });
+        }
+        AlertDialog dlg = new AlertDialog.Builder(this).setView(scrollableDialogView(layout)).create();
+        holder[0] = dlg;
+        styleNeonDialog(dlg, accentColor);
+        dlg.show();
+    }
+
+    private EditText premiumEdit(String hint, String value, int inputType) {
+        EditText e = new EditText(this);
+        e.setHint(hint);
+        e.setText(value == null ? "" : value);
+        e.setInputType(inputType);
+        e.setTextColor(text);
+        e.setHintTextColor(Color.rgb(118, 128, 156));
+        e.setTextSize(16);
+        e.setTypeface(appTypeface(false));
+        e.setGravity(Gravity.RIGHT | Gravity.CENTER_VERTICAL);
+        e.setSingleLine(true);
+        e.setPadding(dp(14), 0, dp(14), 0);
+        e.setBackground(round(Color.rgb(8, 12, 27), dp(16), Color.rgb(48, 68, 112), dp(1)));
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, dp(52));
+        lp.setMargins(0, dp(5), 0, dp(9));
+        e.setLayoutParams(lp);
+        return e;
+    }
+
+    private TextView premiumDialogSection(String label) {
+        TextView t = tv(label, 16, neonCyan, true);
+        t.setGravity(Gravity.RIGHT);
+        t.setPadding(dp(6), dp(12), dp(6), dp(4));
+        return t;
+    }
+
+    private LinearLayout premiumOptionCard(String titleText, String sub, int accentColor, boolean selected) {
+        LinearLayout box = new LinearLayout(this);
+        box.setOrientation(LinearLayout.VERTICAL);
+        box.setPadding(dp(14), dp(10), dp(14), dp(10));
+        setPremiumOptionState(box, selected, accentColor);
+        TextView title = tv((selected ? "✓  " : "○  ") + titleText, 16, selected ? accentColor : text, true);
+        TextView subtitle = small(sub == null ? "" : sub);
+        subtitle.setTextColor(selected ? Color.rgb(216, 246, 250) : muted);
+        box.addView(title);
+        box.addView(subtitle);
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, -2);
+        lp.setMargins(0, dp(4), 0, dp(6));
+        box.setLayoutParams(lp);
+        return box;
+    }
+
+    private void setPremiumOptionState(LinearLayout box, boolean selected, int accentColor) {
+        if (box == null) return;
+        int bgColor = selected ? Color.argb(48, Color.red(accentColor), Color.green(accentColor), Color.blue(accentColor)) : Color.rgb(13, 18, 36);
+        int stroke = selected ? accentColor : borderSoft;
+        box.setBackground(round(bgColor, dp(18), stroke, selected ? dp(2) : dp(1)));
+        if (Build.VERSION.SDK_INT >= 21) box.setElevation(selected ? dp(6) : dp(2));
     }
 
     private void showNeonAlert(String title, String message, int accentColor, boolean sound) {
+        LinearLayout body = new LinearLayout(this);
+        body.setOrientation(LinearLayout.VERTICAL);
+        body.setPadding(dp(14), dp(8), dp(14), dp(4));
+        body.setBackground(round(Color.rgb(11, 15, 31), dp(22), accentColor, dp(1)));
+        TextView msg = tv(message, 15, text, false);
+        msg.setLineSpacing(4, 1.08f);
+        body.addView(msg);
         AlertDialog dlg = new AlertDialog.Builder(this)
                 .setTitle(title)
-                .setMessage(message)
+                .setView(body)
                 .setPositiveButton("حسنًا", null)
                 .create();
         styleNeonDialog(dlg, accentColor);
@@ -1299,44 +1421,35 @@ public class MainActivity extends Activity {
     private void showDashboardPeriodDialog() {
         final String[] keys = new String[]{"today", "week", "all", "custom"};
         final String[] labels = new String[]{"اليوم", "الأسبوع", "الكل", "فترة مخصصة"};
-        new AlertDialog.Builder(this)
-                .setTitle("اختر الفترة")
-                .setItems(labels, (d, which) -> {
-                    if ("custom".equals(keys[which])) { showDashboardDateRangeDialog(); return; }
-                    dashboardReportPeriod = keys[which];
-                    dashboardReportFrom = "";
-                    dashboardReportTo = "";
-                    dashboardReportLimit = 20;
-                    showDashboardReport();
-                })
-                .show();
+        showPremiumChoiceDialog("اختر الفترة", labels, dashboardPeriodLabel(dashboardReportPeriod), neonCyan, which -> {
+            if ("custom".equals(keys[which])) { showDashboardDateRangeDialog(); return; }
+            dashboardReportPeriod = keys[which];
+            dashboardReportFrom = "";
+            dashboardReportTo = "";
+            dashboardReportLimit = 20;
+            showDashboardReport();
+        });
     }
 
     private void showDashboardTypeDialog() {
         final String[] keys = new String[]{"all", "direct", "wallet", "cash", "credit", "rewards", "sold"};
         final String[] labels = new String[]{"الكل", "بيع مباشر", "بيع من محفظة", "نقدًا", "آجل", "مكافآت", "كروت مباعة"};
-        new AlertDialog.Builder(this)
-                .setTitle("اختر نوع العملية")
-                .setItems(labels, (d, which) -> {
-                    dashboardReportType = keys[which];
-                    if (!"wallet".equals(dashboardReportType)) dashboardReportWallet = "all";
-                    dashboardReportLimit = 20;
-                    showDashboardReport();
-                })
-                .show();
+        showPremiumChoiceDialog("اختر نوع العملية", labels, dashboardTypeLabel(dashboardReportType), neonCyan, which -> {
+            dashboardReportType = keys[which];
+            if (!"wallet".equals(dashboardReportType)) dashboardReportWallet = "all";
+            dashboardReportLimit = 20;
+            showDashboardReport();
+        });
     }
 
     private void showDashboardWalletDialog() {
         ArrayList<String> wallets = dashboardWalletOptions();
         String[] labels = wallets.toArray(new String[0]);
-        new AlertDialog.Builder(this)
-                .setTitle("اختر المحفظة")
-                .setItems(labels, (d, which) -> {
-                    dashboardReportWallet = labels[which];
-                    dashboardReportLimit = 20;
-                    showDashboardReport();
-                })
-                .show();
+        showPremiumChoiceDialog("اختر المحفظة", labels, dashboardWalletLabel(dashboardReportWallet), neonCyan, which -> {
+            dashboardReportWallet = labels[which];
+            dashboardReportLimit = 20;
+            showDashboardReport();
+        });
     }
 
     private ArrayList<String> dashboardWalletOptions() {
@@ -1480,28 +1593,19 @@ public class MainActivity extends Activity {
         LinearLayout layout = new LinearLayout(this);
         layout.setOrientation(LinearLayout.VERTICAL);
         layout.setPadding(dp(14), dp(10), dp(14), dp(4));
-        EditText from = new EditText(this);
-        from.setHint("من تاريخ: yyyy/MM/dd");
-        from.setGravity(Gravity.RIGHT);
-        from.setText(dashboardReportFrom);
-        EditText to = new EditText(this);
-        to.setHint("إلى تاريخ: yyyy/MM/dd");
-        to.setGravity(Gravity.RIGHT);
-        to.setText(dashboardReportTo);
+        layout.setBackground(round(Color.rgb(11, 15, 31), dp(22), neonCyan, dp(1)));
+        layout.addView(premiumDialogSection("الفترة المخصصة"));
+        EditText from = premiumEdit("من تاريخ: yyyy/MM/dd", dashboardReportFrom, InputType.TYPE_CLASS_TEXT);
+        EditText to = premiumEdit("إلى تاريخ: yyyy/MM/dd", dashboardReportTo, InputType.TYPE_CLASS_TEXT);
         layout.addView(from);
         layout.addView(to);
-        new AlertDialog.Builder(this)
-                .setTitle("فترة مخصصة")
-                .setView(layout)
-                .setPositiveButton("عرض", (d, w) -> {
-                    dashboardReportFrom = from.getText().toString().trim();
-                    dashboardReportTo = to.getText().toString().trim();
-                    dashboardReportPeriod = "custom";
-                    dashboardReportLimit = 20;
-                    showDashboardReport();
-                })
-                .setNegativeButton("إلغاء", null)
-                .show();
+        showPremiumDialog("فترة مخصصة", layout, "عرض", (d, w) -> {
+            dashboardReportFrom = from.getText().toString().trim();
+            dashboardReportTo = to.getText().toString().trim();
+            dashboardReportPeriod = "custom";
+            dashboardReportLimit = 20;
+            showDashboardReport();
+        }, "إلغاء", neonCyan);
     }
 
     private View operationMiniCard(OperationLog log) {
@@ -3887,81 +3991,79 @@ public class MainActivity extends Activity {
     private void showLedgerCustomerDialog(LedgerCustomer old) {
         LinearLayout layout = new LinearLayout(this);
         layout.setOrientation(LinearLayout.VERTICAL);
-        layout.setPadding(dp(16), dp(12), dp(16), dp(8));
-        layout.setBackgroundColor(bg);
-        EditText name = ledgerEdit("اسم الزبون", old == null ? "" : old.name, InputType.TYPE_CLASS_TEXT);
-        EditText phone = ledgerEdit("رقم الزبون 7xxxxxxxx", old == null ? "" : old.phone, InputType.TYPE_CLASS_PHONE);
-        EditText limit = ledgerEdit("سقف السلفة", old == null ? "500" : String.valueOf(old.loanLimit), InputType.TYPE_CLASS_NUMBER);
-        EditText debt = ledgerEdit("المتبقي عليه / المديونية", old == null ? "0" : String.valueOf(old.debt), InputType.TYPE_CLASS_NUMBER);
-        EditText credit = ledgerEdit("رصيد العميل", old == null ? "0" : String.valueOf(old.creditBalance), InputType.TYPE_CLASS_NUMBER);
-        EditText notes = ledgerEdit("ملاحظات", old == null ? "" : old.notes, InputType.TYPE_CLASS_TEXT);
+        layout.setPadding(dp(14), dp(10), dp(14), dp(8));
+        layout.setBackground(round(Color.rgb(11, 15, 31), dp(24), neonCyan, dp(1)));
 
-        TextView modeTitle = tv("طريقة التعامل مع العميل", 16, text, true);
-        modeTitle.setPadding(0, dp(8), 0, dp(2));
-        RadioGroup modes = new RadioGroup(this);
-        modes.setOrientation(RadioGroup.VERTICAL);
-        RadioButton autoFull = new RadioButton(this);
-        autoFull.setId(1001);
-        autoFull.setText("آلي كامل: يطلب كرت + يسدد + الزائد رصيد");
-        autoFull.setTextColor(text);
-        RadioButton settleOnly = new RadioButton(this);
-        settleOnly.setId(1002);
-        settleOnly.setText("إيقاف السلف / سداد فقط");
-        settleOnly.setTextColor(text);
-        RadioButton stopped = new RadioButton(this);
-        stopped.setId(1003);
-        stopped.setText("موقوف: لا صرف ولا سداد تلقائي");
-        stopped.setTextColor(text);
-        if (Build.VERSION.SDK_INT >= 21) {
-            autoFull.setButtonTintList(android.content.res.ColorStateList.valueOf(neonCyan));
-            settleOnly.setButtonTintList(android.content.res.ColorStateList.valueOf(neonCyan));
-            stopped.setButtonTintList(android.content.res.ColorStateList.valueOf(neonCyan));
-        }
-        modes.addView(autoFull);
-        modes.addView(settleOnly);
-        modes.addView(stopped);
-        String oldMode = old == null ? LedgerCustomer.MODE_AUTO_FULL : old.effectiveMode();
-        if (LedgerCustomer.MODE_AUTO_FULL.equals(oldMode)) modes.check(1001);
-        else if (LedgerCustomer.MODE_SETTLE_ONLY.equals(oldMode)) modes.check(1002);
-        else modes.check(1003);
-
-        layout.addView(tv("بيانات الزبون", 16, text, true));
-        layout.addView(small("اكتب الاسم والرقم كما سيظهران في الدفتر ورسائل السداد. الرقم المحلي يبدأ غالبًا بـ 7 ويتكون من 9 أرقام."));
+        layout.addView(premiumDialogSection("بيانات الزبون"));
+        EditText name = premiumEdit("اسم الزبون", old == null ? "" : old.name, InputType.TYPE_CLASS_TEXT);
+        EditText phone = premiumEdit("رقم الزبون 7xxxxxxxx", old == null ? "" : old.phone, InputType.TYPE_CLASS_PHONE);
         layout.addView(name);
-        layout.addView(small("مثال: محمد أحمد علي — يفضّل الاسم المطابق لرسائل المحافظ عند وجود سداد باسم فقط."));
         layout.addView(phone);
-        layout.addView(small("هذا الرقم هو أساس ربط السداد والسلفة وإرسال الرسائل للزبون."));
+        TextView linkHint = small("الرقم هو الأساس في ربط السداد والسلفة وإرسال الرسائل للزبون.");
+        layout.addView(linkHint);
+
         layout.addView(separator());
-        layout.addView(tv("إعدادات السلفة والرصيد", 16, text, true));
+        layout.addView(premiumDialogSection("الإعدادات المالية"));
+        EditText limit = premiumEdit("سقف السلفة", old == null ? "500" : String.valueOf(old.loanLimit), InputType.TYPE_CLASS_NUMBER);
+        EditText debt = premiumEdit("المتبقي عليه / المديونية", old == null ? "0" : String.valueOf(old.debt), InputType.TYPE_CLASS_NUMBER);
+        EditText credit = premiumEdit("رصيد العميل الزائد", old == null ? "0" : String.valueOf(old.creditBalance), InputType.TYPE_CLASS_NUMBER);
         layout.addView(limit);
-        layout.addView(small("أقصى مبلغ يمكن للزبون أخذه كسلفة عند تفعيل الوضع الآلي الكامل."));
         layout.addView(debt);
-        layout.addView(small("المبلغ الحالي المتبقي على الزبون قبل أي سداد جديد."));
         layout.addView(credit);
-        layout.addView(small("أي مبلغ زائد من السداد يحفظ هنا كرصيد للزبون."));
+
         layout.addView(separator());
-        layout.addView(tv("ملاحظات داخلية", 16, text, true));
+        layout.addView(premiumDialogSection("ملاحظات داخلية"));
+        EditText notes = premiumEdit("ملاحظات الإدارة فقط", old == null ? "" : old.notes, InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_MULTI_LINE);
+        notes.setSingleLine(false);
+        notes.setMinLines(2);
+        notes.setGravity(Gravity.TOP | Gravity.RIGHT);
+        notes.setLayoutParams(new LinearLayout.LayoutParams(-1, dp(74)));
         layout.addView(notes);
-        layout.addView(small("اكتب ملاحظات الإدارة فقط؛ لا ترسل للزبون تلقائيًا."));
-        layout.addView(modeTitle);
-        layout.addView(modes);
-        new AlertDialog.Builder(this)
-                .setTitle(old == null ? "إضافة زبون للدفتر" : "تعديل زبون")
-                .setView(layout)
-                .setPositiveButton("حفظ", (d,w) -> {
-                    int lim = safeInt(limit.getText().toString());
-                    int deb = safeInt(debt.getText().toString());
-                    int cr = safeInt(credit.getText().toString());
-                    String mode = LedgerCustomer.MODE_AUTO_FULL;
-                    if (modes.getCheckedRadioButtonId() == 1002) mode = LedgerCustomer.MODE_SETTLE_ONLY;
-                    else if (modes.getCheckedRadioButtonId() == 1003) mode = LedgerCustomer.MODE_STOPPED;
-                    AppStore.addOrUpdateLedgerCustomer(this, old == null ? "" : old.id, name.getText().toString(), phone.getText().toString(), lim, deb, cr, mode, notes.getText().toString());
-                    toast("تم حفظ حساب الزبون");
-                    showSmartLedger();
-                })
-                .setNegativeButton("إلغاء", null)
-                .show();
+        layout.addView(small("هذه الملاحظات داخلية ولا تُرسل للزبون تلقائيًا."));
+
+        layout.addView(separator());
+        layout.addView(premiumDialogSection("طريقة التعامل مع العميل"));
+        String oldMode = old == null ? LedgerCustomer.MODE_AUTO_FULL : old.effectiveMode();
+        final String[] selectedMode = new String[]{oldMode};
+        LinearLayout optAuto = premiumOptionCard("آلي كامل", "يطلب كرت + يسدد + الزائد رصيد", green, LedgerCustomer.MODE_AUTO_FULL.equals(oldMode));
+        LinearLayout optSettle = premiumOptionCard("سداد فقط", "إيقاف السلف والسماح بالسداد فقط", gold, LedgerCustomer.MODE_SETTLE_ONLY.equals(oldMode));
+        LinearLayout optStop = premiumOptionCard("موقوف", "لا صرف ولا سداد تلقائي", red, LedgerCustomer.MODE_STOPPED.equals(oldMode));
+        final LinearLayout[] opts = new LinearLayout[]{optAuto, optSettle, optStop};
+        Runnable refresh = () -> {
+            setPremiumOptionState(optAuto, LedgerCustomer.MODE_AUTO_FULL.equals(selectedMode[0]), green);
+            setPremiumOptionState(optSettle, LedgerCustomer.MODE_SETTLE_ONLY.equals(selectedMode[0]), gold);
+            setPremiumOptionState(optStop, LedgerCustomer.MODE_STOPPED.equals(selectedMode[0]), red);
+            try {
+                ((TextView)optAuto.getChildAt(0)).setText((LedgerCustomer.MODE_AUTO_FULL.equals(selectedMode[0]) ? "✓  " : "○  ") + "آلي كامل");
+                ((TextView)optSettle.getChildAt(0)).setText((LedgerCustomer.MODE_SETTLE_ONLY.equals(selectedMode[0]) ? "✓  " : "○  ") + "سداد فقط");
+                ((TextView)optStop.getChildAt(0)).setText((LedgerCustomer.MODE_STOPPED.equals(selectedMode[0]) ? "✓  " : "○  ") + "موقوف");
+            } catch(Exception ignored) {}
+        };
+        optAuto.setOnClickListener(v -> { selectedMode[0] = LedgerCustomer.MODE_AUTO_FULL; refresh.run(); });
+        optSettle.setOnClickListener(v -> { selectedMode[0] = LedgerCustomer.MODE_SETTLE_ONLY; refresh.run(); });
+        optStop.setOnClickListener(v -> { selectedMode[0] = LedgerCustomer.MODE_STOPPED; refresh.run(); });
+        layout.addView(optAuto);
+        layout.addView(optSettle);
+        layout.addView(optStop);
+
+        AlertDialog dialog = showPremiumDialog(old == null ? "إضافة زبون للدفتر" : "تعديل زبون", scrollableDialogView(layout), "حفظ", null, "إلغاء", neonCyan);
+        dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(v -> {
+            String phoneText = phone.getText().toString().trim();
+            String nameText = name.getText().toString().trim();
+            if (nameText.isEmpty() || phoneText.isEmpty()) {
+                showNeonAlert("بيانات ناقصة", "اكتب اسم الزبون ورقمه أولًا.", orange, true);
+                return;
+            }
+            int lim = safeInt(limit.getText().toString());
+            int deb = safeInt(debt.getText().toString());
+            int cr = safeInt(credit.getText().toString());
+            AppStore.addOrUpdateLedgerCustomer(this, old == null ? "" : old.id, nameText, phoneText, lim, deb, cr, selectedMode[0], notes.getText().toString());
+            toast("تم حفظ حساب الزبون");
+            dialog.dismiss();
+            showSmartLedger();
+        });
     }
+
 
     private int safeInt(String value) {
         try { return Math.max(0, Integer.parseInt(value == null ? "0" : value.trim())); } catch(Exception e) { return 0; }
@@ -4686,43 +4788,34 @@ public class MainActivity extends Activity {
     private void showNetworkIdentityDialog() {
         LinearLayout layout = new LinearLayout(this);
         layout.setOrientation(LinearLayout.VERTICAL);
-        layout.setPadding(dp(4), dp(4), dp(4), dp(4));
+        layout.setPadding(dp(14), dp(10), dp(14), dp(8));
+        layout.setBackground(round(Color.rgb(11, 15, 31), dp(24), neonCyan, dp(1)));
 
-        EditText name = new EditText(this);
-        name.setInputType(InputType.TYPE_CLASS_TEXT);
-        name.setGravity(Gravity.RIGHT);
-        name.setHint("اسم الشبكة");
-        name.setText(AppStore.getNetworkName(this));
+        layout.addView(premiumDialogSection("بيانات الشبكة"));
+        EditText name = premiumEdit("اسم الشبكة", AppStore.getNetworkName(this), InputType.TYPE_CLASS_TEXT);
+        EditText phone = premiumEdit("رقم جوال الشبكة", AppStore.getNetworkPhone(this), InputType.TYPE_CLASS_PHONE);
         layout.addView(name);
-
-        EditText phone = new EditText(this);
-        phone.setInputType(InputType.TYPE_CLASS_PHONE);
-        phone.setGravity(Gravity.RIGHT);
-        phone.setHint("رقم جوال الشبكة");
-        phone.setText(AppStore.getNetworkPhone(this));
         layout.addView(phone);
 
         CheckBox showPhone = new CheckBox(this);
         showPhone.setText("إظهار رقم الجوال في توقيع الرسائل");
+        showPhone.setTextColor(text);
+        showPhone.setTypeface(appTypeface(false));
         showPhone.setChecked(AppStore.isShowPhoneInSignature(this));
+        if (Build.VERSION.SDK_INT >= 21) showPhone.setButtonTintList(android.content.res.ColorStateList.valueOf(neonCyan));
         layout.addView(showPhone);
+        layout.addView(small("يظهر اسم الشبكة في الواجهة والرسائل وتقارير PDF. يمكن تغيير شعار الشبكة من زر اختيار شعار."));
 
-        layout.addView(small("سيظهر اسم الشبكة ورقم الجوال في الواجهة، الرسائل، واتساب، ورأس تقارير PDF. ويمكن اختيار الشعار من زر اختيار شعار في صفحة الإعدادات."));
-
-        new AlertDialog.Builder(this)
-                .setTitle("بيانات الشبكة")
-                .setView(layout)
-                .setPositiveButton("حفظ", (d,w) -> {
-                    AppStore.setNetworkName(this, name.getText().toString());
-                    AppStore.setNetworkPhone(this, phone.getText().toString());
-                    AppStore.setShowPhoneInSignature(this, showPhone.isChecked());
-                    toast("تم حفظ بيانات الشبكة");
-                    buildLayout();
-                    showSettings();
-                })
-                .setNegativeButton("إلغاء", null)
-                .show();
+        showPremiumDialog("بيانات الشبكة", layout, "حفظ", (d,w) -> {
+            AppStore.setNetworkName(this, name.getText().toString());
+            AppStore.setNetworkPhone(this, phone.getText().toString());
+            AppStore.setShowPhoneInSignature(this, showPhone.isChecked());
+            toast("تم حفظ بيانات الشبكة");
+            buildLayout();
+            showSettings();
+        }, "إلغاء", neonCyan);
     }
+
 
     private void pickNetworkLogo() {
         Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT);
@@ -5298,12 +5391,16 @@ public class MainActivity extends Activity {
 
     private void confirmDeleteTrustedContact(TrustedContact contact) {
         String name = (contact.walletName == null ? "" : contact.walletName) + " - " + (contact.fullName == null ? "" : contact.fullName);
-        new AlertDialog.Builder(this)
-                .setTitle("تأكيد حذف المحفظة / الاسم")
-                .setMessage("هل تريد حذف هذا التعريف؟\n\n" + name.trim() + "\n\nبعد الحذف لن يستخدمه التطبيق للتعرف على هذه المحفظة أو هذا الاسم.")
-                .setPositiveButton("موافق، حذف", (d,w) -> { AppStore.deleteTrustedContact(this, contact.id); showTrustedContacts(); })
-                .setNegativeButton("إلغاء", null)
-                .show();
+        LinearLayout body = new LinearLayout(this);
+        body.setOrientation(LinearLayout.VERTICAL);
+        body.setPadding(dp(14), dp(10), dp(14), dp(4));
+        body.setBackground(round(Color.rgb(25, 10, 18), dp(22), red, dp(1)));
+        body.addView(tv("هل أنت متأكد من الحذف؟", 18, text, true));
+        body.addView(small("سيتم حذف التعريف التالي ولن يستخدمه التطبيق للتعرف على هذه المحفظة أو هذا الاسم."));
+        TextView item = tv(name.trim(), 16, red, true);
+        item.setPadding(0, dp(12), 0, dp(6));
+        body.addView(item);
+        showPremiumDialog("تأكيد حذف المحفظة / الاسم", body, "حذف", (d,w) -> { AppStore.deleteTrustedContact(this, contact.id); showTrustedContacts(); }, "إلغاء", red);
     }
 
     private void showTrustedDialog() {
@@ -5313,17 +5410,32 @@ public class MainActivity extends Activity {
     private void showTrustedDialog(TrustedContact old) {
         LinearLayout layout = new LinearLayout(this);
         layout.setOrientation(LinearLayout.VERTICAL);
-        layout.setPadding(dp(8), dp(8), dp(8), dp(8));
+        layout.setPadding(dp(14), dp(10), dp(14), dp(8));
+        layout.setBackground(round(Color.rgb(11, 15, 31), dp(24), neonCyan, dp(1)));
 
-        TextView help = small("مثال: اسم المحفظة floosk، كلمات التعرف: floosk, فلوسك، الاسم الظاهر: محمد أحمد علي، رقم استلام الكرت: 77xxxxxxx. يمكن إضافة أكثر من عميل لنفس المحفظة.");
-        EditText wallet = new EditText(this); wallet.setHint("اسم المحفظة مثل floosk أو ONE Cash أو كاش"); wallet.setGravity(Gravity.RIGHT); wallet.setInputType(InputType.TYPE_CLASS_TEXT);
-        EditText keywords = new EditText(this); keywords.setHint("كلمات التعرف بالرسالة مفصولة بفاصلة مثل floosk, فلوسك, cash"); keywords.setGravity(Gravity.RIGHT); keywords.setInputType(InputType.TYPE_CLASS_TEXT);
-        EditText name = new EditText(this); name.setHint("الاسم كما يظهر في رسالة المحفظة"); name.setGravity(Gravity.RIGHT); name.setInputType(InputType.TYPE_CLASS_TEXT);
-        EditText phone = new EditText(this); phone.setHint("رقم استلام الكرت"); phone.setGravity(Gravity.RIGHT); phone.setInputType(InputType.TYPE_CLASS_PHONE);
+        layout.addView(premiumDialogSection("بيانات المحفظة"));
+        EditText wallet = premiumEdit("اسم المحفظة مثل ONE Cash أو فلوسك", "", InputType.TYPE_CLASS_TEXT);
+        EditText keywords = premiumEdit("كلمات التعرف: one cash, ون كاش", "", InputType.TYPE_CLASS_TEXT);
+        layout.addView(wallet);
+        layout.addView(keywords);
+
+        layout.addView(premiumDialogSection("الاسم الموثوق"));
+        EditText name = premiumEdit("الاسم كما يظهر في رسالة المحفظة", "", InputType.TYPE_CLASS_TEXT);
+        EditText phone = premiumEdit("رقم استلام الكرت 7xxxxxxxx", "", InputType.TYPE_CLASS_PHONE);
+        layout.addView(name);
+        layout.addView(phone);
+
         CheckBox addAllWallets = new CheckBox(this);
         addAllWallets.setText("إضافة نفس الاسم والرقم إلى جميع المحافظ الموجودة والافتراضية");
         addAllWallets.setTextColor(text);
-        addAllWallets.setChecked(false);
+        addAllWallets.setTypeface(appTypeface(false));
+        addAllWallets.setPadding(dp(4), dp(8), dp(4), dp(8));
+        if (Build.VERSION.SDK_INT >= 21) addAllWallets.setButtonTintList(android.content.res.ColorStateList.valueOf(neonCyan));
+        if (old == null) layout.addView(addAllWallets);
+
+        TextView hint = small("اكتب الاسم مطابقًا لما يظهر في رسالة المحفظة. إذا وصلت رسالة باسم فقط بدون رقم، سيستخدم التطبيق هذا الربط للمراجعة أو المعالجة حسب إعداداتك.");
+        hint.setPadding(0, dp(8), 0, 0);
+        layout.addView(hint);
 
         if (old != null) {
             wallet.setText(old.walletName);
@@ -5335,17 +5447,7 @@ public class MainActivity extends Activity {
             keywords.setText("one cash, onecash, ون كاش");
         }
 
-        layout.addView(help);
-        layout.addView(wallet);
-        layout.addView(keywords);
-        layout.addView(name);
-        layout.addView(phone);
-        AlertDialog dialog = new AlertDialog.Builder(this)
-                .setTitle(old == null ? "إضافة محفظة / اسم موثوق" : "تعديل محفظة / اسم موثوق")
-                .setView(layout)
-                .setPositiveButton("حفظ", null)
-                .setNegativeButton("إلغاء", null)
-                .show();
+        AlertDialog dialog = showPremiumDialog(old == null ? "إضافة محفظة / اسم موثوق" : "تعديل محفظة / اسم موثوق", scrollableDialogView(layout), "حفظ", null, "إلغاء", neonCyan);
         dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(v -> {
             String walletText = wallet.getText().toString().trim();
             String keywordText = keywords.getText().toString().trim();
@@ -5353,7 +5455,7 @@ public class MainActivity extends Activity {
             String phoneText = phone.getText().toString().trim();
             String err = AppStore.walletContactValidationMessage(walletText, nameText, phoneText);
             if (!err.isEmpty()) {
-                toast(err);
+                showNeonAlert("بيانات غير مكتملة", err, orange, true);
                 return;
             }
             boolean ok;
@@ -5365,7 +5467,7 @@ public class MainActivity extends Activity {
                         : AppStore.addWalletContact(this, walletText, keywordText, nameText, phoneText);
             }
             if (!ok) {
-                toast("لم يتم الحفظ. تأكد من الاسم الثلاثي ورقم يبدأ بـ 7 ومكون من 9 أرقام");
+                showNeonAlert("لم يتم الحفظ", "تأكد من الاسم الثلاثي ورقم يبدأ بـ 7 ومكون من 9 أرقام.", red, true);
                 return;
             }
             toast(old == null ? "تم حفظ المحفظة / الاسم الموثوق" : "تم تعديل المحفظة / الاسم الموثوق");
@@ -6866,10 +6968,15 @@ public class MainActivity extends Activity {
 
     private void drawPdfHeader(PdfRenderState st, String title) {
         Canvas c = st.canvas;
-        Paint p = pdfPaint(Color.WHITE, 11, false, Paint.Align.RIGHT);
         Paint bgPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
-        bgPaint.setColor(Color.rgb(80, 55, 132));
-        c.drawRoundRect(new RectF(st.margin, st.y, st.w - st.margin, st.y + 82), 18, 18, bgPaint);
+        bgPaint.setColor(Color.rgb(18, 35, 49));
+        c.drawRoundRect(new RectF(st.margin, st.y, st.w - st.margin, st.y + 86), 18, 18, bgPaint);
+        Paint accentBar = new Paint(Paint.ANTI_ALIAS_FLAG);
+        accentBar.setColor(Color.rgb(0, 180, 110));
+        c.drawRoundRect(new RectF(st.w - st.margin - 10, st.y, st.w - st.margin, st.y + 86), 14, 14, accentBar);
+        Paint redTitle = new Paint(Paint.ANTI_ALIAS_FLAG);
+        redTitle.setColor(Color.rgb(238, 64, 56));
+        c.drawRoundRect(new RectF(st.margin + 240, st.y + 56, st.w - st.margin - 240, st.y + 86), 10, 10, redTitle);
 
         boolean logoDrawn = false;
         String logoPath = AppStore.getNetworkLogoPath(this);
@@ -6877,7 +6984,7 @@ public class MainActivity extends Activity {
             try {
                 Bitmap bmp = BitmapFactory.decodeFile(logoPath.trim());
                 if (bmp != null) {
-                    RectF logoRect = new RectF(st.w - st.margin - 63, st.y + 16, st.w - st.margin - 13, st.y + 66);
+                    RectF logoRect = new RectF(st.w - st.margin - 72, st.y + 15, st.w - st.margin - 18, st.y + 69);
                     c.drawBitmap(bmp, null, logoRect, new Paint(Paint.ANTI_ALIAS_FLAG));
                     logoDrawn = true;
                 }
@@ -6886,21 +6993,22 @@ public class MainActivity extends Activity {
         if (!logoDrawn) {
             Paint goldPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
             goldPaint.setColor(Color.rgb(218, 170, 72));
-            c.drawCircle(st.w - st.margin - 38, st.y + 41, 25, goldPaint);
-            Paint logoText = pdfPaint(Color.WHITE, 19, true, Paint.Align.CENTER);
-            c.drawText("4U", st.w - st.margin - 38, st.y + 48, logoText);
+            c.drawCircle(st.w - st.margin - 45, st.y + 42, 27, goldPaint);
+            Paint logoText = pdfPaint(Color.rgb(18, 35, 49), 20, true, Paint.Align.CENTER);
+            c.drawText("KP", st.w - st.margin - 45, st.y + 49, logoText);
         }
 
         Paint titlePaint = pdfPaint(Color.WHITE, 20, true, Paint.Align.RIGHT);
-        c.drawText(cleanPdfText(AppStore.getNetworkName(this)), st.w - st.margin - 76, st.y + 31, titlePaint);
-        Paint subPaint = pdfPaint(Color.rgb(238, 230, 255), 10, false, Paint.Align.RIGHT);
-        c.drawText(cleanPdfText(AppStore.getPdfHeaderSubtitle(this)), st.w - st.margin - 76, st.y + 50, subPaint);
-        c.drawText(title == null || title.trim().isEmpty() ? "تقرير" : cleanPdfText(title), st.w - st.margin - 76, st.y + 68, subPaint);
+        c.drawText(cleanPdfText(AppStore.getNetworkName(this)), st.w - st.margin - 86, st.y + 30, titlePaint);
+        Paint subPaint = pdfPaint(Color.rgb(220, 238, 242), 10, false, Paint.Align.RIGHT);
+        c.drawText("كرت برو - تقرير محاسبي منظم", st.w - st.margin - 86, st.y + 49, subPaint);
+        Paint centerTitle = pdfPaint(Color.WHITE, 12, true, Paint.Align.CENTER);
+        c.drawText(title == null || title.trim().isEmpty() ? "تقرير" : cleanPdfText(title), st.w / 2, st.y + 76, centerTitle);
 
-        Paint datePaint = pdfPaint(Color.WHITE, 9, false, Paint.Align.LEFT);
-        c.drawText("تاريخ الإنشاء: " + AppStore.now(), st.margin + 14, st.y + 32, datePaint);
-        c.drawText("رقم التقرير: " + new SimpleDateFormat("yyyyMMddHHmmss", Locale.US).format(new Date()), st.margin + 14, st.y + 52, datePaint);
-        st.y += 104;
+        Paint datePaint = pdfPaint(Color.rgb(220, 238, 242), 9, false, Paint.Align.LEFT);
+        c.drawText("تاريخ الإنشاء: " + AppStore.now(), st.margin + 16, st.y + 32, datePaint);
+        c.drawText("رقم التقرير: " + new SimpleDateFormat("yyyyMMddHHmmss", Locale.US).format(new Date()), st.margin + 16, st.y + 52, datePaint);
+        st.y += 106;
     }
 
     private void drawPdfFooter(PdfRenderState st) {
@@ -7000,15 +7108,15 @@ public class MainActivity extends Activity {
         int x = st.margin;
         int w = st.w - st.margin * 2;
         Paint fill = new Paint(Paint.ANTI_ALIAS_FLAG);
-        fill.setColor(Color.rgb(238, 242, 247));
+        fill.setColor(Color.rgb(246, 248, 250));
         st.canvas.drawRoundRect(new RectF(x, st.y, x + w, st.y + 72), 14, 14, fill);
         Paint accent = new Paint(Paint.ANTI_ALIAS_FLAG);
-        accent.setColor(Color.rgb(52, 152, 219));
+        accent.setColor(Color.rgb(0, 180, 110));
         st.canvas.drawRoundRect(new RectF(x + w - 6, st.y, x + w, st.y + 72), 8, 8, accent);
         Paint label = pdfPaint(Color.rgb(30, 42, 74), 15, true, Paint.Align.RIGHT);
         Paint val = pdfPaint(Color.rgb(45, 53, 68), 10, false, Paint.Align.RIGHT);
         st.canvas.drawText(cleanPdfText(title == null || title.trim().isEmpty() ? "تقرير المعاملات" : title), x + w - 18, st.y + 25, label);
-        st.canvas.drawText(cleanPdfText(AppStore.getNetworkName(this)) + " - تقرير منظم بالأعمدة المعتمدة", x + w - 18, st.y + 44, val);
+        st.canvas.drawText(cleanPdfText(AppStore.getNetworkName(this)) + " - كرت برو", x + w - 18, st.y + 44, val);
         st.canvas.drawText("التاريخ: " + AppStore.now(), x + w - 18, st.y + 61, val);
         st.y += 88;
     }
@@ -7072,12 +7180,12 @@ public class MainActivity extends Activity {
         int x = st.margin;
         int w = st.w - st.margin * 2;
         Paint fill = new Paint(Paint.ANTI_ALIAS_FLAG);
-        fill.setColor(Color.rgb(232, 240, 254));
+        fill.setColor(Color.rgb(238, 248, 242));
         st.canvas.drawRoundRect(new RectF(x, st.y, x + w, st.y + 56), 10, 10, fill);
         Paint accent = new Paint(Paint.ANTI_ALIAS_FLAG);
-        accent.setColor(Color.rgb(52, 152, 219));
+        accent.setColor(Color.rgb(0, 180, 110));
         st.canvas.drawRoundRect(new RectF(x + w - 6, st.y, x + w, st.y + 56), 7, 7, accent);
-        Paint titlePaint = pdfPaint(Color.rgb(30, 42, 74), 11, true, Paint.Align.RIGHT);
+        Paint titlePaint = pdfPaint(Color.rgb(18, 96, 68), 11, true, Paint.Align.RIGHT);
         st.canvas.drawText("الخلاصة", x + w - 18, st.y + 20, titlePaint);
         StringBuilder line = new StringBuilder();
         line.append("إجمالي العمليات: ").append(rowCount);
@@ -7201,7 +7309,7 @@ public class MainActivity extends Activity {
         Paint accent = new Paint(Paint.ANTI_ALIAS_FLAG);
         accent.setColor(Color.rgb(218, 170, 72));
         st.canvas.drawRoundRect(new RectF(x + w - 7, st.y, x + w, st.y + 70), 8, 8, accent);
-        Paint label = pdfPaint(Color.rgb(80, 55, 132), 12, true, Paint.Align.RIGHT);
+        Paint label = pdfPaint(Color.rgb(18, 96, 68), 12, true, Paint.Align.RIGHT);
         Paint val = pdfPaint(Color.rgb(35, 35, 42), 10, false, Paint.Align.RIGHT);
         st.canvas.drawText("ملخص التقرير", x + w - 18, st.y + 24, label);
         st.canvas.drawText("نوع التقرير: " + (title == null ? "تقرير" : title), x + w - 18, st.y + 43, val);
@@ -7255,7 +7363,7 @@ public class MainActivity extends Activity {
             }
         }
         drawPdfSectionTitle(st, "التوقيع");
-        drawPdfInfoRow(st, "توقيع النظام", AppStore.getNetworkName(this), Color.rgb(80, 55, 132));
+        drawPdfInfoRow(st, "توقيع النظام", AppStore.getNetworkName(this), Color.rgb(18, 96, 68));
     }
 
     private boolean isPdfDividerLine(String line) {
@@ -7351,7 +7459,7 @@ public class MainActivity extends Activity {
             }
         }
         Paint fill = new Paint(Paint.ANTI_ALIAS_FLAG);
-        fill.setColor(header ? Color.rgb(80, 55, 132) : Color.rgb(253, 252, 255));
+        fill.setColor(header ? Color.rgb(18, 96, 68) : Color.rgb(253, 252, 255));
         Paint border = new Paint(Paint.ANTI_ALIAS_FLAG);
         border.setStyle(Paint.Style.STROKE);
         border.setStrokeWidth(0.8f);
@@ -7377,7 +7485,7 @@ public class MainActivity extends Activity {
 
     private void drawPdfSectionTitle(PdfRenderState st, String title) {
         ensurePdfSpace(st, 44, title);
-        Paint p = pdfPaint(Color.rgb(80, 55, 132), 13, true, Paint.Align.RIGHT);
+        Paint p = pdfPaint(Color.rgb(18, 96, 68), 13, true, Paint.Align.RIGHT);
         Paint line = new Paint(Paint.ANTI_ALIAS_FLAG);
         line.setColor(Color.rgb(218, 170, 72));
         line.setStrokeWidth(3f);
@@ -7393,7 +7501,7 @@ public class MainActivity extends Activity {
         Paint fill = new Paint(Paint.ANTI_ALIAS_FLAG);
         fill.setColor(Color.rgb(245, 242, 251));
         st.canvas.drawRoundRect(new RectF(x, st.y, x + w, st.y + 34), 12, 12, fill);
-        drawPdfTextBlock(st.canvas, key, x + w - 185, st.y + 10, 170, 20, Color.rgb(80, 55, 132), 10, true, Layout.Alignment.ALIGN_OPPOSITE);
+        drawPdfTextBlock(st.canvas, key, x + w - 185, st.y + 10, 170, 20, Color.rgb(18, 96, 68), 10, true, Layout.Alignment.ALIGN_OPPOSITE);
         drawPdfTextBlock(st.canvas, value == null || value.isEmpty() ? "-" : value, x + 16, st.y + 10, w - 215, 20, Color.rgb(35, 35, 42), 10, false, Layout.Alignment.ALIGN_OPPOSITE);
         st.y += 40;
     }
@@ -7401,7 +7509,7 @@ public class MainActivity extends Activity {
     private void drawPdfOperationHeader(PdfRenderState st, String title) {
         ensurePdfSpace(st, 54, title);
         Paint fill = new Paint(Paint.ANTI_ALIAS_FLAG);
-        fill.setColor(Color.rgb(80, 55, 132));
+        fill.setColor(Color.rgb(18, 96, 68));
         st.canvas.drawRoundRect(new RectF(st.margin, st.y, st.w - st.margin, st.y + 34), 12, 12, fill);
         Paint p = pdfPaint(Color.WHITE, 11, true, Paint.Align.RIGHT);
         st.canvas.drawText("عملية " + title, st.w - st.margin - 14, st.y + 22, p);

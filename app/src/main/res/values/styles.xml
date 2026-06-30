@@ -12,5 +12,16 @@
         <item name="android:textColorPrimary">#F6F7FF</item>
         <item name="android:textColorSecondary">#AAB0C7</item>
         <item name="android:windowBackground">#040610</item>
+        <item name="android:alertDialogTheme">@style/PremiumAlertDialog</item>
+    </style>
+
+    <style name="PremiumAlertDialog" parent="android:style/Theme.Material.Dialog.Alert">
+        <item name="android:fontFamily">sans</item>
+        <item name="android:colorAccent">#20E7FF</item>
+        <item name="android:textColorPrimary">#F6F7FF</item>
+        <item name="android:textColorSecondary">#AAB0C7</item>
+        <item name="android:windowBackground">#0B0F1F</item>
+        <item name="android:windowMinWidthMajor">88%</item>
+        <item name="android:windowMinWidthMinor">88%</item>
     </style>
 </resources>
