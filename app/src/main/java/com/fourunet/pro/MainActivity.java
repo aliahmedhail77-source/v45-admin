@@ -106,10 +106,16 @@ public class MainActivity extends Activity {
     int cardsVisibleLimit = AppStore.performanceCardPageSize();
     int cardsVisibleAmount = -1;
     int homeRecentVisibleLimit = 5;
-    int dashboardReportLimit = 10;
+    int dashboardReportLimit = 20;
     String dashboardReportMode = "all";
+    String cardSearchQuery = "";
+    int cardSearchLimit = 20;
+    int cardSearchAmountFilter = -1;
     String dashboardReportFrom = "";
     String dashboardReportTo = "";
+
+    // Stage 14.3 SALES + CARD SEARCH + BATCH ORDER CONTROL.
+    // تنظيم المبيعات حسب المصدر، بحث كروت كامل، عرض 20 ثم المزيد، وخيار بيع الأقدم/الأحدث.
 
     // Stage 14.2 DASHBOARD IDENTITY + METRICS NAVIGATION + THEME CONTROL.
     // هيدر كرت برو، شعار واي فاي قابل للتغيير، لوحة تحكم 6 خانات، تنقل للتقارير، وآخر العمليات تدريجي.
@@ -1227,7 +1233,7 @@ public class MainActivity extends Activity {
 
     private void openDashboardReport(String mode) {
         dashboardReportMode = mode == null ? "all" : mode;
-        dashboardReportLimit = 10;
+        dashboardReportLimit = 20;
         dashboardReportFrom = "";
         dashboardReportTo = "";
         showDashboardReport();
@@ -1241,22 +1247,38 @@ public class MainActivity extends Activity {
 
         LinearLayout tools = cardBox();
         tools.addView(tv("خيارات العرض", 17, text, true));
-        tools.addView(small("اختر الفترة وعدد العمليات المعروضة. لا يتم تحميل كل السجلات دفعة واحدة حتى يبقى التطبيق سلسًا."));
+        tools.addView(small("اعرض المبيعات والعمليات حسب الفترة أو المصدر. البداية 20 عملية فقط، ثم المزيد 20 عملية كل مرة."));
 
         LinearLayout filterRow = new LinearLayout(this);
         filterRow.setOrientation(LinearLayout.HORIZONTAL);
         filterRow.setLayoutDirection(View.LAYOUT_DIRECTION_RTL);
-        filterRow.addView(action("اليوم", green, Color.rgb(3, 22, 12), v -> { dashboardReportMode = "today"; dashboardReportLimit = 10; showDashboardReport(); }), new LinearLayout.LayoutParams(0, dp(48), 1));
-        filterRow.addView(action("الأسبوع", card2, text, v -> { dashboardReportMode = "week"; dashboardReportLimit = 10; showDashboardReport(); }), new LinearLayout.LayoutParams(0, dp(48), 1));
-        filterRow.addView(action("الكل", card2, text, v -> { dashboardReportMode = "sold"; dashboardReportLimit = 10; dashboardReportFrom = ""; dashboardReportTo = ""; showDashboardReport(); }), new LinearLayout.LayoutParams(0, dp(48), 1));
+        filterRow.addView(action("اليوم", "today".equals(dashboardReportMode) ? green : card2, "today".equals(dashboardReportMode) ? Color.rgb(3, 22, 12) : text, v -> { dashboardReportMode = "today"; dashboardReportLimit = 20; showDashboardReport(); }), new LinearLayout.LayoutParams(0, dp(48), 1));
+        filterRow.addView(action("الأسبوع", "week".equals(dashboardReportMode) ? green : card2, "week".equals(dashboardReportMode) ? Color.rgb(3, 22, 12) : text, v -> { dashboardReportMode = "week"; dashboardReportLimit = 20; showDashboardReport(); }), new LinearLayout.LayoutParams(0, dp(48), 1));
+        filterRow.addView(action("الكل", "all".equals(dashboardReportMode) ? green : card2, "all".equals(dashboardReportMode) ? Color.rgb(3, 22, 12) : text, v -> { dashboardReportMode = "all"; dashboardReportLimit = 20; dashboardReportFrom = ""; dashboardReportTo = ""; showDashboardReport(); }), new LinearLayout.LayoutParams(0, dp(48), 1));
         tools.addView(filterRow);
+
+        LinearLayout sourceRow = new LinearLayout(this);
+        sourceRow.setOrientation(LinearLayout.HORIZONTAL);
+        sourceRow.setLayoutDirection(View.LAYOUT_DIRECTION_RTL);
+        sourceRow.addView(action("مباشر", "direct".equals(dashboardReportMode) ? neonCyan : card2, "direct".equals(dashboardReportMode) ? Color.rgb(2, 20, 25) : text, v -> { dashboardReportMode = "direct"; dashboardReportLimit = 20; showDashboardReport(); }), new LinearLayout.LayoutParams(0, dp(48), 1));
+        sourceRow.addView(action("محافظ", "wallet".equals(dashboardReportMode) ? neonCyan : card2, "wallet".equals(dashboardReportMode) ? Color.rgb(2, 20, 25) : text, v -> { dashboardReportMode = "wallet"; dashboardReportLimit = 20; showDashboardReport(); }), new LinearLayout.LayoutParams(0, dp(48), 1));
+        sourceRow.addView(action("مكافآت", "rewards".equals(dashboardReportMode) ? gold : card2, "rewards".equals(dashboardReportMode) ? Color.rgb(35, 24, 8) : text, v -> { dashboardReportMode = "rewards"; dashboardReportLimit = 20; showDashboardReport(); }), new LinearLayout.LayoutParams(0, dp(48), 1));
+        tools.addView(sourceRow);
+
+        LinearLayout typeRow = new LinearLayout(this);
+        typeRow.setOrientation(LinearLayout.HORIZONTAL);
+        typeRow.setLayoutDirection(View.LAYOUT_DIRECTION_RTL);
+        typeRow.addView(action("نقدًا", "cash".equals(dashboardReportMode) ? gold : card2, "cash".equals(dashboardReportMode) ? Color.rgb(35, 24, 8) : text, v -> { dashboardReportMode = "cash"; dashboardReportLimit = 20; showDashboardReport(); }), new LinearLayout.LayoutParams(0, dp(46), 1));
+        typeRow.addView(action("آجل", "credit".equals(dashboardReportMode) ? gold : card2, "credit".equals(dashboardReportMode) ? Color.rgb(35, 24, 8) : text, v -> { dashboardReportMode = "credit"; dashboardReportLimit = 20; showDashboardReport(); }), new LinearLayout.LayoutParams(0, dp(46), 1));
+        typeRow.addView(action("كروت", "sold".equals(dashboardReportMode) ? gold : card2, "sold".equals(dashboardReportMode) ? Color.rgb(35, 24, 8) : text, v -> { dashboardReportMode = "sold"; dashboardReportLimit = 20; showDashboardReport(); }), new LinearLayout.LayoutParams(0, dp(46), 1));
+        tools.addView(typeRow);
 
         LinearLayout limitRow = new LinearLayout(this);
         limitRow.setOrientation(LinearLayout.HORIZONTAL);
         limitRow.setLayoutDirection(View.LAYOUT_DIRECTION_RTL);
-        limitRow.addView(action("10", dashboardReportLimit == 10 ? gold : card2, dashboardReportLimit == 10 ? Color.rgb(35,24,8) : text, v -> { dashboardReportLimit = 10; showDashboardReport(); }), new LinearLayout.LayoutParams(0, dp(46), 1));
-        limitRow.addView(action("50", dashboardReportLimit == 50 ? gold : card2, dashboardReportLimit == 50 ? Color.rgb(35,24,8) : text, v -> { dashboardReportLimit = 50; showDashboardReport(); }), new LinearLayout.LayoutParams(0, dp(46), 1));
-        limitRow.addView(action("100", dashboardReportLimit == 100 ? gold : card2, dashboardReportLimit == 100 ? Color.rgb(35,24,8) : text, v -> { dashboardReportLimit = 100; showDashboardReport(); }), new LinearLayout.LayoutParams(0, dp(46), 1));
+        limitRow.addView(action("20", dashboardReportLimit == 20 ? purple : card2, dashboardReportLimit == 20 ? Color.WHITE : text, v -> { dashboardReportLimit = 20; showDashboardReport(); }), new LinearLayout.LayoutParams(0, dp(46), 1));
+        limitRow.addView(action("50", dashboardReportLimit == 50 ? purple : card2, dashboardReportLimit == 50 ? Color.WHITE : text, v -> { dashboardReportLimit = 50; showDashboardReport(); }), new LinearLayout.LayoutParams(0, dp(46), 1));
+        limitRow.addView(action("100", dashboardReportLimit == 100 ? purple : card2, dashboardReportLimit == 100 ? Color.WHITE : text, v -> { dashboardReportLimit = 100; showDashboardReport(); }), new LinearLayout.LayoutParams(0, dp(46), 1));
         tools.addView(limitRow);
         tools.addView(action("فترة مخصصة", purple, Color.WHITE, v -> showDashboardDateRangeDialog()));
         tools.addView(action("رجوع للرئيسية", card2, text, v -> showHome()));
@@ -1271,7 +1293,7 @@ public class MainActivity extends Activity {
         summary.addView(small("عدد العمليات: " + filtered.size() + "\nالإجمالي: " + totalAmount + " ريال" + range));
         content.addView(summary);
 
-        int max = Math.min(filtered.size(), Math.max(10, dashboardReportLimit));
+        int max = Math.min(filtered.size(), Math.max(20, dashboardReportLimit));
         for (int i = 0; i < max; i++) content.addView(operationMiniCard(filtered.get(i)));
         if (filtered.size() > max) {
             LinearLayout more = cardBox();
@@ -1284,6 +1306,10 @@ public class MainActivity extends Activity {
         if ("today".equals(mode)) return "مبيعات اليوم";
         if ("week".equals(mode)) return "مبيعات الأسبوع";
         if ("sold".equals(mode)) return "الكروت المباعة";
+        if ("direct".equals(mode)) return "مبيعات البيع المباشر";
+        if ("wallet".equals(mode)) return "مبيعات المحافظ";
+        if ("cash".equals(mode)) return "عمليات نقدًا";
+        if ("credit".equals(mode)) return "عمليات آجل";
         if ("rewards".equals(mode)) return "عمليات المكافآت";
         return "إجمالي العمليات";
     }
@@ -1297,11 +1323,40 @@ public class MainActivity extends Activity {
             if ("sold".equals(mode)) ok = isSoldLog(log);
             else if ("today".equals(mode)) ok = isSoldLog(log) && log.createdAt != null && log.createdAt.startsWith(today);
             else if ("week".equals(mode)) ok = isSoldLog(log) && parseLogTime(log.createdAt) >= weekStart;
+            else if ("direct".equals(mode)) ok = isDirectSaleLog(log);
+            else if ("wallet".equals(mode)) ok = isWalletSaleLog(log);
+            else if ("cash".equals(mode)) ok = isCashSaleLog(log);
+            else if ("credit".equals(mode)) ok = isCreditSaleLog(log);
             else if ("rewards".equals(mode)) ok = isRewardLog(log);
             if (ok && (!from.isEmpty() || !to.isEmpty())) ok = isLogInRange(log, from, to);
             if (ok) out.add(log);
         }
         return out;
+    }
+
+    private boolean isDirectSaleLog(OperationLog log) {
+        if (log == null) return false;
+        String s = safe(log.provider) + " " + safe(log.status) + " " + safe(log.message);
+        return s.contains("بيع مباشر") || s.toLowerCase(Locale.US).contains("direct");
+    }
+
+    private boolean isWalletSaleLog(OperationLog log) {
+        if (log == null) return false;
+        String s = safe(log.provider) + " " + safe(log.sender) + " " + safe(log.message);
+        if (isDirectSaleLog(log)) return false;
+        return s.contains("محفظ") || s.contains("ون كاش") || s.contains("ONE") || s.contains("one") || s.contains("كريمي") || s.contains("فلوسك") || s.contains("جوالي") || s.contains("جيب") || s.toLowerCase(Locale.US).contains("wallet");
+    }
+
+    private boolean isCashSaleLog(OperationLog log) {
+        if (log == null) return false;
+        String s = safe(log.provider) + " " + safe(log.status) + " " + safe(log.message);
+        return s.contains("نقد") || s.contains("cash");
+    }
+
+    private boolean isCreditSaleLog(OperationLog log) {
+        if (log == null) return false;
+        String s = safe(log.provider) + " " + safe(log.status) + " " + safe(log.message);
+        return s.contains("آجل") || s.contains("اجل") || s.contains("دين") || s.contains("سلف") || s.toLowerCase(Locale.US).contains("credit");
     }
 
     private boolean isSoldLog(OperationLog log) {
@@ -1355,7 +1410,7 @@ public class MainActivity extends Activity {
                 .setPositiveButton("عرض", (d, w) -> {
                     dashboardReportFrom = from.getText().toString().trim();
                     dashboardReportTo = to.getText().toString().trim();
-                    dashboardReportLimit = 10;
+                    dashboardReportLimit = 20;
                     showDashboardReport();
                 })
                 .setNegativeButton("إلغاء", null)
@@ -1704,13 +1759,14 @@ public class MainActivity extends Activity {
     }
 
     private void showCardsForCategory(CategoryItem c) {
+        cardSearchQuery = "";
         setTab("categories");
         clear();
         content.addView(title("كروت " + c.name));
 
         LinearLayout tools = cardBox();
         tools.addView(tv("إدارة كروت الفئة", 17, text, true));
-        tools.addView(small("تم تنظيف هذه النسخة: إضافة الكروت الآن من داخل التطبيق فقط عبر الإدخال اليدوي أو ملفات TXT أو Excel/CSV."));
+        tools.addView(small("إدارة كروت هذه الفئة: إضافة، بحث، تعديل، حذف، وعرض تدريجي 20 كرت في كل مرة."));
         tools.addView(action("➕ إضافة يدوية", purple, Color.WHITE, v -> { selectedAmount = c.amount; showManualAddDialog(); }));
         tools.addView(action("🔎 بحث عن كرت", card2, text, v -> showCardSearchDialog(c.amount)));
         tools.addView(action("📄 استيراد TXT لهذه الفئة", card2, text, v -> { selectedAmount = c.amount; openTxtFile(); }));
@@ -1735,7 +1791,7 @@ public class MainActivity extends Activity {
         perfInfo.addView(tv("عرض سريع", 16, text, true));
         perfInfo.addView(small("المعروض الآن: " + list.size() + " من " + totalCards + " كرت. لا يتم تحميل كل الكروت دفعة واحدة حتى يبقى التطبيق سريعًا."));
         if (totalCards > list.size()) {
-            perfInfo.addView(action("تحميل " + AppStore.performanceCardPageSize() + " كرت أخرى", card2, text, v -> {
+            perfInfo.addView(action("المزيد: عرض 20 كرت أخرى", card2, text, v -> {
                 cardsVisibleLimit += AppStore.performanceCardPageSize();
                 showCardsForCategory(c);
             }));
@@ -1762,7 +1818,7 @@ public class MainActivity extends Activity {
     private void confirmDeleteCard(CardItem item, CategoryItem c) {
         new AlertDialog.Builder(this)
                 .setTitle("تأكيد حذف الكرت")
-                .setMessage("هل تريد حذف هذا الكرت؟\n\n" + item.code + "\n\nلن يمكن التراجع عن الحذف إلا إذا كانت لديك نسخة احتياطية.")
+                .setMessage((item.sold ? "هذا الكرت مباع. لا تحذفه إلا عند الضرورة لأن سجل البيع سيبقى محفوظًا.\n\n" : "") + "هل تريد حذف هذا الكرت؟\n\n" + item.code + "\n\nلن يمكن التراجع عن الحذف إلا إذا كانت لديك نسخة احتياطية.")
                 .setPositiveButton("موافق، حذف", (d,w) -> { AppStore.deleteCard(this, item.id); showCardsForCategory(c); })
                 .setNegativeButton("إلغاء", null)
                 .show();
@@ -1835,40 +1891,94 @@ public class MainActivity extends Activity {
     }
 
     private void showCardSearchDialog(int amountFilter) {
-        LinearLayout layout = new LinearLayout(this);
-        layout.setOrientation(LinearLayout.VERTICAL);
-        layout.setPadding(dp(8), dp(8), dp(8), dp(8));
+        cardSearchLimit = 20;
+        showCardSearchScreen(amountFilter);
+    }
+
+    private void showCardSearchScreen(int amountFilter) {
+        setTab("import");
+        clear();
+        cardSearchAmountFilter = amountFilter;
+        content.addView(title(amountFilter > 0 ? "بحث كروت فئة " + amountFilter : "بحث عن كرت في النظام"));
+
+        LinearLayout box = cardBox();
+        box.addView(tv("بحث واضح عن الكرت", 17, text, true));
+        box.addView(small("اكتب رقم الكرت أو جزءًا منه. تظهر 20 نتيجة أولًا، ويمكن تعديل أو حذف الكرت من النتائج."));
         EditText query = new EditText(this);
-        query.setHint("اكتب رقم الكرت أو جزء منه");
+        query.setHint("رقم الكرت أو جزء منه");
         query.setGravity(Gravity.RIGHT);
+        query.setSingleLine(true);
+        query.setText(cardSearchQuery);
+        query.setTextColor(text);
+        query.setHintTextColor(muted);
+        query.setTextSize(17);
         query.setInputType(InputType.TYPE_CLASS_TEXT);
-        TextView result = small("سيظهر البحث هنا.");
-        result.setTextSize(12);
-        layout.addView(query);
-        layout.addView(result);
-        AlertDialog dialog = new AlertDialog.Builder(this)
-                .setTitle(amountFilter > 0 ? "بحث داخل فئة " + amountFilter : "بحث عن كرت في النظام")
-                .setView(layout)
-                .setPositiveButton("إغلاق", null)
-                .create();
-        query.addTextChangedListener(simpleWatcher(value -> {
-            ArrayList<CardItem> found = AppStore.searchCards(this, value);
-            StringBuilder sb = new StringBuilder();
-            int shown = 0;
-            for (CardItem item : found) {
-                if (amountFilter > 0 && item.amount != amountFilter) continue;
-                shown++;
-                sb.append(shown).append(") ").append(displayCardCode(item.code))
-                        .append(" | فئة: ").append(item.amount)
-                        .append(" | ").append(item.sold ? "مباع" : "متاح")
-                        .append(" | إضافة: ").append(item.createdAt == null || item.createdAt.trim().isEmpty() ? "غير مسجل" : item.createdAt);
-                if (item.sold) sb.append(" | إلى: ").append(item.buyerPhone);
-                sb.append("\n");
-                if (shown >= 30) { sb.append("... تم عرض أول 30 نتيجة فقط"); break; }
-            }
-            result.setText(sb.length() == 0 ? "لا توجد نتيجة مطابقة." : sb.toString());
-        }));
-        dialog.show();
+        query.setBackground(round(Color.rgb(6, 24, 29), dp(18), neonCyan, dp(2)));
+        query.setPadding(dp(14), 0, dp(14), 0);
+        box.addView(query, new LinearLayout.LayoutParams(-1, dp(58)));
+        LinearLayout quick = new LinearLayout(this);
+        quick.setOrientation(LinearLayout.HORIZONTAL);
+        quick.setLayoutDirection(View.LAYOUT_DIRECTION_RTL);
+        quick.addView(action("بحث", green, Color.rgb(3,22,12), v -> { cardSearchQuery = query.getText().toString().trim(); cardSearchLimit = 20; showCardSearchScreen(cardSearchAmountFilter); }), new LinearLayout.LayoutParams(0, dp(50), 1));
+        quick.addView(action("رجوع", card2, text, v -> { if (amountFilter > 0) showCardsForCategory(AppStore.findCategoryByAmount(this, amountFilter)); else showImport(); }), new LinearLayout.LayoutParams(0, dp(50), 1));
+        box.addView(quick);
+        content.addView(box);
+
+        query.addTextChangedListener(simpleWatcher(value -> { cardSearchQuery = value == null ? "" : value.trim(); }));
+        renderCardSearchResults(amountFilter);
+    }
+
+    private void renderCardSearchResults(int amountFilter) {
+        ArrayList<CardItem> found = AppStore.searchCardsLimited(this, cardSearchQuery, amountFilter, cardSearchLimit);
+        LinearLayout summary = cardBox();
+        summary.addView(tv("النتائج", 17, text, true));
+        summary.addView(small("المعروض الآن: " + found.size() + " نتيجة" + (cardSearchLimit > 0 ? " | الحد: " + cardSearchLimit : "") + "\nيمكن تعديل أو حذف الكرت مباشرة من النتيجة."));
+        content.addView(summary);
+        if (cardSearchQuery == null || cardSearchQuery.trim().isEmpty()) {
+            LinearLayout empty = cardBox();
+            empty.addView(small("اكتب رقم الكرت أو جزءًا منه لبدء البحث."));
+            content.addView(empty);
+            return;
+        }
+        if (found.isEmpty()) {
+            LinearLayout empty = cardBox();
+            empty.addView(small("لا توجد نتيجة مطابقة."));
+            content.addView(empty);
+            return;
+        }
+        for (CardItem item : found) content.addView(cardResultBox(item));
+        if (found.size() >= cardSearchLimit) {
+            LinearLayout more = cardBox();
+            more.addView(action("المزيد: عرض 20 كرت أخرى", card2, text, v -> { cardSearchLimit += 20; showCardSearchScreen(amountFilter); }), new LinearLayout.LayoutParams(-1, dp(50)));
+            content.addView(more);
+        }
+    }
+
+    private View cardResultBox(CardItem item) {
+        LinearLayout box = cardBox();
+        box.setBackground(round(Color.rgb(17, 22, 40), dp(20), item.sold ? orange : green, dp(1)));
+        box.addView(badge(item.sold ? "مباع" : "متاح", item.sold ? orange : green));
+        box.addView(tv(displayCardCode(item.code), 17, text, true));
+        box.addView(small("الفئة: " + item.amount + " ريال"
+                + "\nتاريخ الإدخال: " + ((item.createdAt == null || item.createdAt.trim().isEmpty()) ? "غير مسجل" : item.createdAt)
+                + (item.sold ? "\nأرسل إلى: " + safe(item.buyerPhone) + "\nوقت البيع: " + safe(item.soldAt) : "")));
+        LinearLayout tools = new LinearLayout(this);
+        tools.setOrientation(LinearLayout.HORIZONTAL);
+        tools.setLayoutDirection(View.LAYOUT_DIRECTION_RTL);
+        tools.addView(action("تعديل", purple, Color.WHITE, v -> showCardEditDialog(item)), new LinearLayout.LayoutParams(0, dp(48), 1));
+        tools.addView(action("حذف", Color.rgb(82,30,42), Color.WHITE, v -> confirmDeleteCardFromSearch(item)), new LinearLayout.LayoutParams(0, dp(48), 1));
+        box.addView(tools);
+        return box;
+    }
+
+    private void confirmDeleteCardFromSearch(CardItem item) {
+        new AlertDialog.Builder(this)
+                .setTitle(item.sold ? "تحذير: كرت مباع" : "حذف كرت")
+                .setMessage((item.sold ? "هذا الكرت مباع. الأفضل عدم حذفه إلا إذا كنت متأكدًا لأن السجل المالي سيبقى موجودًا.\n\n" : "")
+                        + "هل تريد حذف الكرت؟\n\n" + item.code)
+                .setPositiveButton("موافق، حذف", (d,w) -> { AppStore.deleteCard(this, item.id); toast("تم حذف الكرت"); showCardSearchScreen(cardSearchAmountFilter); })
+                .setNegativeButton("إلغاء", null)
+                .show();
     }
 
     private void showCardEditDialog(CardItem card) {
@@ -1888,13 +1998,14 @@ public class MainActivity extends Activity {
                     if (a <= 0 || code.getText().toString().trim().isEmpty()) { toast("بيانات غير صحيحة"); return; }
                     boolean ok = AppStore.updateCard(this, card, a, code.getText().toString().trim(), sold.isChecked());
                     if (!ok) { toast("هذا الكرت موجود مسبقًا في فئة أخرى أو في نفس الفئة"); return; }
-                    showCategories();
+                    if (cardSearchQuery != null && !cardSearchQuery.trim().isEmpty()) showCardSearchScreen(cardSearchAmountFilter); else showCategories();
                 })
                 .setNegativeButton("إلغاء", null)
                 .show();
     }
 
     private void showImport() {
+        cardSearchQuery = "";
         setTab("import");
         clear();
         content.addView(title("استيراد الكروت"));
@@ -1930,7 +2041,7 @@ public class MainActivity extends Activity {
 
         LinearLayout ops = cardBox();
         ops.addView(tv("إضافة الكروت", 17, text, true));
-        ops.addView(small("نسخة منظمة وآمنة: تم إلغاء إضافات الراوتر ونقاط البيع والتحديثات الداخلية مؤقتًا. إضافة الكروت متاحة فقط يدويًا أو من TXT أو Excel/CSV."));
+        ops.addView(small("أضف الكروت يدويًا أو من ملف TXT أو Excel/CSV. يمكنك البحث عن أي كرت وتعديله أو حذفه من نفس القسم."));
         ops.addView(action("➕ إضافة يدوية", purple, Color.WHITE, v -> showManualAddDialog()));
         ops.addView(action("🔎 بحث عن كرت في النظام", card2, text, v -> showCardSearchDialog(-1)));
         ops.addView(action("📄 استيراد من ملف TXT", card2, text, v -> openTxtFile()));
@@ -3312,6 +3423,18 @@ public class MainActivity extends Activity {
         ui.addView(small("تحكم سريع في الهوية والألوان: داكن/نهاري، اللون الرئيسي، الهيدر، لوحة التحكم 6 خانات، وآخر العمليات التدريجي."));
         ui.addView(action("فتح التحكم في الواجهة", Color.rgb(0, 126, 78), Color.WHITE, v -> showUiControlPanel()));
         content.addView(ui);
+
+        LinearLayout saleOrder = cardBox();
+        saleOrder.addView(tv("طريقة إخراج الكروت", 17, text, true));
+        saleOrder.addView(small("التحكم في ترتيب بيع الكروت من المخزون. الافتراضي: الأقدم أولًا، ويمكن اختيار الأحدث أولًا لترويج دفعة جديدة."));
+        saleOrder.addView(small("الوضع الحالي: " + AppStore.cardSaleOrderLabel(this)));
+        LinearLayout orderRow = new LinearLayout(this);
+        orderRow.setOrientation(LinearLayout.HORIZONTAL);
+        orderRow.setLayoutDirection(View.LAYOUT_DIRECTION_RTL);
+        orderRow.addView(action("الأقدم أولًا", AppStore.isCardSaleNewestFirst(this) ? card2 : green, AppStore.isCardSaleNewestFirst(this) ? text : Color.rgb(3,22,12), v -> { AppStore.setCardSaleOrder(this, false); toast("تم اختيار البيع من الأقدم أولًا"); showSettings(); }), new LinearLayout.LayoutParams(0, dp(52), 1));
+        orderRow.addView(action("الأحدث أولًا", AppStore.isCardSaleNewestFirst(this) ? gold : card2, AppStore.isCardSaleNewestFirst(this) ? Color.rgb(35,24,8) : text, v -> { AppStore.setCardSaleOrder(this, true); toast("تم اختيار البيع من الدفعة الأحدث أولًا"); showSettings(); }), new LinearLayout.LayoutParams(0, dp(52), 1));
+        saleOrder.addView(orderRow);
+        content.addView(saleOrder);
 
         LinearLayout backupRestore = cardBox();
         backupRestore.addView(tv("النسخ والاسترجاع", 17, text, true));

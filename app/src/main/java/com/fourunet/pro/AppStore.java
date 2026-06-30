@@ -53,6 +53,7 @@ class AppStore {
     private static final String KEY_AUTO_BACKUP_INTERVAL_HOURS = "auto_backup_interval_hours";
     private static final String KEY_LAST_AUTO_BACKUP_AT = "last_auto_backup_at";
     private static final String KEY_CARD_PRIVACY_ENABLED = "card_privacy_enabled";
+    private static final String KEY_CARD_SALE_NEWEST_FIRST = "card_sale_newest_first_v143";
     private static final String KEY_TRUSTED = "trusted_contacts";
     private static final String KEY_TRUSTED_CREDIT_AGENTS = "trusted_credit_agents";
     private static final String KEY_POS_OUTLETS = "pos_outlets";
@@ -126,8 +127,8 @@ class AppStore {
 
     // Stage 13.6.1 STRONG PERFORMANCE ENGINE
     // Cards are stored in SQLite for large stock imports. SharedPreferences remains for legacy settings/logs.
-    static final int PERFORMANCE_LOG_PAGE_SIZE = 50;
-    static final int PERFORMANCE_CARD_PAGE_SIZE = 80;
+    static final int PERFORMANCE_LOG_PAGE_SIZE = 20;
+    static final int PERFORMANCE_CARD_PAGE_SIZE = 20;
     private static final int MAX_FAST_LOGS = 1500;
     private static String cardsCacheJson = null;
     private static ArrayList<CardItem> cardsCache = null;
@@ -439,6 +440,22 @@ class AppStore {
     static int performanceLogPageSize() { return PERFORMANCE_LOG_PAGE_SIZE; }
 
     static int performanceCardPageSize() { return PERFORMANCE_CARD_PAGE_SIZE; }
+
+    static boolean isCardSaleNewestFirst(Context c) {
+        return prefs(c).getBoolean(KEY_CARD_SALE_NEWEST_FIRST, false);
+    }
+
+    static void setCardSaleOrder(Context c, boolean newestFirst) {
+        prefs(c).edit().putBoolean(KEY_CARD_SALE_NEWEST_FIRST, newestFirst).apply();
+    }
+
+    static String cardSaleOrderLabel(Context c) {
+        return isCardSaleNewestFirst(c) ? "الأحدث إدخالًا أولًا" : "الأقدم إدخالًا أولًا";
+    }
+
+    private static String cardSaleSqlOrder(Context c) {
+        return isCardSaleNewestFirst(c) ? "rowid DESC" : "rowid ASC";
+    }
 
     static SharedPreferences prefs(Context c) {
         return c.getSharedPreferences(PREF, Context.MODE_PRIVATE);
@@ -1611,6 +1628,13 @@ class AppStore {
         saveCategories(c, next);
     }
 
+    static CategoryItem findCategoryByAmount(Context c, int amount) {
+        for (CategoryItem item : loadCategories(c)) {
+            if (item != null && item.amount == amount) return item;
+        }
+        return new CategoryItem(UUID.randomUUID().toString(), amount, amount + " ريال", true, System.currentTimeMillis());
+    }
+
     static ArrayList<CardItem> loadCards(Context c) {
         ArrayList<CardItem> list = new ArrayList<>();
         Cursor cur = null;
@@ -1748,6 +1772,10 @@ class AppStore {
     }
 
     static ArrayList<CardItem> searchCards(Context c, String query) {
+        return searchCardsLimited(c, query, -1, 80);
+    }
+
+    static ArrayList<CardItem> searchCardsLimited(Context c, String query, int amountFilter, int limit) {
         ArrayList<CardItem> out = new ArrayList<>();
         String q = normalizeCardCode(query).toUpperCase(Locale.US);
         String raw = query == null ? "" : query.trim().toUpperCase(Locale.US);
@@ -1756,9 +1784,17 @@ class AppStore {
         try {
             String like1 = "%" + q + "%";
             String like2 = "%" + raw + "%";
+            String where = "(code_key LIKE ? OR UPPER(code) LIKE ?)";
+            String[] args;
+            if (amountFilter > 0) {
+                where += " AND amount=?";
+                args = new String[]{like1, like2, String.valueOf(amountFilter)};
+            } else {
+                args = new String[]{like1, like2};
+            }
             cur = cardDb(c).query("cards", null,
-                    "code_key LIKE ? OR UPPER(code) LIKE ?",
-                    new String[]{like1, like2}, null, null, "rowid DESC", "80");
+                    where,
+                    args, null, null, "rowid DESC", String.valueOf(Math.max(1, limit)));
             while (cur.moveToNext()) out.add(cardFromCursor(cur));
         } catch (Exception ignored) {
         } finally {
@@ -2107,7 +2143,7 @@ class AppStore {
                 db = cardDb(c);
                 cur = db.query("cards", null,
                         "amount=? AND sold=0 AND (source IS NULL OR source NOT LIKE 'reward_stock%')",
-                        new String[]{String.valueOf(amount)}, null, null, "rowid ASC", "1");
+                        new String[]{String.valueOf(amount)}, null, null, cardSaleSqlOrder(c), "1");
                 if (!cur.moveToFirst()) {
                     if (!prefs(c).getBoolean(KEY_CARDS_DB_READY, false) && hasLegacyCardsPrefs(c)) {
                         return takeAvailableCardLegacyPrefs(c, amount, buyerPhone);
@@ -2197,7 +2233,7 @@ class AppStore {
                 for (int amount : amounts) {
                     cur = db.query("cards", null,
                             "amount=? AND sold=0 AND (source IS NULL OR source NOT LIKE 'reward_stock%')",
-                            new String[]{String.valueOf(amount)}, null, null, "rowid ASC", "10");
+                            new String[]{String.valueOf(amount)}, null, null, cardSaleSqlOrder(c), "10");
                     CardItem found = null;
                     while (cur.moveToNext()) {
                         CardItem tmp = cardFromCursor(cur);
@@ -4163,7 +4199,7 @@ class AppStore {
             try {
                 cur = db.query("cards", null,
                         "amount=? AND sold=0 AND source LIKE 'reward_stock%'",
-                        new String[]{String.valueOf(amount)}, null, null, "rowid ASC", "1");
+                        new String[]{String.valueOf(amount)}, null, null, cardSaleSqlOrder(c), "1");
                 if (!cur.moveToFirst()) return null;
                 CardItem selected = cardFromCursor(cur);
                 String when = now();
