@@ -10,8 +10,8 @@ android {
         applicationId 'com.fourunet.onlineadmin.stable'
         minSdk 23
         targetSdk 34
-        versionCode 59
-        versionName '45.0-stage14.3-sales-cards-search-batch-order'
+        versionCode 61
+        versionName '45.0-stage14.4-auto-card-search-clean-sales-filters'
     }
 
     signingConfigs {

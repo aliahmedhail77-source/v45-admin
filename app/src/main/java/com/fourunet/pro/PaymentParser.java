@@ -18,15 +18,44 @@ class PaymentParser {
     }
 
     static boolean trustedSender(String sender) {
+        return knownWalletSender(sender);
+    }
+
+    // HOTFIX 14.3.1: قبول مرسلي المحافظ الشائعة حتى لو لم يضف المستخدم اسم المحفظة يدويًا بعد.
+    private static boolean knownWalletSender(String sender) {
         if (sender == null) return false;
-        String s = sender.toLowerCase();
+        String raw = sender.trim();
+        if (raw.isEmpty()) return false;
+        String s = raw.toLowerCase(Locale.ROOT).replace("-", " ").replace("_", " ");
         return s.contains("jawali")
                 || s.contains("jaib")
                 || s.contains("one cash")
                 || s.contains("onecash")
-                || sender.contains("جوالي")
-                || sender.contains("جيب")
-                || sender.contains("ون كاش");
+                || s.contains("onec")
+                || s.contains("kuraimi")
+                || s.contains("alkuraimi")
+                || s.contains("al kuraimi")
+                || s.contains("floosk")
+                || s.contains("floosak")
+                || s.contains("yemen cash")
+                || s.contains("yemencash")
+                || s.contains("saba cash")
+                || s.contains("sabacash")
+                || s.contains("beys")
+                || s.contains("bais")
+                || raw.contains("جوالي")
+                || raw.contains("جيب")
+                || raw.contains("ون كاش")
+                || raw.contains("ونكاش")
+                || raw.contains("الكريمي")
+                || raw.contains("كريمي")
+                || raw.contains("فلوسك")
+                || raw.contains("يمن كاش")
+                || raw.contains("سبأ كاش")
+                || raw.contains("سبا كاش")
+                || raw.contains("بيس")
+                || raw.contains("محفظ")
+                || raw.contains("كاش");
     }
 
 
@@ -65,11 +94,22 @@ class PaymentParser {
 
     private static boolean hasRealDepositVerb(String text) {
         if (text == null) return false;
-        String b = text.toLowerCase(Locale.ROOT);
-        return b.contains("استلمت") || b.contains("استلام") || b.contains("تم استلام")
-                || b.contains("تحويل") || b.contains("تم تحويل") || b.contains("اضيف") || b.contains("أضيف")
-                || b.contains("تم اضافة") || b.contains("تم إضافة") || b.contains("ايداع") || b.contains("إيداع")
+        String b = normalizeArabicLetters(text).toLowerCase(Locale.ROOT);
+        return b.contains("استلمت") || b.contains("استلم") || b.contains("استلام") || b.contains("تم استلام")
+                || b.contains("تحويل") || b.contains("تم تحويل") || b.contains("حواله") || b.contains("حوالة")
+                || b.contains("اضيف") || b.contains("تم اضافه") || b.contains("اضافه")
+                || b.contains("ايداع") || b.contains("اودع") || b.contains("تم ايداع")
+                || b.contains("سداد") || b.contains("تسديد") || b.contains("سدد")
+                || b.contains("دفع") || b.contains("دفعت") || b.contains("تم دفع")
+                || b.contains("ارسل") || b.contains("ارسال") || b.contains("تم ارسال")
+                || b.contains("استقبلت") || b.contains("وصل") || b.contains("ورد")
                 || b.contains("مبلغ");
+    }
+
+    private static String normalizeArabicLetters(String text) {
+        if (text == null) return "";
+        return text.replace('أ', 'ا').replace('إ', 'ا').replace('آ', 'ا')
+                .replace('ٱ', 'ا').replace('ة', 'ه').replace('ى', 'ي');
     }
 
     private static boolean isDateTimeOnlyMessage(String body) {
@@ -85,15 +125,13 @@ class PaymentParser {
     static boolean looksLikePayment(String body) {
         if (body == null) return false;
         if (isNonPaymentNoise(body)) return false;
-        String b = body;
+        String b = normalizeDigitsInText(body);
         boolean hasDigits = b.matches(".*\\d+.*");
         if (!hasDigits) return false;
         String upper = b.toUpperCase(Locale.ROOT);
-        boolean hasCurrency = b.contains("ريال") || b.contains("ر.ي") || upper.contains("YER");
-        boolean hasDepositVerb = b.contains("تم استلام") || b.contains("استلام") || b.contains("تحويل") || b.contains("تم تحويل")
-                || b.contains("تم اضافة") || b.contains("تم إضافة") || b.contains("اضيف") || b.contains("أضيف")
-                || b.contains("اضافة") || b.contains("إضافة") || b.contains("إيداع") || b.contains("ايداع") || b.contains("مبلغ");
-        return hasDepositVerb && hasCurrency;
+        boolean hasCurrency = b.contains("ريال") || b.contains("ر.ي") || upper.contains("YER") || upper.contains("YR") || upper.contains("RIAL");
+        boolean hasDepositVerb = hasRealDepositVerb(b);
+        return hasDepositVerb && (hasCurrency || extractAmount(b) > 0);
     }
 
 
@@ -107,10 +145,16 @@ class PaymentParser {
 
     static String walletDisplayName(String sender, String body) {
         String hay = ((sender == null ? "" : sender) + " " + (body == null ? "" : body)).toLowerCase(Locale.ROOT);
-        if (hay.contains("jawali") || (sender != null && sender.contains("جوالي"))) return "جوالي";
-        if (hay.contains("jaib") || (sender != null && sender.contains("جيب"))) return "جيب";
-        if (hay.contains("one cash") || hay.contains("onecash") || (sender != null && sender.contains("ون كاش"))) return "ONE Cash";
-        if (sender != null && !sender.trim().isEmpty()) return sender.trim();
+        String rawSender = sender == null ? "" : sender.trim();
+        if (hay.contains("jawali") || rawSender.contains("جوالي")) return "جوالي";
+        if (hay.contains("jaib") || rawSender.contains("جيب")) return "جيب";
+        if (hay.contains("one cash") || hay.contains("onecash") || rawSender.contains("ون كاش") || rawSender.contains("ونكاش")) return "ONE Cash";
+        if (hay.contains("kuraimi") || hay.contains("alkuraimi") || rawSender.contains("الكريمي") || rawSender.contains("كريمي")) return "كريمي";
+        if (hay.contains("floosk") || hay.contains("floosak") || rawSender.contains("فلوسك")) return "فلوسك";
+        if (hay.contains("yemen cash") || hay.contains("yemencash") || rawSender.contains("يمن كاش")) return "يمن كاش";
+        if (hay.contains("saba cash") || hay.contains("sabacash") || rawSender.contains("سبأ كاش") || rawSender.contains("سبا كاش")) return "سبأ كاش";
+        if (rawSender.contains("بيس") || hay.contains("beys") || hay.contains("bais")) return "بيس";
+        if (!rawSender.isEmpty()) return rawSender;
         return "محفظة";
     }
 
@@ -331,39 +375,47 @@ class PaymentParser {
 
     static ParsedPayment parse(Context context, String sender, String body) {
         if (body == null || isSystemGeneratedMessage(body) || isIgnoredNotificationMessage(body) || isNonPaymentNoise(body)) return null;
+        String normalizedBody = normalizeDigitsInText(body);
 
         ParsedPayment p = null;
         if (trustedSender(sender)) {
-            p = parseJawali(body);
+            p = parseJawali(normalizedBody);
             if (p != null) return p;
 
-            p = parseJaib(body);
+            p = parseJaib(normalizedBody);
             if (p != null) return p;
 
-            p = parseOneCash(body);
+            p = parseOneCash(normalizedBody);
             if (p != null) return p;
 
-            p = parseFallback(sender, body);
+            p = parseFallback(sender, normalizedBody);
+            if (p != null) return p;
+
+            p = parseGenericTrustedWallet(sender, normalizedBody);
             if (p != null) return p;
         }
 
-        p = parseCustomWallet(context, sender, body);
+        p = parseCustomWallet(context, sender, normalizedBody);
         return p;
     }
 
     static ParsedPayment parse(String sender, String body) {
         if (!trustedSender(sender) || body == null || isSystemGeneratedMessage(body) || isIgnoredNotificationMessage(body) || isNonPaymentNoise(body)) return null;
+        String normalizedBody = normalizeDigitsInText(body);
 
-        ParsedPayment p = parseJawali(body);
+        ParsedPayment p = parseJawali(normalizedBody);
         if (p != null) return p;
 
-        p = parseJaib(body);
+        p = parseJaib(normalizedBody);
         if (p != null) return p;
 
-        p = parseOneCash(body);
+        p = parseOneCash(normalizedBody);
         if (p != null) return p;
 
-        return parseFallback(sender, body);
+        p = parseFallback(sender, normalizedBody);
+        if (p != null) return p;
+
+        return parseGenericTrustedWallet(sender, normalizedBody);
     }
 
     private static ParsedPayment parseJawali(String body) {
@@ -391,16 +443,17 @@ class PaymentParser {
     }
 
     private static ParsedPayment parseOneCash(String body) {
-        Pattern pattern = Pattern.compile("استلمت\\s+(\\d+(?:[\\.,]\\d+)?).*?\\n\\s*من\\s+(.+?)\\s*\\n\\s*رصيدك", Pattern.DOTALL);
-        Matcher m = pattern.matcher(body);
+        String b = normalizeArabicLetters(normalizeDigitsInText(body == null ? "" : body));
+        Pattern pattern = Pattern.compile("(?:استلمت|اودعت)\\s+(\\d+(?:[\\.,]\\d+)?).*?\\n\\s*من\\s+(.+?)\\s*\\n\\s*(?:رصيدك|الرسوم|رسوم)", Pattern.DOTALL);
+        Matcher m = pattern.matcher(b);
         if (m.find()) {
             int amount = toIntAmount(m.group(1));
             String name = cleanName(m.group(2));
             if (amount > 0 && !name.isEmpty()) return new ParsedPayment("ONE Cash", amount, "", name);
         }
 
-        Pattern flexible = Pattern.compile("استلمت\\s+(\\d+(?:[\\.,]\\d+)?).*?من\\s+(.+?)\\s+رصيدك", Pattern.DOTALL);
-        Matcher mf = flexible.matcher(body);
+        Pattern flexible = Pattern.compile("(?:استلمت|اودعت)\\s+(\\d+(?:[\\.,]\\d+)?).*?من\\s+(.+?)(?:\\s+رصيدك|\\s+الرصيد|\\n\\s*الرسوم|\\n\\s*رسوم|$)", Pattern.DOTALL);
+        Matcher mf = flexible.matcher(b);
         if (mf.find()) {
             int amount = toIntAmount(mf.group(1));
             String name = cleanName(mf.group(2));
@@ -428,6 +481,21 @@ class PaymentParser {
         return null;
     }
 
+    private static ParsedPayment parseGenericTrustedWallet(String sender, String body) {
+        int amount = extractAmount(body);
+        if (amount <= 0) return null;
+        String phone = "";
+        Matcher mp = Pattern.compile("(?:00967|967|0)?(7\\d{8})").matcher(body == null ? "" : body);
+        String last = "";
+        while (mp.find()) last = mp.group(1);
+        phone = normalizeLocalPhone(last);
+        String name = extractNameAfterFrom(body);
+        String provider = walletDisplayName(sender, body);
+        if (hasValidLocalMobile(phone)) return new ParsedPayment(provider, amount, phone, name);
+        if (name != null && !name.trim().isEmpty()) return new ParsedPayment(provider, amount, "", name);
+        return new ParsedPayment(provider, amount, "", "");
+    }
+
     private static ParsedPayment parseFallback(String sender, String body) {
         int amount = extractAmount(body);
         String phone = "";
@@ -440,21 +508,21 @@ class PaymentParser {
 
         if (amount > 0 && hasValidLocalMobile(phone)) {
             String low = sender == null ? "" : sender.toLowerCase();
-            String provider = "Jawali";
-            if (low.contains("jaib") || (sender != null && sender.contains("جيب"))) provider = "Jaib";
-            if (low.contains("one") || (sender != null && sender.contains("ون كاش"))) provider = "ONE Cash";
+            String provider = walletDisplayName(sender, body);
             return new ParsedPayment(provider, amount, phone, "");
         }
         return null;
     }
 
     private static int extractAmount(String body) {
+        String b = normalizeArabicLetters(normalizeDigitsInText(body == null ? "" : body));
         String[] patterns = new String[]{
-                "(?:مبلغ|اضيف|أضيف|إيداع|ايداع|استلمت|استلام|استلم|وصل|تحويل)\\s*(\\d+(?:[\\.,]\\d+)?)",
-                "(\\d+(?:[\\.,]\\d+)?)\\s*(?:ريال|ر\\.?ي|YER|YR|Rial)"
+                "(?:مبلغ|اضيف|اضافه|ايداع|اودعت|اودع|استلمت|استلام|استلم|وصل|ورد|تحويل|حواله|سداد|تسديد|سدد|دفع|دفعت|ارسل|ارسال)\\s*[:：-]?\\s*(\\d+(?:[\\.,]\\d+)?)",
+                "(\\d+(?:[\\.,]\\d+)?)\\s*(?:ريال|ر\\.?ي|YER|YR|Rial)",
+                "(?:amount|received|deposit|transfer|payment|paid)\\s*[:：-]?\\s*(\\d+(?:[\\.,]\\d+)?)"
         };
         for (String pat : patterns) {
-            Matcher m = Pattern.compile(pat, Pattern.CASE_INSENSITIVE | Pattern.DOTALL).matcher(body);
+            Matcher m = Pattern.compile(pat, Pattern.CASE_INSENSITIVE | Pattern.DOTALL).matcher(b);
             if (m.find()) {
                 int amount = toIntAmount(m.group(1));
                 if (amount > 0) return amount;
@@ -465,13 +533,14 @@ class PaymentParser {
 
     private static String extractNameAfterFrom(String body) {
         if (body == null) return "";
+        String b = normalizeDigitsInText(body);
         Pattern[] patterns = new Pattern[]{
-                Pattern.compile("(?:من|From)\\s*[:：-]?\\s*(.+?)(?:\\n|رصيدك|المبلغ|رقم|$)", Pattern.CASE_INSENSITIVE | Pattern.DOTALL),
-                Pattern.compile("المرسل\\s*[:：-]?\\s*(.+?)(?:\\n|$)", Pattern.DOTALL),
-                Pattern.compile("اسم\\s+المرسل\\s*[:：-]?\\s*(.+?)(?:\\n|$)", Pattern.DOTALL)
+                Pattern.compile("(?:من|From|from)\\s*[:：-]?\\s*(.+?)(?:\\n|رصيدك|الرصيد|المبلغ|رقم|هاتف|جوال|رسوم|عمولة|التاريخ|تاريخ|الوقت|وقت|$)", Pattern.CASE_INSENSITIVE | Pattern.DOTALL),
+                Pattern.compile("(?:المرسل|مرسل|اسم\\s+المرسل|اسم\\s+العميل|العميل)\\s*[:：-]?\\s*(.+?)(?:\\n|رقم|هاتف|جوال|$)", Pattern.CASE_INSENSITIVE | Pattern.DOTALL),
+                Pattern.compile("(?:حوالة|حواله|ايداع|سداد|دفع).*?(?:من)\\s*[:：-]?\\s*(.+?)(?:\\n|رقم|هاتف|جوال|رصيد|$)", Pattern.CASE_INSENSITIVE | Pattern.DOTALL)
         };
         for (Pattern pattern : patterns) {
-            Matcher m = pattern.matcher(body);
+            Matcher m = pattern.matcher(b);
             if (m.find()) return cleanName(m.group(1));
         }
         return "";

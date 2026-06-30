@@ -2847,10 +2847,13 @@ class AppStore {
 
     private static ArrayList<String[]> defaultWalletDefinitions() {
         ArrayList<String[]> wallets = new ArrayList<>();
-        wallets.add(new String[]{"ONE Cash", "one cash, onecash, ون كاش"});
-        wallets.add(new String[]{"فلوسك", "floosk, فلوسك"});
-        wallets.add(new String[]{"كاش", "cash, كاش, يمن كاش, yemen cash"});
-        wallets.add(new String[]{"سبأ كاش", "saba cash, saba, سبأ كاش, سبا كاش"});
+        wallets.add(new String[]{"ONE Cash", "one cash, onecash, onec, ون كاش, ونكاش"});
+        wallets.add(new String[]{"جوالي", "jawali, جوالي"});
+        wallets.add(new String[]{"جيب", "jaib, جيب"});
+        wallets.add(new String[]{"كريمي", "kuraimi, alkuraimi, al kuraimi, كريمي, الكريمي"});
+        wallets.add(new String[]{"فلوسك", "floosk, floosak, فلوسك"});
+        wallets.add(new String[]{"كاش", "cash, كاش, يمن كاش, yemen cash, yemencash"});
+        wallets.add(new String[]{"سبأ كاش", "saba cash, sabacash, saba, سبأ كاش, سبا كاش"});
         wallets.add(new String[]{"بيس", "bis, bais, beys, بيس"});
         return wallets;
     }

@@ -108,11 +108,19 @@ public class MainActivity extends Activity {
     int homeRecentVisibleLimit = 5;
     int dashboardReportLimit = 20;
     String dashboardReportMode = "all";
+    String dashboardReportPeriod = "all";
+    String dashboardReportType = "all";
+    String dashboardReportWallet = "all";
+    final Handler cardSearchAutoHandler = new Handler(Looper.getMainLooper());
+    Runnable cardSearchAutoRunnable;
     String cardSearchQuery = "";
     int cardSearchLimit = 20;
     int cardSearchAmountFilter = -1;
     String dashboardReportFrom = "";
     String dashboardReportTo = "";
+
+    // Stage 14.4 AUTO CARD SEARCH + CLEAN SALES FILTERS.
+    // بحث الكروت تلقائيًا بدون زر، وتنظيف فلاتر المبيعات بقوائم منظمة ومزيد 20 فقط.
 
     // Stage 14.3 SALES + CARD SEARCH + BATCH ORDER CONTROL.
     // تنظيم المبيعات حسب المصدر، بحث كروت كامل، عرض 20 ثم المزيد، وخيار بيع الأقدم/الأحدث.
@@ -1233,6 +1241,21 @@ public class MainActivity extends Activity {
 
     private void openDashboardReport(String mode) {
         dashboardReportMode = mode == null ? "all" : mode;
+        dashboardReportPeriod = "all";
+        dashboardReportType = "all";
+        dashboardReportWallet = "all";
+        if ("today".equals(mode)) {
+            dashboardReportPeriod = "today";
+            dashboardReportType = "sold";
+        } else if ("week".equals(mode)) {
+            dashboardReportPeriod = "week";
+            dashboardReportType = "sold";
+        } else if ("sold".equals(mode)) dashboardReportType = "sold";
+        else if ("direct".equals(mode)) dashboardReportType = "direct";
+        else if ("wallet".equals(mode)) dashboardReportType = "wallet";
+        else if ("cash".equals(mode)) dashboardReportType = "cash";
+        else if ("credit".equals(mode)) dashboardReportType = "credit";
+        else if ("rewards".equals(mode)) dashboardReportType = "rewards";
         dashboardReportLimit = 20;
         dashboardReportFrom = "";
         dashboardReportTo = "";
@@ -1242,49 +1265,20 @@ public class MainActivity extends Activity {
     private void showDashboardReport() {
         setTab("home");
         clear();
-        String screenTitle = dashboardReportTitle(dashboardReportMode);
-        content.addView(title(screenTitle));
+        content.addView(title(dashboardReportTitle()));
 
         LinearLayout tools = cardBox();
         tools.addView(tv("خيارات العرض", 17, text, true));
-        tools.addView(small("اعرض المبيعات والعمليات حسب الفترة أو المصدر. البداية 20 عملية فقط، ثم المزيد 20 عملية كل مرة."));
-
-        LinearLayout filterRow = new LinearLayout(this);
-        filterRow.setOrientation(LinearLayout.HORIZONTAL);
-        filterRow.setLayoutDirection(View.LAYOUT_DIRECTION_RTL);
-        filterRow.addView(action("اليوم", "today".equals(dashboardReportMode) ? green : card2, "today".equals(dashboardReportMode) ? Color.rgb(3, 22, 12) : text, v -> { dashboardReportMode = "today"; dashboardReportLimit = 20; showDashboardReport(); }), new LinearLayout.LayoutParams(0, dp(48), 1));
-        filterRow.addView(action("الأسبوع", "week".equals(dashboardReportMode) ? green : card2, "week".equals(dashboardReportMode) ? Color.rgb(3, 22, 12) : text, v -> { dashboardReportMode = "week"; dashboardReportLimit = 20; showDashboardReport(); }), new LinearLayout.LayoutParams(0, dp(48), 1));
-        filterRow.addView(action("الكل", "all".equals(dashboardReportMode) ? green : card2, "all".equals(dashboardReportMode) ? Color.rgb(3, 22, 12) : text, v -> { dashboardReportMode = "all"; dashboardReportLimit = 20; dashboardReportFrom = ""; dashboardReportTo = ""; showDashboardReport(); }), new LinearLayout.LayoutParams(0, dp(48), 1));
-        tools.addView(filterRow);
-
-        LinearLayout sourceRow = new LinearLayout(this);
-        sourceRow.setOrientation(LinearLayout.HORIZONTAL);
-        sourceRow.setLayoutDirection(View.LAYOUT_DIRECTION_RTL);
-        sourceRow.addView(action("مباشر", "direct".equals(dashboardReportMode) ? neonCyan : card2, "direct".equals(dashboardReportMode) ? Color.rgb(2, 20, 25) : text, v -> { dashboardReportMode = "direct"; dashboardReportLimit = 20; showDashboardReport(); }), new LinearLayout.LayoutParams(0, dp(48), 1));
-        sourceRow.addView(action("محافظ", "wallet".equals(dashboardReportMode) ? neonCyan : card2, "wallet".equals(dashboardReportMode) ? Color.rgb(2, 20, 25) : text, v -> { dashboardReportMode = "wallet"; dashboardReportLimit = 20; showDashboardReport(); }), new LinearLayout.LayoutParams(0, dp(48), 1));
-        sourceRow.addView(action("مكافآت", "rewards".equals(dashboardReportMode) ? gold : card2, "rewards".equals(dashboardReportMode) ? Color.rgb(35, 24, 8) : text, v -> { dashboardReportMode = "rewards"; dashboardReportLimit = 20; showDashboardReport(); }), new LinearLayout.LayoutParams(0, dp(48), 1));
-        tools.addView(sourceRow);
-
-        LinearLayout typeRow = new LinearLayout(this);
-        typeRow.setOrientation(LinearLayout.HORIZONTAL);
-        typeRow.setLayoutDirection(View.LAYOUT_DIRECTION_RTL);
-        typeRow.addView(action("نقدًا", "cash".equals(dashboardReportMode) ? gold : card2, "cash".equals(dashboardReportMode) ? Color.rgb(35, 24, 8) : text, v -> { dashboardReportMode = "cash"; dashboardReportLimit = 20; showDashboardReport(); }), new LinearLayout.LayoutParams(0, dp(46), 1));
-        typeRow.addView(action("آجل", "credit".equals(dashboardReportMode) ? gold : card2, "credit".equals(dashboardReportMode) ? Color.rgb(35, 24, 8) : text, v -> { dashboardReportMode = "credit"; dashboardReportLimit = 20; showDashboardReport(); }), new LinearLayout.LayoutParams(0, dp(46), 1));
-        typeRow.addView(action("كروت", "sold".equals(dashboardReportMode) ? gold : card2, "sold".equals(dashboardReportMode) ? Color.rgb(35, 24, 8) : text, v -> { dashboardReportMode = "sold"; dashboardReportLimit = 20; showDashboardReport(); }), new LinearLayout.LayoutParams(0, dp(46), 1));
-        tools.addView(typeRow);
-
-        LinearLayout limitRow = new LinearLayout(this);
-        limitRow.setOrientation(LinearLayout.HORIZONTAL);
-        limitRow.setLayoutDirection(View.LAYOUT_DIRECTION_RTL);
-        limitRow.addView(action("20", dashboardReportLimit == 20 ? purple : card2, dashboardReportLimit == 20 ? Color.WHITE : text, v -> { dashboardReportLimit = 20; showDashboardReport(); }), new LinearLayout.LayoutParams(0, dp(46), 1));
-        limitRow.addView(action("50", dashboardReportLimit == 50 ? purple : card2, dashboardReportLimit == 50 ? Color.WHITE : text, v -> { dashboardReportLimit = 50; showDashboardReport(); }), new LinearLayout.LayoutParams(0, dp(46), 1));
-        limitRow.addView(action("100", dashboardReportLimit == 100 ? purple : card2, dashboardReportLimit == 100 ? Color.WHITE : text, v -> { dashboardReportLimit = 100; showDashboardReport(); }), new LinearLayout.LayoutParams(0, dp(46), 1));
-        tools.addView(limitRow);
+        tools.addView(action("الفترة: " + dashboardPeriodLabel(dashboardReportPeriod) + "  ▾", card2, text, v -> showDashboardPeriodDialog()));
+        tools.addView(action("نوع العملية: " + dashboardTypeLabel(dashboardReportType) + "  ▾", card2, text, v -> showDashboardTypeDialog()));
+        if ("wallet".equals(dashboardReportType)) {
+            tools.addView(action("المحفظة: " + dashboardWalletLabel(dashboardReportWallet) + "  ▾", card2, text, v -> showDashboardWalletDialog()));
+        }
         tools.addView(action("فترة مخصصة", purple, Color.WHITE, v -> showDashboardDateRangeDialog()));
         tools.addView(action("رجوع للرئيسية", card2, text, v -> showHome()));
         content.addView(tools);
 
-        ArrayList<OperationLog> filtered = filteredDashboardLogs(dashboardReportMode, dashboardReportFrom, dashboardReportTo);
+        ArrayList<OperationLog> filtered = filteredDashboardLogs();
         LinearLayout summary = cardBox();
         int totalAmount = 0;
         for (OperationLog log : filtered) totalAmount += Math.max(0, log.amount);
@@ -1302,36 +1296,128 @@ public class MainActivity extends Activity {
         }
     }
 
-    private String dashboardReportTitle(String mode) {
-        if ("today".equals(mode)) return "مبيعات اليوم";
-        if ("week".equals(mode)) return "مبيعات الأسبوع";
-        if ("sold".equals(mode)) return "الكروت المباعة";
-        if ("direct".equals(mode)) return "مبيعات البيع المباشر";
-        if ("wallet".equals(mode)) return "مبيعات المحافظ";
-        if ("cash".equals(mode)) return "عمليات نقدًا";
-        if ("credit".equals(mode)) return "عمليات آجل";
-        if ("rewards".equals(mode)) return "عمليات المكافآت";
-        return "إجمالي العمليات";
+    private void showDashboardPeriodDialog() {
+        final String[] keys = new String[]{"today", "week", "all", "custom"};
+        final String[] labels = new String[]{"اليوم", "الأسبوع", "الكل", "فترة مخصصة"};
+        new AlertDialog.Builder(this)
+                .setTitle("اختر الفترة")
+                .setItems(labels, (d, which) -> {
+                    if ("custom".equals(keys[which])) { showDashboardDateRangeDialog(); return; }
+                    dashboardReportPeriod = keys[which];
+                    dashboardReportFrom = "";
+                    dashboardReportTo = "";
+                    dashboardReportLimit = 20;
+                    showDashboardReport();
+                })
+                .show();
     }
 
-    private ArrayList<OperationLog> filteredDashboardLogs(String mode, String from, String to) {
+    private void showDashboardTypeDialog() {
+        final String[] keys = new String[]{"all", "direct", "wallet", "cash", "credit", "rewards", "sold"};
+        final String[] labels = new String[]{"الكل", "بيع مباشر", "بيع من محفظة", "نقدًا", "آجل", "مكافآت", "كروت مباعة"};
+        new AlertDialog.Builder(this)
+                .setTitle("اختر نوع العملية")
+                .setItems(labels, (d, which) -> {
+                    dashboardReportType = keys[which];
+                    if (!"wallet".equals(dashboardReportType)) dashboardReportWallet = "all";
+                    dashboardReportLimit = 20;
+                    showDashboardReport();
+                })
+                .show();
+    }
+
+    private void showDashboardWalletDialog() {
+        ArrayList<String> wallets = dashboardWalletOptions();
+        String[] labels = wallets.toArray(new String[0]);
+        new AlertDialog.Builder(this)
+                .setTitle("اختر المحفظة")
+                .setItems(labels, (d, which) -> {
+                    dashboardReportWallet = labels[which];
+                    dashboardReportLimit = 20;
+                    showDashboardReport();
+                })
+                .show();
+    }
+
+    private ArrayList<String> dashboardWalletOptions() {
+        ArrayList<String> list = new ArrayList<>();
+        list.add("all");
+        String[] base = new String[]{"ONE Cash", "جوالي", "جيب", "كريمي", "فلوسك", "يمن كاش", "سبأ كاش", "بيس"};
+        for (String w : base) list.add(w);
+        HashSet<String> seen = new HashSet<>();
+        ArrayList<String> out = new ArrayList<>();
+        for (String w : list) {
+            String k = w == null ? "" : w.trim().toLowerCase(Locale.US);
+            if (!k.isEmpty() && seen.add(k)) out.add(w);
+        }
+        for (TrustedContact c : AppStore.loadTrustedContacts(this)) {
+            String w = c == null || c.walletName == null ? "" : c.walletName.trim();
+            String k = w.toLowerCase(Locale.US);
+            if (!w.isEmpty() && seen.add(k)) out.add(w);
+        }
+        return out;
+    }
+
+    private String dashboardPeriodLabel(String key) {
+        if ("today".equals(key)) return "اليوم";
+        if ("week".equals(key)) return "الأسبوع";
+        if ("custom".equals(key)) return "فترة مخصصة";
+        return "الكل";
+    }
+
+    private String dashboardTypeLabel(String key) {
+        if ("direct".equals(key)) return "بيع مباشر";
+        if ("wallet".equals(key)) return "بيع من محفظة";
+        if ("cash".equals(key)) return "نقدًا";
+        if ("credit".equals(key)) return "آجل";
+        if ("rewards".equals(key)) return "مكافآت";
+        if ("sold".equals(key)) return "كروت مباعة";
+        return "الكل";
+    }
+
+    private String dashboardWalletLabel(String key) {
+        if (key == null || key.trim().isEmpty() || "all".equals(key)) return "كل المحافظ";
+        return key;
+    }
+
+    private String dashboardReportTitle() {
+        String t = dashboardTypeLabel(dashboardReportType);
+        String p = dashboardPeriodLabel(dashboardReportPeriod);
+        if ("الكل".equals(t) && "الكل".equals(p)) return "المبيعات والعمليات";
+        if ("الكل".equals(t)) return "العمليات - " + p;
+        if ("الكل".equals(p)) return t;
+        return t + " - " + p;
+    }
+
+    private ArrayList<OperationLog> filteredDashboardLogs() {
         ArrayList<OperationLog> out = new ArrayList<>();
         String today = todayDatePrefix();
         long weekStart = System.currentTimeMillis() - 6L * 24L * 60L * 60L * 1000L;
         for (OperationLog log : AppStore.loadRecentVisibleLogs(this, 100000)) {
             boolean ok = true;
-            if ("sold".equals(mode)) ok = isSoldLog(log);
-            else if ("today".equals(mode)) ok = isSoldLog(log) && log.createdAt != null && log.createdAt.startsWith(today);
-            else if ("week".equals(mode)) ok = isSoldLog(log) && parseLogTime(log.createdAt) >= weekStart;
-            else if ("direct".equals(mode)) ok = isDirectSaleLog(log);
-            else if ("wallet".equals(mode)) ok = isWalletSaleLog(log);
-            else if ("cash".equals(mode)) ok = isCashSaleLog(log);
-            else if ("credit".equals(mode)) ok = isCreditSaleLog(log);
-            else if ("rewards".equals(mode)) ok = isRewardLog(log);
-            if (ok && (!from.isEmpty() || !to.isEmpty())) ok = isLogInRange(log, from, to);
+            if ("sold".equals(dashboardReportType)) ok = isSoldLog(log);
+            else if ("direct".equals(dashboardReportType)) ok = isDirectSaleLog(log);
+            else if ("wallet".equals(dashboardReportType)) ok = isWalletSaleLog(log) && matchesWalletFilter(log, dashboardReportWallet);
+            else if ("cash".equals(dashboardReportType)) ok = isCashSaleLog(log);
+            else if ("credit".equals(dashboardReportType)) ok = isCreditSaleLog(log);
+            else if ("rewards".equals(dashboardReportType)) ok = isRewardLog(log);
+
+            if (ok && "today".equals(dashboardReportPeriod)) ok = log.createdAt != null && log.createdAt.startsWith(today);
+            else if (ok && "week".equals(dashboardReportPeriod)) ok = parseLogTime(log.createdAt) >= weekStart;
+
+            if (ok && (!dashboardReportFrom.isEmpty() || !dashboardReportTo.isEmpty())) ok = isLogInRange(log, dashboardReportFrom, dashboardReportTo);
             if (ok) out.add(log);
         }
         return out;
+    }
+
+    private boolean matchesWalletFilter(OperationLog log, String wallet) {
+        if (wallet == null || wallet.trim().isEmpty() || "all".equals(wallet)) return true;
+        String w = wallet.trim().toLowerCase(Locale.US);
+        String s = (safe(log.provider) + " " + safe(log.sender) + " " + safe(log.message)).toLowerCase(Locale.US);
+        return s.contains(w) || ("one cash".equals(w) && (s.contains("one") || s.contains("ون كاش") || s.contains("ونكاش")))
+                || ("يمن كاش".equals(wallet) && s.contains("يمن"))
+                || ("سبأ كاش".equals(wallet) && (s.contains("سبأ") || s.contains("سبا")));
     }
 
     private boolean isDirectSaleLog(OperationLog log) {
@@ -1410,6 +1496,7 @@ public class MainActivity extends Activity {
                 .setPositiveButton("عرض", (d, w) -> {
                     dashboardReportFrom = from.getText().toString().trim();
                     dashboardReportTo = to.getText().toString().trim();
+                    dashboardReportPeriod = "custom";
                     dashboardReportLimit = 20;
                     showDashboardReport();
                 })
@@ -1891,6 +1978,7 @@ public class MainActivity extends Activity {
     }
 
     private void showCardSearchDialog(int amountFilter) {
+        cardSearchQuery = "";
         cardSearchLimit = 20;
         showCardSearchScreen(amountFilter);
     }
@@ -1902,55 +1990,71 @@ public class MainActivity extends Activity {
         content.addView(title(amountFilter > 0 ? "بحث كروت فئة " + amountFilter : "بحث عن كرت في النظام"));
 
         LinearLayout box = cardBox();
-        box.addView(tv("بحث واضح عن الكرت", 17, text, true));
-        box.addView(small("اكتب رقم الكرت أو جزءًا منه. تظهر 20 نتيجة أولًا، ويمكن تعديل أو حذف الكرت من النتائج."));
+        box.addView(tv("ابحث برقم الكرت", 17, text, true));
         EditText query = new EditText(this);
-        query.setHint("رقم الكرت أو جزء منه");
-        query.setGravity(Gravity.RIGHT);
+        query.setHint("اكتب رقم الكرت");
+        query.setGravity(Gravity.LEFT | Gravity.CENTER_VERTICAL);
+        query.setLayoutDirection(View.LAYOUT_DIRECTION_LTR);
+        query.setTextDirection(View.TEXT_DIRECTION_LTR);
         query.setSingleLine(true);
         query.setText(cardSearchQuery);
         query.setTextColor(text);
         query.setHintTextColor(muted);
-        query.setTextSize(17);
-        query.setInputType(InputType.TYPE_CLASS_TEXT);
-        query.setBackground(round(Color.rgb(6, 24, 29), dp(18), neonCyan, dp(2)));
-        query.setPadding(dp(14), 0, dp(14), 0);
-        box.addView(query, new LinearLayout.LayoutParams(-1, dp(58)));
-        LinearLayout quick = new LinearLayout(this);
-        quick.setOrientation(LinearLayout.HORIZONTAL);
-        quick.setLayoutDirection(View.LAYOUT_DIRECTION_RTL);
-        quick.addView(action("بحث", green, Color.rgb(3,22,12), v -> { cardSearchQuery = query.getText().toString().trim(); cardSearchLimit = 20; showCardSearchScreen(cardSearchAmountFilter); }), new LinearLayout.LayoutParams(0, dp(50), 1));
-        quick.addView(action("رجوع", card2, text, v -> { if (amountFilter > 0) showCardsForCategory(AppStore.findCategoryByAmount(this, amountFilter)); else showImport(); }), new LinearLayout.LayoutParams(0, dp(50), 1));
-        box.addView(quick);
+        query.setTextSize(22);
+        query.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_VISIBLE_PASSWORD);
+        query.setBackground(round(Color.rgb(6, 24, 29), dp(16), neonCyan, dp(2)));
+        query.setPadding(dp(18), 0, dp(18), 0);
+        box.addView(query, new LinearLayout.LayoutParams(-1, dp(54)));
+        box.addView(action("رجوع", card2, text, v -> { if (amountFilter > 0) showCardsForCategory(AppStore.findCategoryByAmount(this, amountFilter)); else showImport(); }));
         content.addView(box);
 
-        query.addTextChangedListener(simpleWatcher(value -> { cardSearchQuery = value == null ? "" : value.trim(); }));
-        renderCardSearchResults(amountFilter);
+        LinearLayout resultsBox = new LinearLayout(this);
+        resultsBox.setOrientation(LinearLayout.VERTICAL);
+        content.addView(resultsBox);
+
+        query.addTextChangedListener(simpleWatcher(value -> {
+            cardSearchQuery = value == null ? "" : value.trim();
+            cardSearchLimit = 20;
+            if (cardSearchAutoRunnable != null) cardSearchAutoHandler.removeCallbacks(cardSearchAutoRunnable);
+            cardSearchAutoRunnable = () -> renderCardSearchResultsInto(resultsBox, amountFilter);
+            cardSearchAutoHandler.postDelayed(cardSearchAutoRunnable, 350);
+        }));
+        query.requestFocus();
+        renderCardSearchResultsInto(resultsBox, amountFilter);
     }
 
-    private void renderCardSearchResults(int amountFilter) {
-        ArrayList<CardItem> found = AppStore.searchCardsLimited(this, cardSearchQuery, amountFilter, cardSearchLimit);
-        LinearLayout summary = cardBox();
-        summary.addView(tv("النتائج", 17, text, true));
-        summary.addView(small("المعروض الآن: " + found.size() + " نتيجة" + (cardSearchLimit > 0 ? " | الحد: " + cardSearchLimit : "") + "\nيمكن تعديل أو حذف الكرت مباشرة من النتيجة."));
-        content.addView(summary);
-        if (cardSearchQuery == null || cardSearchQuery.trim().isEmpty()) {
+    private void renderCardSearchResultsInto(LinearLayout target, int amountFilter) {
+        if (target == null) return;
+        target.removeAllViews();
+        String q = cardSearchQuery == null ? "" : cardSearchQuery.trim();
+        if (q.isEmpty()) {
             LinearLayout empty = cardBox();
-            empty.addView(small("اكتب رقم الكرت أو جزءًا منه لبدء البحث."));
-            content.addView(empty);
+            empty.addView(small("اكتب رقم الكرت للبحث."));
+            target.addView(empty);
             return;
         }
+        if (q.length() < 3) {
+            LinearLayout wait = cardBox();
+            wait.addView(small("أكمل 3 أرقام على الأقل."));
+            target.addView(wait);
+            return;
+        }
+        ArrayList<CardItem> found = AppStore.searchCardsLimited(this, q, amountFilter, cardSearchLimit);
+        LinearLayout summary = cardBox();
+        summary.addView(tv("النتائج", 17, text, true));
+        summary.addView(small("المعروض: " + found.size() + " نتيجة"));
+        target.addView(summary);
         if (found.isEmpty()) {
             LinearLayout empty = cardBox();
             empty.addView(small("لا توجد نتيجة مطابقة."));
-            content.addView(empty);
+            target.addView(empty);
             return;
         }
-        for (CardItem item : found) content.addView(cardResultBox(item));
+        for (CardItem item : found) target.addView(cardResultBox(item));
         if (found.size() >= cardSearchLimit) {
             LinearLayout more = cardBox();
-            more.addView(action("المزيد: عرض 20 كرت أخرى", card2, text, v -> { cardSearchLimit += 20; showCardSearchScreen(amountFilter); }), new LinearLayout.LayoutParams(-1, dp(50)));
-            content.addView(more);
+            more.addView(action("المزيد: عرض 20 كرت أخرى", card2, text, v -> { cardSearchLimit += 20; renderCardSearchResultsInto(target, amountFilter); }), new LinearLayout.LayoutParams(-1, dp(50)));
+            target.addView(more);
         }
     }
 
