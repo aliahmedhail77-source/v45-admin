@@ -10,8 +10,8 @@ android {
         applicationId 'com.fourunet.onlineadmin.stable'
         minSdk 23
         targetSdk 34
-        versionCode 70
-        versionName '45.0-stage14.7.6-smart-ledger-flexible-home' 
+        versionCode 71
+        versionName '45.0-stage14.7.6.1-build-fix' 
     }
 
     signingConfigs {
