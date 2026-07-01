@@ -10,8 +10,8 @@ android {
         applicationId 'com.fourunet.onlineadmin.stable'
         minSdk 23
         targetSdk 34
-        versionCode 68
-        versionName '45.0-stage14.7.4-phone-first-trusted-account-numbers' 
+        versionCode 69
+        versionName '45.0-stage14.7.5-modern-arabic-typography' 
     }
 
     signingConfigs {

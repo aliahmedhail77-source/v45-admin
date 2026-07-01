@@ -942,13 +942,13 @@ public class MainActivity extends Activity {
     }
 
     private Typeface appTypeface(boolean bold) {
-        // Stage 14.6: نمط كوفي للعناوين والنصوص البارزة بدون تضمين ملفات خطوط خارجية.
-        // يحافظ على صغر حجم التطبيق، ويمكن لاحقًا استبداله بملف Noto Kufi Arabic إن توفر داخل Android Studio.
-        return Typeface.create(bold ? "sans-serif-condensed" : "sans-serif", bold ? Typeface.BOLD : Typeface.NORMAL);
+        // Stage 14.7.5: خط عربي حديث قريب من تطبيقات المحافظ.
+        // لا يتم تضمين ملف خط خارجي حتى يبقى حجم التطبيق خفيفًا ومتوافقًا مع البناء الحالي.
+        return Typeface.create(bold ? "sans-serif-medium" : "sans-serif", Typeface.NORMAL);
     }
 
     private Typeface appTitleTypeface() {
-        return Typeface.create("sans-serif-condensed", Typeface.BOLD);
+        return Typeface.create("sans-serif-medium", Typeface.NORMAL);
     }
 
     private TextView tv(String value, int size, int color, boolean bold) {
@@ -958,6 +958,7 @@ public class MainActivity extends Activity {
         t.setTextColor(color);
         t.setGravity(Gravity.RIGHT);
         t.setTypeface(appTypeface(bold));
+        if (Build.VERSION.SDK_INT >= 21) t.setLetterSpacing(0.005f);
         return t;
     }
 
@@ -1032,7 +1033,7 @@ public class MainActivity extends Activity {
     }
 
     private TextView sectionTitle(String s) {
-        TextView t = tv(s, 22, text, true);
+        TextView t = tv(s, 24, text, true);
         t.setGravity(Gravity.RIGHT | Gravity.CENTER_VERTICAL);
         t.setPadding(dp(4), dp(12), dp(4), dp(6));
         return t;
@@ -1079,7 +1080,7 @@ public class MainActivity extends Activity {
         b.setTextColor(fgColor);
         b.setTypeface(appTypeface(true));
         b.setAllCaps(false);
-        b.setTextSize(14);
+        b.setTextSize(15);
         b.setPadding(dp(12), dp(6), dp(12), dp(6));
         b.setBackground(round(bgColor, dp(14), Color.argb(90, 255, 255, 255), dp(1)));
     }
@@ -1303,7 +1304,7 @@ public class MainActivity extends Activity {
     private Button compactDashboardAction(String icon, String label, int accent, View.OnClickListener listener) {
         Button b = new Button(this);
         b.setText(icon + "\n" + label);
-        b.setTextSize(11);
+        b.setTextSize(12);
         b.setAllCaps(false);
         b.setGravity(Gravity.CENTER);
         b.setTypeface(appTypeface(true));
@@ -1344,7 +1345,7 @@ public class MainActivity extends Activity {
     }
 
     private LinearLayout.LayoutParams statCellLp() {
-        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0, dp(98), 1);
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0, dp(88), 1);
         lp.setMargins(dp(4), dp(5), dp(4), dp(7));
         return lp;
     }
@@ -1356,13 +1357,13 @@ public class MainActivity extends Activity {
         box.setBackground(round(Color.rgb(18, 23, 43), dp(24), Color.argb(145, Color.red(accent), Color.green(accent), Color.blue(accent)), dp(1)));
         box.setOnClickListener(listener);
         applyNeonPress(box);
-        TextView iconView = tv(icon, 19, accent, true);
+        TextView iconView = tv(icon, 18, accent, true);
         iconView.setGravity(Gravity.CENTER);
         box.addView(iconView);
-        TextView number = tv(value, 23, text, true);
+        TextView number = tv(value, 25, text, true);
         number.setGravity(Gravity.CENTER);
         box.addView(number);
-        TextView caption = tv(label, 14, muted, true);
+        TextView caption = tv(label, 15, muted, true);
         caption.setGravity(Gravity.CENTER);
         box.addView(caption);
         return box;
@@ -1743,7 +1744,7 @@ public class MainActivity extends Activity {
     }
 
     private LinearLayout.LayoutParams serviceCellLp() {
-        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0, dp(118), 1);
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0, dp(106), 1);
         lp.setMargins(dp(4), dp(5), dp(4), dp(7));
         return lp;
     }
@@ -1761,16 +1762,16 @@ public class MainActivity extends Activity {
         applyNeonPress(box);
         if (Build.VERSION.SDK_INT >= 21) box.setElevation(title.contains("بيع") ? dp(9) : dp(4));
 
-        TextView i = tv(icon, 27, accent, true);
+        TextView i = tv(icon, 25, accent, true);
         i.setGravity(Gravity.CENTER);
         i.setPadding(0, dp(7), 0, dp(7));
         i.setBackground(round(Color.argb(34, Color.red(accent), Color.green(accent), Color.blue(accent)), dp(38), accent, dp(1)));
-        box.addView(i, new LinearLayout.LayoutParams(dp(56), dp(56)));
+        box.addView(i, new LinearLayout.LayoutParams(dp(50), dp(50)));
 
-        TextView t = tv(title, 13, text, true);
+        TextView t = tv(title, 15, text, true);
         t.setGravity(Gravity.CENTER);
         box.addView(t);
-        TextView sub = tv(subtitle, 10, muted, false);
+        TextView sub = tv(subtitle, 11, muted, false);
         sub.setGravity(Gravity.CENTER);
         box.addView(sub);
         return box;
@@ -1821,11 +1822,11 @@ public class MainActivity extends Activity {
         info.setOrientation(LinearLayout.VERTICAL);
         info.setGravity(Gravity.RIGHT);
         String name = (log.customerName == null || log.customerName.trim().isEmpty()) ? (log.customerPhone == null ? "عملية" : log.customerPhone) : log.customerName;
-        info.addView(tv((log.status == null ? "عملية" : log.status) + " - " + name, 14, text, true));
+        info.addView(tv((log.status == null ? "عملية" : log.status) + " - " + name, 15, text, true));
         info.addView(small((log.createdAt == null ? "" : log.createdAt) + " | " + log.amount + " ر.ي"));
         row.addView(info, new LinearLayout.LayoutParams(0, -2, 1));
 
-        TextView amount = tv(log.amount + "", 14, green, true);
+        TextView amount = tv(log.amount + "", 16, green, true);
         amount.setGravity(Gravity.CENTER);
         amount.setPadding(dp(8), dp(4), dp(8), dp(4));
         amount.setBackground(round(Color.rgb(232, 245, 233), dp(16), Color.TRANSPARENT, 0));
@@ -2371,7 +2372,7 @@ public class MainActivity extends Activity {
 
         LinearLayout form = cardBox();
         form.setBackground(round(Color.rgb(9, 14, 28), dp(24), Color.argb(185, 32, 231, 255), dp(1)));
-        form.addView(tv("رقم الزبون", 22, text, true));
+        form.addView(tv("رقم الزبون", 24, text, true));
 
         LinearLayout phoneWrap = new LinearLayout(this);
         phoneWrap.setOrientation(LinearLayout.VERTICAL);
@@ -2390,7 +2391,7 @@ public class MainActivity extends Activity {
         hiddenName.setText(directSaleNameDraft);
 
         Button contactBtn = action("بحث", Color.rgb(17, 25, 48), Color.WHITE, v -> openContactPicker(pendingContactPhone, pendingContactName));
-        contactBtn.setTextSize(16);
+        contactBtn.setTextSize(17);
         contactBtn.setBackground(round(Color.rgb(17, 25, 48), dp(18), Color.argb(210, 170, 185, 225), dp(1)));
         LinearLayout.LayoutParams contactLp = new LinearLayout.LayoutParams(dp(70), dp(50));
         contactLp.setMargins(0, dp(2), dp(8), dp(2));
@@ -2399,7 +2400,7 @@ public class MainActivity extends Activity {
         EditText phone = neonInput("اكتب رقم الزبون", InputType.TYPE_CLASS_PHONE);
         phone.setText(directSalePhoneDraft);
         phone.setGravity(Gravity.RIGHT | Gravity.CENTER_VERTICAL);
-        phone.setTextSize(26);
+        phone.setTextSize(28);
         phone.setTypeface(appTypeface(true));
         phone.setPadding(dp(14), 0, dp(18), 0);
         phone.setBackground(round(Color.rgb(5, 22, 26), dp(18), neonCyan, dp(2)));
@@ -2463,7 +2464,7 @@ public class MainActivity extends Activity {
             stylePayRadioButton(credit, true, gold);
         });
 
-        form.addView(sectionTitle("الإرسال والمكافأة"));
+        form.addView(sectionTitle("الإرسال والمكافآت"));
         LinearLayout optionRow = new LinearLayout(this);
         optionRow.setOrientation(LinearLayout.HORIZONTAL);
         optionRow.setLayoutDirection(View.LAYOUT_DIRECTION_RTL);
@@ -2544,7 +2545,7 @@ public class MainActivity extends Activity {
         RadioButton r = new RadioButton(this);
         r.setText(label);
         r.setTextColor(text);
-        r.setTextSize(20);
+        r.setTextSize(22);
         r.setTypeface(appTypeface(true));
         r.setGravity(Gravity.CENTER);
         r.setChecked(checked);
@@ -2619,7 +2620,7 @@ public class MainActivity extends Activity {
         CheckBox cb = new CheckBox(this);
         cb.setAllCaps(false);
         cb.setGravity(Gravity.CENTER);
-        cb.setTextSize(18);
+        cb.setTextSize(20);
         cb.setTypeface(appTypeface(true));
         cb.setPadding(dp(2), dp(2), dp(2), dp(2));
         if (Build.VERSION.SDK_INT >= 21) cb.setButtonTintList(android.content.res.ColorStateList.valueOf(accentColor));
@@ -2674,11 +2675,11 @@ public class MainActivity extends Activity {
         body.setGravity(Gravity.CENTER);
         body.setPadding(dp(6), dp(8), dp(6), dp(8));
 
-        TextView amount = tv(c.amount + "", 20, Color.WHITE, true);
+        TextView amount = tv(c.amount + "", 22, Color.WHITE, true);
         amount.setGravity(Gravity.CENTER);
-        TextView label = tv("ريال", 12, muted, true);
+        TextView label = tv("ريال", 13, muted, true);
         label.setGravity(Gravity.CENTER);
-        TextView count = tv("متاح: " + available, 12, available > 0 && available < 10 ? red : neonCyan, true);
+        TextView count = tv("متاح: " + available, 13, available > 0 && available < 10 ? red : neonCyan, true);
         count.setGravity(Gravity.CENTER);
 
         body.addView(amount);
