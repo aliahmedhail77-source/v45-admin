@@ -542,7 +542,7 @@ class PaymentParser {
         if (hasValidLocalMobile(lastPhone)) return lastPhone;
 
         // رقم حساب / حساب / اكاونت / account
-        Matcher account = Pattern.compile("(?:رقم\s*الحساب|حساب|account|acc|acct)\s*[:：#-]?\s*([0-9]{4,20})", Pattern.CASE_INSENSITIVE).matcher(b);
+        Matcher account = Pattern.compile("(?:رقم\\s*الحساب|حساب|account|acc|acct)\\s*[:：#-]?\\s*([0-9]{4,20})", Pattern.CASE_INSENSITIVE).matcher(b);
         if (account.find()) return account.group(1).trim();
         return "";
     }
