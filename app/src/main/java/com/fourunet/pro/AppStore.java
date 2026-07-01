@@ -2807,6 +2807,9 @@ class AppStore {
                         o.optString("fullName"),
                         o.optString("tripleName"),
                         o.optString("phone"),
+                        o.optString("walletIdentity", ""),
+                        o.optString("identityType", ""),
+                        o.optBoolean("autoCardAllowed", false),
                         o.optBoolean("active", true)
                 ));
             }
@@ -2825,6 +2828,9 @@ class AppStore {
                 o.put("fullName", contact.fullName);
                 o.put("tripleName", contact.tripleName);
                 o.put("phone", contact.phone);
+                o.put("walletIdentity", contact.walletIdentity == null ? "" : contact.walletIdentity);
+                o.put("identityType", contact.identityType == null ? "" : contact.identityType);
+                o.put("autoCardAllowed", contact.autoCardAllowed);
                 o.put("active", contact.active);
                 arr.put(o);
             }
@@ -2840,6 +2846,15 @@ class AppStore {
         if (!canSaveWalletContact(walletName, fullName, phone)) return false;
         ArrayList<TrustedContact> list = loadTrustedContacts(c);
         boolean saved = addOrUpdateWalletContactInList(list, walletName, senderKeywords, fullName, phone);
+        saveTrustedContacts(c, list);
+        return saved;
+    }
+
+    static boolean addWalletContact(Context c, String walletName, String senderKeywords, String fullName, String phone, String walletIdentity, boolean autoCardAllowed) {
+        if (!canSaveWalletContact(walletName, fullName, phone)) return false;
+        ArrayList<TrustedContact> list = loadTrustedContacts(c);
+        String identity = normalizeWalletIdentity(walletIdentity);
+        boolean saved = addOrUpdateWalletContactInList(list, walletName, senderKeywords, fullName, phone, identity, PaymentParser.identityTypeFor(identity), autoCardAllowed);
         saveTrustedContacts(c, list);
         return saved;
     }
@@ -2899,23 +2914,36 @@ class AppStore {
     }
 
     private static boolean addOrUpdateWalletContactInList(ArrayList<TrustedContact> list, String walletName, String senderKeywords, String fullName, String phone) {
+        return addOrUpdateWalletContactInList(list, walletName, senderKeywords, fullName, phone, "", "name", false);
+    }
+
+    private static boolean addOrUpdateWalletContactInList(ArrayList<TrustedContact> list, String walletName, String senderKeywords, String fullName, String phone, String walletIdentity, String identityType, boolean autoCardAllowed) {
         String wallet = walletName == null || walletName.trim().isEmpty() ? "محفظة" : walletName.trim();
         String keywords = senderKeywords == null ? "" : senderKeywords.trim();
         String cleanName = fullName == null ? "" : fullName.trim();
         String triple = NameUtils.tripleName(cleanName);
         String normalizedPhone = normalizeLocalPhone(phone);
+        String identity = normalizeWalletIdentity(walletIdentity);
+        String mode = identityType == null || identityType.trim().isEmpty() ? (identity.isEmpty() ? "name" : PaymentParser.identityTypeFor(identity)) : identityType.trim();
         if (triple.isEmpty() || !isValidLocalMobile(normalizedPhone)) return false;
         for (TrustedContact contact : list) {
-            if (contact.tripleName.equals(triple) && contact.walletName.equalsIgnoreCase(wallet)) {
+            boolean sameWallet = contact.walletName != null && contact.walletName.equalsIgnoreCase(wallet);
+            boolean sameIdentity = !identity.isEmpty() && identity.equals(normalizeWalletIdentity(contact.walletIdentity));
+            boolean sameName = contact.tripleName != null && contact.tripleName.equals(triple);
+            if (sameWallet && (sameIdentity || (identity.isEmpty() && sameName))) {
                 contact.walletName = wallet;
                 contact.senderKeywords = keywords;
                 contact.fullName = cleanName;
+                contact.tripleName = triple;
                 contact.phone = normalizedPhone;
+                contact.walletIdentity = identity;
+                contact.identityType = mode;
+                contact.autoCardAllowed = autoCardAllowed;
                 contact.active = true;
                 return true;
             }
         }
-        list.add(0, new TrustedContact(UUID.randomUUID().toString(), wallet, keywords, cleanName, triple, normalizedPhone, true));
+        list.add(0, new TrustedContact(UUID.randomUUID().toString(), wallet, keywords, cleanName, triple, normalizedPhone, identity, mode, autoCardAllowed, true));
         return true;
     }
 
@@ -2951,6 +2979,35 @@ class AppStore {
                 contact.fullName = cleanName;
                 contact.tripleName = triple;
                 contact.phone = normalizedPhone;
+                contact.active = active;
+                changed = true;
+                break;
+            }
+        }
+        if (changed) saveTrustedContacts(c, list);
+        return changed;
+    }
+
+    static boolean updateTrustedContact(Context c, String id, String walletName, String senderKeywords, String fullName, String phone, String walletIdentity, boolean autoCardAllowed, boolean active) {
+        String wallet = walletName == null || walletName.trim().isEmpty() ? "محفظة" : walletName.trim();
+        String keywords = senderKeywords == null ? "" : senderKeywords.trim();
+        String cleanName = fullName == null ? "" : fullName.trim();
+        String triple = NameUtils.tripleName(cleanName);
+        String normalizedPhone = normalizeLocalPhone(phone);
+        String identity = normalizeWalletIdentity(walletIdentity);
+        if (id == null || id.trim().isEmpty() || triple.isEmpty() || !isValidLocalMobile(normalizedPhone)) return false;
+        ArrayList<TrustedContact> list = loadTrustedContacts(c);
+        boolean changed = false;
+        for (TrustedContact contact : list) {
+            if (id.equals(contact.id)) {
+                contact.walletName = wallet;
+                contact.senderKeywords = keywords;
+                contact.fullName = cleanName;
+                contact.tripleName = triple;
+                contact.phone = normalizedPhone;
+                contact.walletIdentity = identity;
+                contact.identityType = PaymentParser.identityTypeFor(identity);
+                contact.autoCardAllowed = autoCardAllowed;
                 contact.active = active;
                 changed = true;
                 break;
@@ -3024,6 +3081,70 @@ class AppStore {
             if (!k.isEmpty() && hay.contains(k)) return true;
         }
         return keys.trim().isEmpty();
+    }
+
+    static String normalizeWalletIdentity(String value) {
+        if (value == null) return "";
+        String cleanDigits = normalizeLocalPhone(value);
+        if (cleanDigits != null && !cleanDigits.trim().isEmpty()) return cleanDigits.trim();
+        return value.trim();
+    }
+
+    static WalletIdentityResolution resolveWalletPaymentIdentity(Context c, ParsedPayment payment, String sender, String body) {
+        if (payment == null) return new WalletIdentityResolution(false, null, "", "", "لا توجد عملية دفع مفهومة", false);
+        String wallet = payment.provider == null || payment.provider.trim().isEmpty() ? PaymentParser.walletDisplayName(sender, body) : payment.provider.trim();
+        String hay = ((sender == null ? "" : sender) + " " + (body == null ? "" : body) + " " + wallet).toLowerCase();
+        String msgIdentity = normalizeWalletIdentity(payment.walletIdentity);
+        if (msgIdentity.isEmpty()) msgIdentity = normalizeWalletIdentity(PaymentParser.extractWalletIdentityForReview(body));
+        String msgNameTriple = NameUtils.tripleName(payment.customerName);
+
+        ArrayList<TrustedContact> candidates = new ArrayList<>();
+        for (TrustedContact contact : loadTrustedContacts(c)) {
+            if (contact == null || !contact.active) continue;
+            if (!walletKeywordsMatch(contact, hay)) continue;
+            candidates.add(contact);
+        }
+
+        // إذا حملت الرسالة رقماً أو رقم حساب فهو الهوية الأقوى، ولا نرجع للاسم عند عدم التطابق.
+        if (!msgIdentity.isEmpty()) {
+            for (TrustedContact contact : candidates) {
+                String ci = normalizeWalletIdentity(contact.walletIdentity);
+                if (!ci.isEmpty() && ci.equals(msgIdentity)) {
+                    return new WalletIdentityResolution(true, contact, normalizeLocalPhone(contact.phone), contact.fullName,
+                            "تم الاعتماد بتطابق هوية المحفظة/الحساب: " + msgIdentity, contact.autoCardAllowed);
+                }
+            }
+            // السماح فقط في الحالة الآمنة القديمة: رقم المحفظة هو نفسه رقم استلام الكرت والاسم مطابق.
+            for (TrustedContact contact : candidates) {
+                String receive = normalizeLocalPhone(contact.phone);
+                boolean sameName = !msgNameTriple.isEmpty() && msgNameTriple.equals(contact.tripleName);
+                if (sameName && isValidLocalMobile(receive) && receive.equals(msgIdentity)) {
+                    return new WalletIdentityResolution(true, contact, receive, contact.fullName,
+                            "تم الاعتماد لأن رقم الدفع يطابق رقم استلام الكرت والاسم مطابق", contact.autoCardAllowed);
+                }
+            }
+            return new WalletIdentityResolution(false, null, "", payment.customerName,
+                    "وصلت الرسالة بهوية دفع رقمية (" + msgIdentity + ") لكنها غير مربوطة بمصدر موثوق. لن يتم الإرسال أو السداد الآلي حتى تربطها يدوياً.", false);
+        }
+
+        // رسائل الاسم فقط: تعتمد على المحفظة + الاسم المطابق المحفوظ يدوياً.
+        ArrayList<TrustedContact> nameMatches = new ArrayList<>();
+        for (TrustedContact contact : candidates) {
+            boolean sameName = !msgNameTriple.isEmpty() && msgNameTriple.equals(contact.tripleName);
+            boolean exactName = payment.customerName != null && contact.fullName != null && payment.customerName.trim().equals(contact.fullName.trim());
+            if (sameName || exactName) nameMatches.add(contact);
+        }
+        if (nameMatches.size() == 1) {
+            TrustedContact contact = nameMatches.get(0);
+            return new WalletIdentityResolution(true, contact, normalizeLocalPhone(contact.phone), contact.fullName,
+                    "تم الاعتماد بتطابق المحفظة + الاسم المحفوظ يدوياً", contact.autoCardAllowed);
+        }
+        if (nameMatches.size() > 1) {
+            return new WalletIdentityResolution(false, null, "", payment.customerName,
+                    "الاسم موجود لأكثر من مصدر موثوق في نفس المحفظة؛ العملية تحتاج مراجعة لمنع الإرسال الخطأ.", false);
+        }
+        return new WalletIdentityResolution(false, null, "", payment.customerName,
+                "الرسالة لا تحتوي رقم دفع، والاسم غير مربوط مسبقاً بهذه المحفظة. تحتاج ربط يدوي أولاً.", false);
     }
 
     static boolean isPendingCriticalLog(OperationLog log) {

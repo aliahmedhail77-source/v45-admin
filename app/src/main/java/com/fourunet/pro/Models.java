@@ -67,14 +67,22 @@ class OperationLog {
 class ParsedPayment {
     String provider;
     int amount;
-    String customerPhone;
+    String customerPhone;      // رقم الاستلام النهائي إن كان معروفاً وآمناً
     String customerName;
+    String walletIdentity;     // رقم المحفظة / رقم الحساب / معرف الدفع كما ورد في رسالة المحفظة
+    String walletIdentityType; // phone / account / name / unknown
 
     ParsedPayment(String provider, int amount, String customerPhone, String customerName) {
-        this.provider = provider;
+        this(provider, amount, customerPhone, customerName, "", "unknown");
+    }
+
+    ParsedPayment(String provider, int amount, String customerPhone, String customerName, String walletIdentity, String walletIdentityType) {
+        this.provider = provider == null ? "" : provider;
         this.amount = amount;
-        this.customerPhone = customerPhone;
-        this.customerName = customerName;
+        this.customerPhone = customerPhone == null ? "" : customerPhone;
+        this.customerName = customerName == null ? "" : customerName;
+        this.walletIdentity = walletIdentity == null ? "" : walletIdentity.trim();
+        this.walletIdentityType = walletIdentityType == null ? "unknown" : walletIdentityType.trim();
     }
 }
 
@@ -84,17 +92,45 @@ class TrustedContact {
     String senderKeywords;
     String fullName;
     String tripleName;
-    String phone;
+    String phone;              // رقم استلام الكرت / إشعار السداد
+    String walletIdentity;     // رقم المحفظة أو رقم الحساب إن وجد
+    String identityType;       // name / phone / account / smart
+    boolean autoCardAllowed;   // لا يرسل كرت تلقائياً إلا إذا فُعل صراحة
     boolean active;
 
     TrustedContact(String id, String walletName, String senderKeywords, String fullName, String tripleName, String phone, boolean active) {
+        this(id, walletName, senderKeywords, fullName, tripleName, phone, "", "name", false, active);
+    }
+
+    TrustedContact(String id, String walletName, String senderKeywords, String fullName, String tripleName, String phone, String walletIdentity, String identityType, boolean autoCardAllowed, boolean active) {
         this.id = id;
         this.walletName = walletName == null || walletName.trim().isEmpty() ? "ONE Cash" : walletName.trim();
         this.senderKeywords = senderKeywords == null ? "" : senderKeywords.trim();
         this.fullName = fullName == null ? "" : fullName.trim();
         this.tripleName = tripleName == null ? "" : tripleName.trim();
         this.phone = phone == null ? "" : phone.trim();
+        this.walletIdentity = walletIdentity == null ? "" : walletIdentity.trim();
+        this.identityType = identityType == null || identityType.trim().isEmpty() ? (this.walletIdentity.isEmpty() ? "name" : "smart") : identityType.trim();
+        this.autoCardAllowed = autoCardAllowed;
         this.active = active;
+    }
+}
+
+class WalletIdentityResolution {
+    boolean approved;
+    TrustedContact contact;
+    String receiverPhone;
+    String displayName;
+    String reason;
+    boolean autoCardAllowed;
+
+    WalletIdentityResolution(boolean approved, TrustedContact contact, String receiverPhone, String displayName, String reason, boolean autoCardAllowed) {
+        this.approved = approved;
+        this.contact = contact;
+        this.receiverPhone = receiverPhone == null ? "" : receiverPhone;
+        this.displayName = displayName == null ? "" : displayName;
+        this.reason = reason == null ? "" : reason;
+        this.autoCardAllowed = autoCardAllowed;
     }
 }
 

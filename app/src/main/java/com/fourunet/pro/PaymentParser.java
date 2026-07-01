@@ -424,7 +424,7 @@ class PaymentParser {
         if (m.find()) {
             int amount = toIntAmount(m.group(1));
             String phone = normalizeLocalPhone(m.group(2));
-            if (amount > 0 && hasValidLocalMobile(phone)) return new ParsedPayment("Jawali", amount, phone, "");
+            if (amount > 0 && hasValidLocalMobile(phone)) return new ParsedPayment("Jawali", amount, "", "", phone, "phone");
         }
         return null;
     }
@@ -436,8 +436,8 @@ class PaymentParser {
             int amount = toIntAmount(m.group(1));
             String name = m.group(2).trim();
             String phone = normalizeLocalPhone(m.group(3));
-            if (amount > 0 && hasValidLocalMobile(phone)) return new ParsedPayment("Jaib", amount, phone, name);
-            if (amount > 0 && !name.isEmpty()) return new ParsedPayment("Jaib", amount, "", name);
+            if (amount > 0 && hasValidLocalMobile(phone)) return new ParsedPayment("Jaib", amount, "", name, phone, "phone");
+            if (amount > 0 && !name.isEmpty()) return new ParsedPayment("Jaib", amount, "", name, "", "name");
         }
         return null;
     }
@@ -449,7 +449,7 @@ class PaymentParser {
         if (m.find()) {
             int amount = toIntAmount(m.group(1));
             String name = cleanName(m.group(2));
-            if (amount > 0 && !name.isEmpty()) return new ParsedPayment("ONE Cash", amount, "", name);
+            if (amount > 0 && !name.isEmpty()) return new ParsedPayment("ONE Cash", amount, "", name, "", "name");
         }
 
         Pattern flexible = Pattern.compile("(?:استلمت|اودعت)\\s+(\\d+(?:[\\.,]\\d+)?).*?من\\s+(.+?)(?:\\s+رصيدك|\\s+الرصيد|\\n\\s*الرسوم|\\n\\s*رسوم|$)", Pattern.DOTALL);
@@ -457,7 +457,7 @@ class PaymentParser {
         if (mf.find()) {
             int amount = toIntAmount(mf.group(1));
             String name = cleanName(mf.group(2));
-            if (amount > 0 && !name.isEmpty()) return new ParsedPayment("ONE Cash", amount, "", name);
+            if (amount > 0 && !name.isEmpty()) return new ParsedPayment("ONE Cash", amount, "", name, "", "name");
         }
         return null;
     }
@@ -467,18 +467,17 @@ class PaymentParser {
         int amount = extractAmount(body);
         if (amount <= 0) return null;
 
-        TrustedContact direct = AppStore.findWalletContactInBody(context, sender, body);
-        if (direct != null) return new ParsedPayment(direct.walletName, amount, direct.phone, direct.fullName);
-
         String name = extractNameAfterFrom(body);
-        TrustedContact byName = AppStore.findWalletContact(context, name, sender, body);
-        if (byName != null) return new ParsedPayment(byName.walletName, amount, byName.phone, byName.fullName);
-
+        String identity = extractWalletIdentityForReview(body);
+        String type = identityTypeFor(identity);
+        String provider = walletDisplayName(sender, body);
         if (name != null && !name.trim().isEmpty()) {
-            String lowSender = sender == null ? "" : sender.toLowerCase();
-            return new ParsedPayment(lowSender.isEmpty() ? "محفظة" : sender, amount, "", cleanName(name));
+            return new ParsedPayment(provider, amount, "", cleanName(name), identity, type);
         }
-        return null;
+        if (identity != null && !identity.trim().isEmpty()) {
+            return new ParsedPayment(provider, amount, "", "", identity, type);
+        }
+        return new ParsedPayment(provider, amount, "", "", "", "unknown");
     }
 
     private static ParsedPayment parseGenericTrustedWallet(String sender, String body) {
@@ -491,9 +490,10 @@ class PaymentParser {
         phone = normalizeLocalPhone(last);
         String name = extractNameAfterFrom(body);
         String provider = walletDisplayName(sender, body);
-        if (hasValidLocalMobile(phone)) return new ParsedPayment(provider, amount, phone, name);
-        if (name != null && !name.trim().isEmpty()) return new ParsedPayment(provider, amount, "", name);
-        return new ParsedPayment(provider, amount, "", "");
+        if (hasValidLocalMobile(phone)) return new ParsedPayment(provider, amount, "", name, phone, "phone");
+        String identity = extractWalletIdentityForReview(body);
+        if (name != null && !name.trim().isEmpty()) return new ParsedPayment(provider, amount, "", name, identity, identityTypeFor(identity));
+        return new ParsedPayment(provider, amount, "", "", identity, identityTypeFor(identity));
     }
 
     private static ParsedPayment parseFallback(String sender, String body) {
@@ -509,7 +509,7 @@ class PaymentParser {
         if (amount > 0 && hasValidLocalMobile(phone)) {
             String low = sender == null ? "" : sender.toLowerCase();
             String provider = walletDisplayName(sender, body);
-            return new ParsedPayment(provider, amount, phone, "");
+            return new ParsedPayment(provider, amount, "", "", phone, "phone");
         }
         return null;
     }
@@ -531,7 +531,30 @@ class PaymentParser {
         return 0;
     }
 
-    private static String extractNameAfterFrom(String body) {
+
+    static String extractWalletIdentityForReview(String body) {
+        if (body == null) return "";
+        String b = normalizeDigitsInText(body);
+        // رقم هاتف محلي واضح بعد الاسم أو داخل الرسالة
+        Matcher phone = Pattern.compile("(?:00967|967|0)?(7\\d{8})").matcher(b);
+        String lastPhone = "";
+        while (phone.find()) lastPhone = normalizeLocalPhone(phone.group(1));
+        if (hasValidLocalMobile(lastPhone)) return lastPhone;
+
+        // رقم حساب / حساب / اكاونت / account
+        Matcher account = Pattern.compile("(?:رقم\s*الحساب|حساب|account|acc|acct)\s*[:：#-]?\s*([0-9]{4,20})", Pattern.CASE_INSENSITIVE).matcher(b);
+        if (account.find()) return account.group(1).trim();
+        return "";
+    }
+
+    static String identityTypeFor(String identity) {
+        if (identity == null || identity.trim().isEmpty()) return "name";
+        String clean = normalizeLocalPhone(identity);
+        if (hasValidLocalMobile(clean)) return "phone";
+        return "account";
+    }
+
+    static String extractNameAfterFrom(String body) {
         if (body == null) return "";
         String b = normalizeDigitsInText(body);
         Pattern[] patterns = new Pattern[]{

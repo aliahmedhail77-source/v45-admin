@@ -232,29 +232,32 @@ class SmsProcessor {
         // Now proceed with the normal auto-send flow
         AppStore.markProcessed(context, eventId);
 
-        String receiver = cleanPhone(payment.customerPhone);
-        String messageNote = "تمت المعالجة تلقائيًا";
-        LedgerCustomer resolvedLedgerCustomer = null;
-
-        if (!isValidLocalMobile(receiver)) {
-            TrustedContact contact = AppStore.findWalletContact(context, payment.customerName, sender, body);
-            if (contact == null) contact = AppStore.findTrustedByName(context, payment.customerName);
-            if (contact != null) {
-                receiver = cleanPhone(contact.phone);
-                messageNote = contact.walletName + ": تم اعتماد الاسم الثلاثي " + contact.tripleName;
-            }
+        WalletIdentityResolution identity = AppStore.resolveWalletPaymentIdentity(context, payment, sender, body);
+        if (!identity.approved || !isValidLocalMobile(identity.receiverPhone)) {
+            String reviewName = identity.displayName == null || identity.displayName.trim().isEmpty() ? payment.customerName : identity.displayName;
+            String reason = identity.reason == null || identity.reason.trim().isEmpty() ? "هوية المحفظة غير مؤكدة" : identity.reason;
+            String pendingLogId = addExplicitDepositReviewLog(context, payment.provider, sender, reviewName, "", payment.amount,
+                    reason + "\nقاعدة الأمان: لا يتم إرسال كرت ولا تسجيل مديونية قبل ربط هوية الدفع بزبون صراحة.", body);
+            NotifyHelper.notifyExplicitDepositReview(context, pendingLogId, payment.amount, payment.provider, reviewName, "هوية دفع تحتاج ربط");
+            return;
         }
 
-        // FIX STAGE 12.7:
-        // إذا وصلت حوالة/إيداع باسم عميل موجود في الدفتر، نربطها بحسابه حتى لو لم تحمل الرسالة رقم العميل.
-        // أي إيداع مرتبط بحساب دفتر يُرحّل كسداد/رصيد فقط ولا يصرف كرت بسبب الإيداع.
+        String receiver = cleanPhone(identity.receiverPhone);
+        String messageNote = identity.reason;
+        if (payment.walletIdentity != null && !payment.walletIdentity.trim().isEmpty()) {
+            messageNote += "\nهوية الدفع في الرسالة: " + payment.walletIdentity + " (" + payment.walletIdentityType + ")";
+        }
+        if (identity.displayName != null && !identity.displayName.trim().isEmpty()) payment.customerName = identity.displayName;
+        LedgerCustomer resolvedLedgerCustomer = null;
+
+        // أمان Stage 14.7.2:
+        // لا نربط إيداع المحفظة باسم زبون في الدفتر إذا جاءت الرسالة برقم/هوية مختلفة.
+        // الربط يكون فقط عبر هوية دفع موثوقة، ثم نبحث في الدفتر برقم الاستلام الناتج عن هذا الربط.
         if (AppStore.isSmartLedgerEnabled(context) && AppStore.isLedgerAutoSettleEnabled(context)) {
-            if (isValidLocalMobile(receiver)) resolvedLedgerCustomer = AppStore.findLedgerCustomerByPhone(context, receiver);
-            if (resolvedLedgerCustomer == null) resolvedLedgerCustomer = AppStore.findLedgerCustomerByName(context, payment.customerName);
+            resolvedLedgerCustomer = AppStore.findLedgerCustomerByPhone(context, receiver);
             if (resolvedLedgerCustomer != null && resolvedLedgerCustomer.active) {
-                receiver = cleanPhone(resolvedLedgerCustomer.phone);
                 if (payment.customerName == null || payment.customerName.trim().isEmpty()) payment.customerName = resolvedLedgerCustomer.name;
-                messageNote = messageNote + "\nتم ربط الإيداع بحساب الدفتر: " + resolvedLedgerCustomer.name + " - " + receiver;
+                messageNote = messageNote + "\nتم ربط الإيداع بحساب الدفتر عبر هوية دفع موثوقة: " + resolvedLedgerCustomer.name + " - " + receiver;
             }
         }
 
@@ -296,6 +299,15 @@ class SmsProcessor {
                 AppStore.performAutoBackupIfDue(context, "سداد دفتر محاسبي");
                 return;
             }
+        }
+
+        if (!identity.autoCardAllowed) {
+            String pendingLogId = addLog(context, payment.provider, sender, payment.customerName, receiver, saleAmount,
+                    "إيداع صريح غير منفذ: سداد فقط",
+                    messageNote + "\nهذا المصدر الموثوق مضبوط على سداد فقط. لم يتم حجز كرت ولم يتم إرسال كرت تلقائيًا. لتفعيل إرسال الكرت، فعّل خيار إرسال كرت تلقائيًا لهذا المصدر من إدارة المحافظ.", "");
+            NotifyHelper.notifyExplicitDepositReview(context, pendingLogId, saleAmount, payment.provider, payment.customerName, "المصدر مضبوط على سداد فقط");
+            AppStore.performAutoBackupIfDue(context, "محفظة - سداد فقط بدون إرسال كرت");
+            return;
         }
 
         CardItem card = AppStore.takeAvailableCard(context, saleAmount, receiver);
