@@ -275,29 +275,37 @@ class SmsProcessor {
         String settlementCustomerPart = "";
         String settlementInternalNote = "";
 
-        // STAGE 12.6 REAL FIX:
-        // أي إيداع من زبون موجود في الدفتر المحاسبي يُعامل كسداد/رصيد فقط.
-        // لا يتم صرف كرت بسبب الإيداع نهائياً؛ صرف الكرت يكون فقط عندما يرسل الزبون رقم الفئة بنفسه مثل 100.
+        // Stage 14.7.4 Phone-first:
+        // إذا الرقم موجود في الرسالة فهو المستلم نفسه. شروط الدفتر تطبق على الحساب إن وجد،
+        // لكن لا نربط العملية باسم مشابه ولا نرسل إلى رقم آخر.
         if (AppStore.isSmartLedgerEnabled(context) && AppStore.isLedgerAutoSettleEnabled(context)) {
             LedgerCustomer debtor = resolvedLedgerCustomer != null ? resolvedLedgerCustomer : AppStore.findLedgerCustomerByPhone(context, receiver);
-            if (debtor != null && debtor.active) {
-                int debtBefore = debtor.debt;
-                int creditBefore = debtor.creditBalance;
-                String method = friendlyPaymentMethod(payment.provider, sender, body);
-                LedgerCustomer updated = AppStore.applyLedgerPaymentByPhone(context, receiver, payment.amount, method,
-                        "سداد من " + method + " بمبلغ " + payment.amount + " ر.ي. المتبقي بعد السداد: " + Math.max(0, debtBefore - Math.min(debtBefore, payment.amount)) + " ر.ي", method);
-                int paidToDebt = Math.min(debtBefore, payment.amount);
-                int addedCredit = Math.max(0, payment.amount - paidToDebt);
-                String msg = AppStore.buildLedgerPaymentMessage(context, updated, payment.amount, debtBefore, creditBefore);
-                String logId = addLog(context, payment.provider, sender, payment.customerName, receiver, payment.amount,
-                        "جاري إرسال SMS", messageNote + "\nتم ترحيل الإيداع كسداد في الدفتر. الدين السابق: " + debtBefore
-                                + " | رصيد سابق: " + creditBefore + " | رصيد حالي: " + updated.creditBalance
-                                + " | المتبقي عليه: " + updated.debt, "");
-                sendSmsWithTracking(context, receiver, msg, logId, payment.amount, "", false,
-                        "تم إرسال رسالة السداد للزبون",
-                        "تم تسجيل السداد لكن فشل إرسال SMS؛ راجع كشف الحساب");
-                AppStore.performAutoBackupIfDue(context, "سداد دفتر محاسبي");
-                return;
+            if (debtor != null) {
+                if (debtor.isStopped()) {
+                    String pendingLogId = addLog(context, payment.provider, sender, payment.customerName, receiver, payment.amount,
+                            "إيداع صريح غير منفذ: الحساب موقوف",
+                            messageNote + "\nالحساب موجود في الدفتر لكنه موقوف؛ لن يتم سداد ولا إرسال كرت تلقائيًا قبل المراجعة.", "");
+                    NotifyHelper.notifyExplicitDepositReview(context, pendingLogId, payment.amount, payment.provider, payment.customerName, "الحساب موقوف");
+                    return;
+                }
+                if (debtor.isSettleOnly() || !identity.autoCardAllowed) {
+                    int debtBefore = debtor.debt;
+                    int creditBefore = debtor.creditBalance;
+                    String method = friendlyPaymentMethod(payment.provider, sender, body);
+                    LedgerCustomer updated = AppStore.applyLedgerPaymentByPhone(context, receiver, payment.amount, method,
+                            "سداد من " + method + " بمبلغ " + payment.amount + " ر.ي. المتبقي بعد السداد: " + Math.max(0, debtBefore - Math.min(debtBefore, payment.amount)) + " ر.ي", method);
+                    String msg = AppStore.buildLedgerPaymentMessage(context, updated, payment.amount, debtBefore, creditBefore);
+                    String logId = addLog(context, payment.provider, sender, payment.customerName, receiver, payment.amount,
+                            "جاري إرسال SMS", messageNote + "\nتم ترحيل الإيداع كسداد فقط حسب شروط الحساب. الدين السابق: " + debtBefore
+                                    + " | رصيد سابق: " + creditBefore + " | رصيد حالي: " + updated.creditBalance
+                                    + " | المتبقي عليه: " + updated.debt, "");
+                    sendSmsWithTracking(context, receiver, msg, logId, payment.amount, "", false,
+                            "تم إرسال رسالة السداد للزبون",
+                            "تم تسجيل السداد لكن فشل إرسال SMS؛ راجع كشف الحساب");
+                    AppStore.performAutoBackupIfDue(context, "سداد دفتر محاسبي");
+                    return;
+                }
+                messageNote = messageNote + "\nالحساب في الدفتر مضبوط آلي كامل ويسمح بإرسال باقة؛ سيتم إرسال الكرت لنفس رقم الدفع: " + receiver;
             }
         }
 

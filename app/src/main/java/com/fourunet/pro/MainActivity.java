@@ -1032,7 +1032,7 @@ public class MainActivity extends Activity {
     }
 
     private TextView sectionTitle(String s) {
-        TextView t = tv(s, 18, text, true);
+        TextView t = tv(s, 22, text, true);
         t.setGravity(Gravity.RIGHT | Gravity.CENTER_VERTICAL);
         t.setPadding(dp(4), dp(12), dp(4), dp(6));
         return t;
@@ -1344,7 +1344,7 @@ public class MainActivity extends Activity {
     }
 
     private LinearLayout.LayoutParams statCellLp() {
-        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0, dp(116), 1);
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0, dp(98), 1);
         lp.setMargins(dp(4), dp(5), dp(4), dp(7));
         return lp;
     }
@@ -1356,13 +1356,13 @@ public class MainActivity extends Activity {
         box.setBackground(round(Color.rgb(18, 23, 43), dp(24), Color.argb(145, Color.red(accent), Color.green(accent), Color.blue(accent)), dp(1)));
         box.setOnClickListener(listener);
         applyNeonPress(box);
-        TextView iconView = tv(icon, 21, accent, true);
+        TextView iconView = tv(icon, 19, accent, true);
         iconView.setGravity(Gravity.CENTER);
         box.addView(iconView);
-        TextView number = tv(value, 18, text, true);
+        TextView number = tv(value, 23, text, true);
         number.setGravity(Gravity.CENTER);
         box.addView(number);
-        TextView caption = tv(label, 11, muted, false);
+        TextView caption = tv(label, 14, muted, true);
         caption.setGravity(Gravity.CENTER);
         box.addView(caption);
         return box;
@@ -2371,7 +2371,7 @@ public class MainActivity extends Activity {
 
         LinearLayout form = cardBox();
         form.setBackground(round(Color.rgb(9, 14, 28), dp(24), Color.argb(185, 32, 231, 255), dp(1)));
-        form.addView(tv("رقم الزبون", 19, text, true));
+        form.addView(tv("رقم الزبون", 22, text, true));
 
         LinearLayout phoneWrap = new LinearLayout(this);
         phoneWrap.setOrientation(LinearLayout.VERTICAL);
@@ -2390,20 +2390,20 @@ public class MainActivity extends Activity {
         hiddenName.setText(directSaleNameDraft);
 
         Button contactBtn = action("بحث", Color.rgb(17, 25, 48), Color.WHITE, v -> openContactPicker(pendingContactPhone, pendingContactName));
-        contactBtn.setTextSize(14);
+        contactBtn.setTextSize(16);
         contactBtn.setBackground(round(Color.rgb(17, 25, 48), dp(18), Color.argb(210, 170, 185, 225), dp(1)));
-        LinearLayout.LayoutParams contactLp = new LinearLayout.LayoutParams(dp(78), dp(58));
+        LinearLayout.LayoutParams contactLp = new LinearLayout.LayoutParams(dp(70), dp(50));
         contactLp.setMargins(0, dp(2), dp(8), dp(2));
         phoneRow.addView(contactBtn, contactLp);
 
         EditText phone = neonInput("اكتب رقم الزبون", InputType.TYPE_CLASS_PHONE);
         phone.setText(directSalePhoneDraft);
         phone.setGravity(Gravity.RIGHT | Gravity.CENTER_VERTICAL);
-        phone.setTextSize(22);
+        phone.setTextSize(26);
         phone.setTypeface(appTypeface(true));
         phone.setPadding(dp(14), 0, dp(18), 0);
         phone.setBackground(round(Color.rgb(5, 22, 26), dp(18), neonCyan, dp(2)));
-        LinearLayout.LayoutParams phoneLp = new LinearLayout.LayoutParams(0, dp(58), 1);
+        LinearLayout.LayoutParams phoneLp = new LinearLayout.LayoutParams(0, dp(50), 1);
         phoneLp.setMargins(0, dp(2), 0, dp(2));
         phoneRow.addView(phone, phoneLp);
 
@@ -2427,9 +2427,9 @@ public class MainActivity extends Activity {
         cash.setId(View.generateViewId());
         credit.setId(View.generateViewId());
         credit.setEnabled(false);
-        LinearLayout.LayoutParams cashLp = new RadioGroup.LayoutParams(0, dp(58), 1);
+        LinearLayout.LayoutParams cashLp = new RadioGroup.LayoutParams(0, dp(46), 1);
         cashLp.setMargins(dp(4), dp(4), dp(4), dp(4));
-        LinearLayout.LayoutParams creditLp = new RadioGroup.LayoutParams(0, dp(58), 1);
+        LinearLayout.LayoutParams creditLp = new RadioGroup.LayoutParams(0, dp(46), 1);
         creditLp.setMargins(dp(4), dp(4), dp(4), dp(4));
         payGroup.addView(cash, cashLp);
         payGroup.addView(credit, creditLp);
@@ -2544,7 +2544,7 @@ public class MainActivity extends Activity {
         RadioButton r = new RadioButton(this);
         r.setText(label);
         r.setTextColor(text);
-        r.setTextSize(16);
+        r.setTextSize(20);
         r.setTypeface(appTypeface(true));
         r.setGravity(Gravity.CENTER);
         r.setChecked(checked);
@@ -2610,7 +2610,7 @@ public class MainActivity extends Activity {
     }
 
     private LinearLayout.LayoutParams saleOptionLp() {
-        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0, dp(53), 1);
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0, dp(50), 1);
         lp.setMargins(dp(3), dp(4), dp(3), dp(4));
         return lp;
     }
@@ -2619,7 +2619,7 @@ public class MainActivity extends Activity {
         CheckBox cb = new CheckBox(this);
         cb.setAllCaps(false);
         cb.setGravity(Gravity.CENTER);
-        cb.setTextSize(10);
+        cb.setTextSize(18);
         cb.setTypeface(appTypeface(true));
         cb.setPadding(dp(2), dp(2), dp(2), dp(2));
         if (Build.VERSION.SDK_INT >= 21) cb.setButtonTintList(android.content.res.ColorStateList.valueOf(accentColor));
@@ -5429,7 +5429,7 @@ public class MainActivity extends Activity {
 
         LinearLayout add = cardBox();
         add.addView(tv("إضافة بنك / محفظة / اسم موثوق", 17, text, true));
-        add.addView(small("هذه الصفحة تعرّف التطبيق على المحافظ التي لا تعطي رقم العميل داخل الرسالة. اكتب اسم المحفظة، وكلمات تظهر في المرسل أو نص الرسالة، والاسم كما يظهر في المحفظة، ورقم الزبون الذي سيستلم الكرت."));
+        add.addView(small("هذه الصفحة تعرّف التطبيق على مصادر الدفع. إذا كانت الرسالة تحتوي رقمًا فالنظام يعتمد الرقم ويرسل له هو نفسه. الأسماء تستخدم فقط عند الرسائل التي لا تحتوي رقمًا، بعد ربطها يدويًا."));
         add.addView(action("➕ إضافة بنك أو محفظة", purple, Color.WHITE, v -> showTrustedDialog()));
         content.addView(add);
 
@@ -5445,8 +5445,8 @@ public class MainActivity extends Activity {
             box.addView(small("كلمات التعرف: " + (contact.senderKeywords == null || contact.senderKeywords.trim().isEmpty() ? contact.walletName : contact.senderKeywords)
                     + "\nالاسم الثلاثي: " + contact.tripleName
                     + "\nهوية الدفع: " + (contact.walletIdentity == null || contact.walletIdentity.trim().isEmpty() ? "اسم فقط" : contact.walletIdentity)
-                    + "\nرقم استلام الكرت: " + contact.phone
-                    + "\nطريقة التعامل: " + (contact.autoCardAllowed ? "سداد + إرسال كرت تلقائي" : "سداد فقط")
+                    + "\nالأرقام الموثوقة للحساب: " + contact.phone
+                    + "\nطريقة التعامل للحساب: " + (contact.autoCardAllowed ? "سداد + إرسال باقة لنفس رقم الدفع" : "سداد فقط")
                     + "\nالحالة: " + (contact.active ? "مفعّل" : "معطّل")));
             LinearLayout tools = new LinearLayout(this);
             tools.setOrientation(LinearLayout.HORIZONTAL);
@@ -5494,13 +5494,13 @@ public class MainActivity extends Activity {
         layout.addView(premiumDialogSection("الاسم الموثوق"));
         EditText name = premiumEdit("الاسم كما يظهر في رسالة المحفظة", "", InputType.TYPE_CLASS_TEXT);
         EditText identity = premiumEdit("رقم المحفظة / رقم الحساب إن وجد", "", InputType.TYPE_CLASS_TEXT);
-        EditText phone = premiumEdit("رقم استلام الكرت 7xxxxxxxx", "", InputType.TYPE_CLASS_PHONE);
+        EditText phone = premiumEdit("الأرقام الموثوقة: 7xxxxxxxx, 7xxxxxxxx", "", InputType.TYPE_CLASS_TEXT);
         layout.addView(name);
         layout.addView(identity);
         layout.addView(phone);
 
         CheckBox autoCard = new CheckBox(this);
-        autoCard.setText("السماح بإرسال كرت تلقائيًا لهذا المصدر إذا طابق المبلغ فئة كرت");
+        autoCard.setText("إذا سدد أحد الأرقام الموثوقة قيمة باقة موجودة: أرسل الباقة لنفس الرقم الذي دفع");
         autoCard.setTextColor(text);
         autoCard.setTypeface(appTypeface(false));
         autoCard.setPadding(dp(4), dp(8), dp(4), dp(8));
@@ -5515,7 +5515,7 @@ public class MainActivity extends Activity {
         if (Build.VERSION.SDK_INT >= 21) addAllWallets.setButtonTintList(android.content.res.ColorStateList.valueOf(neonCyan));
         if (old == null) layout.addView(addAllWallets);
 
-        TextView hint = small("قاعدة الأمان: إذا وصلت الرسالة برقم محفظة أو رقم حساب فلن يعتمد النظام على الاسم وحده. اربط هوية الدفع هنا أو اتركها فارغة للمحافظ التي ترسل الاسم فقط. الافتراضي سداد فقط.");
+        TextView hint = small("قاعدة الأمان: الرقم الموجود داخل رسالة المحفظة هو الأساس ويستلم الكرت هو نفسه. يمكن إضافة أكثر من رقم موثوق للحساب مفصولًا بفاصلة. الشروط تطبق على الحساب لا على رقم منفرد. إذا وصلت رسالة باسم فقط يستخدم الربط اليدوي المحفوظ.");
         hint.setPadding(0, dp(8), 0, 0);
         layout.addView(hint);
 
@@ -5552,7 +5552,7 @@ public class MainActivity extends Activity {
                         : AppStore.addWalletContact(this, walletText, keywordText, nameText, phoneText, identityText, autoCard.isChecked());
             }
             if (!ok) {
-                showNeonAlert("لم يتم الحفظ", "تأكد من الاسم الثلاثي ورقم يبدأ بـ 7 ومكون من 9 أرقام.", red, true);
+                showNeonAlert("لم يتم الحفظ", "تأكد من الاسم الثلاثي وأضف رقمًا موثوقًا واحدًا على الأقل يبدأ بـ 7. يمكن إضافة أكثر من رقم مفصول بفاصلة.", red, true);
                 return;
             }
             toast(old == null ? "تم حفظ المحفظة / الاسم الموثوق" : "تم تعديل المحفظة / الاسم الموثوق");

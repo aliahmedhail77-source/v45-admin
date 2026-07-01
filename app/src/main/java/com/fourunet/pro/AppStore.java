@@ -2896,20 +2896,19 @@ class AppStore {
         String wallet = walletName == null ? "" : walletName.trim();
         String cleanName = fullName == null ? "" : fullName.trim();
         String triple = NameUtils.tripleName(cleanName);
-        String normalizedPhone = normalizeLocalPhone(phone);
-        return !wallet.isEmpty() && !triple.isEmpty() && isValidLocalMobile(normalizedPhone);
+        String normalizedPhones = normalizeTrustedPhoneList(phone);
+        return !wallet.isEmpty() && !triple.isEmpty() && !normalizedPhones.isEmpty();
     }
 
     static String walletContactValidationMessage(String walletName, String fullName, String phone) {
         String wallet = walletName == null ? "" : walletName.trim();
         String cleanName = fullName == null ? "" : fullName.trim();
         String triple = NameUtils.tripleName(cleanName);
-        String normalizedPhone = normalizeLocalPhone(phone);
+        String normalizedPhones = normalizeTrustedPhoneList(phone);
         if (wallet.isEmpty()) return "اكتب اسم المحفظة";
         if (cleanName.isEmpty()) return "اكتب الاسم كما يظهر في رسالة المحفظة";
         if (triple.isEmpty()) return "اكتب الاسم الثلاثي على الأقل كما يظهر في الرسالة";
-        if (normalizedPhone.isEmpty()) return "اكتب رقم استلام الكرت";
-        if (!isValidLocalMobile(normalizedPhone)) return "رقم استلام الكرت يجب أن يكون 9 أرقام ويبدأ بالرقم 7";
+        if (normalizedPhones.isEmpty()) return "أضف رقمًا موثوقًا واحدًا على الأقل يبدأ بـ 7. يمكن إضافة أكثر من رقم مفصول بفاصلة.";
         return "";
     }
 
@@ -2922,10 +2921,10 @@ class AppStore {
         String keywords = senderKeywords == null ? "" : senderKeywords.trim();
         String cleanName = fullName == null ? "" : fullName.trim();
         String triple = NameUtils.tripleName(cleanName);
-        String normalizedPhone = normalizeLocalPhone(phone);
+        String normalizedPhone = normalizeTrustedPhoneList(phone);
         String identity = normalizeWalletIdentity(walletIdentity);
         String mode = identityType == null || identityType.trim().isEmpty() ? (identity.isEmpty() ? "name" : PaymentParser.identityTypeFor(identity)) : identityType.trim();
-        if (triple.isEmpty() || !isValidLocalMobile(normalizedPhone)) return false;
+        if (triple.isEmpty() || normalizedPhone.isEmpty()) return false;
         for (TrustedContact contact : list) {
             boolean sameWallet = contact.walletName != null && contact.walletName.equalsIgnoreCase(wallet);
             boolean sameIdentity = !identity.isEmpty() && identity.equals(normalizeWalletIdentity(contact.walletIdentity));
@@ -2945,6 +2944,42 @@ class AppStore {
         }
         list.add(0, new TrustedContact(UUID.randomUUID().toString(), wallet, keywords, cleanName, triple, normalizedPhone, identity, mode, autoCardAllowed, true));
         return true;
+    }
+
+
+    static String normalizeTrustedPhoneList(String phones) {
+        if (phones == null) return "";
+        java.util.LinkedHashSet<String> set = new java.util.LinkedHashSet<>();
+        String[] parts = phones.split("[,،\n;؛ ]+");
+        for (String part : parts) {
+            String clean = normalizeLocalPhone(part);
+            if (isValidLocalMobile(clean)) set.add(clean);
+        }
+        StringBuilder sb = new StringBuilder();
+        for (String ph : set) {
+            if (sb.length() > 0) sb.append(",");
+            sb.append(ph);
+        }
+        return sb.toString();
+    }
+
+    static boolean trustedContactHasPhone(TrustedContact contact, String phone) {
+        if (contact == null) return false;
+        String target = normalizeLocalPhone(phone);
+        if (!isValidLocalMobile(target)) return false;
+        String list = normalizeTrustedPhoneList(contact.phone);
+        if (list.isEmpty()) return false;
+        for (String part : list.split(",")) {
+            if (target.equals(part.trim())) return true;
+        }
+        return false;
+    }
+
+    static String primaryTrustedPhone(TrustedContact contact) {
+        if (contact == null) return "";
+        String list = normalizeTrustedPhoneList(contact.phone);
+        if (list.isEmpty()) return "";
+        return list.split(",")[0].trim();
     }
 
     static String normalizeLocalPhone(String phone) {
@@ -2968,8 +3003,8 @@ class AppStore {
         String keywords = senderKeywords == null ? "" : senderKeywords.trim();
         String cleanName = fullName == null ? "" : fullName.trim();
         String triple = NameUtils.tripleName(cleanName);
-        String normalizedPhone = normalizeLocalPhone(phone);
-        if (id == null || id.trim().isEmpty() || triple.isEmpty() || !isValidLocalMobile(normalizedPhone)) return false;
+        String normalizedPhone = normalizeTrustedPhoneList(phone);
+        if (id == null || id.trim().isEmpty() || triple.isEmpty() || normalizedPhone.isEmpty()) return false;
         ArrayList<TrustedContact> list = loadTrustedContacts(c);
         boolean changed = false;
         for (TrustedContact contact : list) {
@@ -2993,9 +3028,9 @@ class AppStore {
         String keywords = senderKeywords == null ? "" : senderKeywords.trim();
         String cleanName = fullName == null ? "" : fullName.trim();
         String triple = NameUtils.tripleName(cleanName);
-        String normalizedPhone = normalizeLocalPhone(phone);
+        String normalizedPhone = normalizeTrustedPhoneList(phone);
         String identity = normalizeWalletIdentity(walletIdentity);
-        if (id == null || id.trim().isEmpty() || triple.isEmpty() || !isValidLocalMobile(normalizedPhone)) return false;
+        if (id == null || id.trim().isEmpty() || triple.isEmpty() || normalizedPhone.isEmpty()) return false;
         ArrayList<TrustedContact> list = loadTrustedContacts(c);
         boolean changed = false;
         for (TrustedContact contact : list) {
@@ -3096,6 +3131,8 @@ class AppStore {
         String hay = ((sender == null ? "" : sender) + " " + (body == null ? "" : body) + " " + wallet).toLowerCase();
         String msgIdentity = normalizeWalletIdentity(payment.walletIdentity);
         if (msgIdentity.isEmpty()) msgIdentity = normalizeWalletIdentity(PaymentParser.extractWalletIdentityForReview(body));
+        String msgPhone = normalizeLocalPhone(msgIdentity);
+        boolean messageHasPhone = isValidLocalMobile(msgPhone);
         String msgNameTriple = NameUtils.tripleName(payment.customerName);
 
         ArrayList<TrustedContact> candidates = new ArrayList<>();
@@ -3105,29 +3142,39 @@ class AppStore {
             candidates.add(contact);
         }
 
-        // إذا حملت الرسالة رقماً أو رقم حساب فهو الهوية الأقوى، ولا نرجع للاسم عند عدم التطابق.
+        // Stage 14.7.4: الرقم الموجود داخل رسالة المحفظة هو الأساس.
+        // إذا وصل رقم جوال واضح، لا يتم الربط بالاسم نهائيًا، ولا يرسل لرقم آخر.
+        if (messageHasPhone) {
+            for (TrustedContact contact : candidates) {
+                if (trustedContactHasPhone(contact, msgPhone)) {
+                    return new WalletIdentityResolution(true, contact, msgPhone, contact.fullName,
+                            "تم الاعتماد لأن رقم الرسالة موجود ضمن أرقام الحساب الموثوق: " + msgPhone + ". سيتم التعامل مع نفس الرقم ولا يعتمد الاسم للربط.", contact.autoCardAllowed);
+                }
+                String ci = normalizeWalletIdentity(contact.walletIdentity);
+                if (!ci.isEmpty() && msgPhone.equals(normalizeLocalPhone(ci))) {
+                    return new WalletIdentityResolution(true, contact, msgPhone, contact.fullName,
+                            "تم الاعتماد بتطابق رقم الدفع المحفوظ مع رقم الرسالة: " + msgPhone + ". الإرسال لنفس رقم الرسالة.", contact.autoCardAllowed);
+                }
+            }
+            return new WalletIdentityResolution(true, null, msgPhone, payment.customerName,
+                    "تم الاعتماد برقم موجود داخل رسالة المحفظة: " + msgPhone + ". لا يتم استخدام الاسم للربط، ولا تسجل مديونية على رقم آخر.", true);
+        }
+
+        // رقم حساب / معرف غير جوال: يعتمد فقط إذا كان محفوظًا كمصدر موثوق، ثم يستخدم الرقم الافتراضي للحساب.
         if (!msgIdentity.isEmpty()) {
             for (TrustedContact contact : candidates) {
                 String ci = normalizeWalletIdentity(contact.walletIdentity);
                 if (!ci.isEmpty() && ci.equals(msgIdentity)) {
-                    return new WalletIdentityResolution(true, contact, normalizeLocalPhone(contact.phone), contact.fullName,
-                            "تم الاعتماد بتطابق هوية المحفظة/الحساب: " + msgIdentity, contact.autoCardAllowed);
-                }
-            }
-            // السماح فقط في الحالة الآمنة القديمة: رقم المحفظة هو نفسه رقم استلام الكرت والاسم مطابق.
-            for (TrustedContact contact : candidates) {
-                String receive = normalizeLocalPhone(contact.phone);
-                boolean sameName = !msgNameTriple.isEmpty() && msgNameTriple.equals(contact.tripleName);
-                if (sameName && isValidLocalMobile(receive) && receive.equals(msgIdentity)) {
-                    return new WalletIdentityResolution(true, contact, receive, contact.fullName,
-                            "تم الاعتماد لأن رقم الدفع يطابق رقم استلام الكرت والاسم مطابق", contact.autoCardAllowed);
+                    String receiver = primaryTrustedPhone(contact);
+                    return new WalletIdentityResolution(true, contact, receiver, contact.fullName,
+                            "تم الاعتماد بتطابق رقم الحساب/هوية الدفع: " + msgIdentity, contact.autoCardAllowed);
                 }
             }
             return new WalletIdentityResolution(false, null, "", payment.customerName,
-                    "وصلت الرسالة بهوية دفع رقمية (" + msgIdentity + ") لكنها غير مربوطة بمصدر موثوق. لن يتم الإرسال أو السداد الآلي حتى تربطها يدوياً.", false);
+                    "وصلت الرسالة برقم حساب/هوية دفع (" + msgIdentity + ") لكنها غير مربوطة بمصدر موثوق. تحتاج مراجعة.", false);
         }
 
-        // رسائل الاسم فقط: تعتمد على المحفظة + الاسم المطابق المحفوظ يدوياً.
+        // رسائل الاسم فقط: تعتمد على المحفظة + الاسم المطابق المحفوظ يدوياً، وتستخدم الرقم الافتراضي للحساب.
         ArrayList<TrustedContact> nameMatches = new ArrayList<>();
         for (TrustedContact contact : candidates) {
             boolean sameName = !msgNameTriple.isEmpty() && msgNameTriple.equals(contact.tripleName);
@@ -3136,8 +3183,9 @@ class AppStore {
         }
         if (nameMatches.size() == 1) {
             TrustedContact contact = nameMatches.get(0);
-            return new WalletIdentityResolution(true, contact, normalizeLocalPhone(contact.phone), contact.fullName,
-                    "تم الاعتماد بتطابق المحفظة + الاسم المحفوظ يدوياً", contact.autoCardAllowed);
+            String receiver = primaryTrustedPhone(contact);
+            return new WalletIdentityResolution(true, contact, receiver, contact.fullName,
+                    "تم الاعتماد بتطابق المحفظة + الاسم المحفوظ يدويًا، واستخدام الرقم الافتراضي للحساب.", contact.autoCardAllowed);
         }
         if (nameMatches.size() > 1) {
             return new WalletIdentityResolution(false, null, "", payment.customerName,
