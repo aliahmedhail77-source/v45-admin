@@ -1302,8 +1302,7 @@ public class MainActivity extends Activity {
 
     private Button compactDashboardAction(String icon, String label, int accent, View.OnClickListener listener) {
         Button b = new Button(this);
-        b.setText(icon + "
-" + label);
+        b.setText(icon + "\n" + label);
         b.setTextSize(11);
         b.setAllCaps(false);
         b.setGravity(Gravity.CENTER);
