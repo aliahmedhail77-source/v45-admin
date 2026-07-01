@@ -4,6 +4,7 @@ import android.Manifest;
 import android.app.Activity;
 import android.app.AlertDialog;
 import android.content.Intent;
+import android.content.SharedPreferences;
 import android.content.pm.PackageManager;
 import android.database.Cursor;
 import android.hardware.biometrics.BiometricPrompt;
@@ -76,6 +77,8 @@ public class MainActivity extends Activity {
     private static final int REQ_ADMIN_PACK = 50;
     private static final int REQ_PICK_CONTACT = 60;
     private static final int REQ_NETWORK_LOGO = 70;
+    private static final String PREF_UI_1476 = "kartpro_ui_stage1476";
+    private static final String KEY_HOME_TILES_1476 = "home_tiles";
 
     LinearLayout root;
     LinearLayout content;
@@ -1720,19 +1723,148 @@ public class MainActivity extends Activity {
         grid.setOrientation(LinearLayout.VERTICAL);
         grid.setPadding(0, dp(2), 0, dp(4));
 
-        LinearLayout row1 = dashboardServiceRow();
-        row1.addView(serviceTile("💵", "البيع المباشر", "بيع سريع", v -> showDirectSale()), serviceCellLp());
-        row1.addView(serviceTile("🎫", "الفئات والكروت", "مخزون وإدارة", v -> showCategories()), serviceCellLp());
-        row1.addView(serviceTile("📒", "دفتر الحسابات", "زبائن وديون", v -> showSmartLedger()), serviceCellLp());
-
-        LinearLayout row2 = dashboardServiceRow();
-        row2.addView(serviceTile("📈", "السجلات", "عمليات وتقارير", v -> showLogs()), serviceCellLp());
-        row2.addView(serviceTile("🏪", "نقاط البيع", "دفعات محمية", v -> showPosOutlets()), serviceCellLp());
-        row2.addView(serviceTile("⚙", "إدارة الاختصارات", "تخصيص الواجهة", v -> showUiControlPanel()), serviceCellLp());
-
-        grid.addView(row1);
-        grid.addView(row2);
+        ArrayList<String> keys = loadHomeTileKeys();
+        LinearLayout row = null;
+        int col = 0;
+        for (String key : keys) {
+            if (homeTileTitle(key).isEmpty()) continue;
+            if (row == null || col == 0) {
+                row = dashboardServiceRow();
+                grid.addView(row);
+            }
+            row.addView(serviceTile(homeTileIcon(key), homeTileTitle(key), homeTileSubtitle(key), v -> openHomeTile(key)), serviceCellLp());
+            col++;
+            if (col >= 3) col = 0;
+        }
+        if (grid.getChildCount() == 0) {
+            LinearLayout row1 = dashboardServiceRow();
+            row1.addView(serviceTile("💵", "البيع المباشر", "بيع سريع", v -> showDirectSale()), serviceCellLp());
+            row1.addView(serviceTile("➕", "إضافة قيد", "واصل/دين", v -> showLedgerEntryDialog()), serviceCellLp());
+            row1.addView(serviceTile("🔎", "بحث عميل", "رقم أو اسم", v -> showCustomerSearchDialog()), serviceCellLp());
+            grid.addView(row1);
+        }
         return grid;
+    }
+
+    private ArrayList<String> homeTileAvailableKeys() {
+        ArrayList<String> keys = new ArrayList<>();
+        keys.add("direct_sale");
+        keys.add("ledger_entry");
+        keys.add("customer_search");
+        keys.add("ledger");
+        keys.add("logs");
+        keys.add("review");
+        keys.add("trusted_wallets");
+        keys.add("categories");
+        keys.add("pos");
+        keys.add("reports");
+        keys.add("messages");
+        keys.add("rewards");
+        keys.add("settings");
+        return keys;
+    }
+
+    private ArrayList<String> defaultHomeTileKeys() {
+        ArrayList<String> keys = new ArrayList<>();
+        keys.add("direct_sale");
+        keys.add("ledger_entry");
+        keys.add("customer_search");
+        keys.add("ledger");
+        keys.add("logs");
+        keys.add("settings");
+        return keys;
+    }
+
+    private ArrayList<String> loadHomeTileKeys() {
+        String raw = getSharedPreferences(PREF_UI_1476, MODE_PRIVATE).getString(KEY_HOME_TILES_1476, "");
+        ArrayList<String> out = new ArrayList<>();
+        if (raw == null || raw.trim().isEmpty()) return defaultHomeTileKeys();
+        HashSet<String> allowed = new HashSet<>(homeTileAvailableKeys());
+        for (String part : raw.split(",")) {
+            String k = part == null ? "" : part.trim();
+            if (!k.isEmpty() && allowed.contains(k) && !out.contains(k)) out.add(k);
+        }
+        return out.isEmpty() ? defaultHomeTileKeys() : out;
+    }
+
+    private void saveHomeTileKeys(ArrayList<String> keys) {
+        StringBuilder sb = new StringBuilder();
+        if (keys != null) {
+            for (String k : keys) {
+                if (k == null || k.trim().isEmpty()) continue;
+                if (sb.length() > 0) sb.append(",");
+                sb.append(k.trim());
+            }
+        }
+        getSharedPreferences(PREF_UI_1476, MODE_PRIVATE).edit().putString(KEY_HOME_TILES_1476, sb.toString()).apply();
+    }
+
+    private String homeTileTitle(String key) {
+        if ("direct_sale".equals(key)) return "البيع المباشر";
+        if ("ledger_entry".equals(key)) return "إضافة قيد";
+        if ("customer_search".equals(key)) return "بحث عميل";
+        if ("ledger".equals(key)) return "دفتر الحسابات";
+        if ("logs".equals(key)) return "السجلات";
+        if ("review".equals(key)) return "المراجعة";
+        if ("trusted_wallets".equals(key)) return "المحافظ والبنوك";
+        if ("categories".equals(key)) return "الفئات والكروت";
+        if ("pos".equals(key)) return "نقاط البيع";
+        if ("reports".equals(key)) return "التقارير";
+        if ("messages".equals(key)) return "الرسائل";
+        if ("rewards".equals(key)) return "المكافآت";
+        if ("settings".equals(key)) return "الإعدادات";
+        return "";
+    }
+
+    private String homeTileSubtitle(String key) {
+        if ("direct_sale".equals(key)) return "بيع سريع";
+        if ("ledger_entry".equals(key)) return "واصل/دين";
+        if ("customer_search".equals(key)) return "رقم أو اسم";
+        if ("ledger".equals(key)) return "زبائن وديون";
+        if ("logs".equals(key)) return "عمليات وتقارير";
+        if ("review".equals(key)) return "عمليات ملتبسة";
+        if ("trusted_wallets".equals(key)) return "ربط مصادر الدفع";
+        if ("categories".equals(key)) return "مخزون وإدارة";
+        if ("pos".equals(key)) return "دفعات محمية";
+        if ("reports".equals(key)) return "PDF وفلاتر";
+        if ("messages".equals(key)) return "قوالب الإرسال";
+        if ("rewards".equals(key)) return "نقاط وباقات";
+        if ("settings".equals(key)) return "تخصيص وتحكم";
+        return "";
+    }
+
+    private String homeTileIcon(String key) {
+        if ("direct_sale".equals(key)) return "💵";
+        if ("ledger_entry".equals(key)) return "➕";
+        if ("customer_search".equals(key)) return "🔎";
+        if ("ledger".equals(key)) return "📒";
+        if ("logs".equals(key)) return "📈";
+        if ("review".equals(key)) return "🚨";
+        if ("trusted_wallets".equals(key)) return "🏦";
+        if ("categories".equals(key)) return "🎫";
+        if ("pos".equals(key)) return "🏪";
+        if ("reports".equals(key)) return "📊";
+        if ("messages".equals(key)) return "💬";
+        if ("rewards".equals(key)) return "🏅";
+        if ("settings".equals(key)) return "⚙";
+        return "•";
+    }
+
+    private void openHomeTile(String key) {
+        if ("direct_sale".equals(key)) showDirectSale();
+        else if ("ledger_entry".equals(key)) showLedgerEntryDialog();
+        else if ("customer_search".equals(key)) showCustomerSearchDialog();
+        else if ("ledger".equals(key)) showSmartLedger();
+        else if ("logs".equals(key)) showLogs();
+        else if ("review".equals(key)) { reviewFocusLogId = ""; showLogs(); }
+        else if ("trusted_wallets".equals(key)) showTrustedContacts();
+        else if ("categories".equals(key)) showCategories();
+        else if ("pos".equals(key)) showPosOutlets();
+        else if ("reports".equals(key)) showDashboardReport();
+        else if ("messages".equals(key)) showMessageTemplates();
+        else if ("rewards".equals(key)) showRewardsSettings();
+        else if ("settings".equals(key)) showUiControlPanel();
+        else showHome();
     }
 
     private LinearLayout dashboardServiceRow() {
@@ -2769,7 +2901,7 @@ public class MainActivity extends Activity {
                 box.addView(action("✅ تمت المراجعة", green, Color.rgb(12, 30, 18), v -> confirmMarkReviewed(log)));
             }
             if (canAddTrustedNameFromLog(log)) {
-                box.addView(action("➕ إضافة الاسم للمحافظ الموثوقة", gold, Color.rgb(35, 24, 8), v -> showApproveTrustedNameDialog(log)));
+                box.addView(action("➕ إضافة إلى المحافظ والبنوك", gold, Color.rgb(35, 24, 8), v -> showApproveTrustedNameDialog(log)));
             }
             if (log.customerPhone != null && !log.customerPhone.isEmpty()) {
                 LinearLayout tools = new LinearLayout(this);
@@ -2812,7 +2944,9 @@ public class MainActivity extends Activity {
         String st = log.status == null ? "" : log.status;
         String phone = log.customerPhone == null ? "" : log.customerPhone.trim();
         String name = log.customerName == null ? "" : log.customerName.trim();
-        return (st.contains("معلق") || st.contains("إيداع صريح") || st.contains("يحتاج مراجعة")) && phone.isEmpty() && !name.isEmpty() && log.amount > 0;
+        String identity = PaymentParser.extractWalletIdentityForReview(log.message);
+        boolean pending = st.contains("معلق") || st.contains("إيداع صريح") || st.contains("يحتاج مراجعة") || st.contains("مراجعة");
+        return pending && phone.isEmpty() && log.amount > 0 && (!name.isEmpty() || !identity.trim().isEmpty());
     }
 
     private void showApproveTrustedNameDialog(OperationLog log) {
@@ -2823,13 +2957,15 @@ public class MainActivity extends Activity {
 
         String provider = log.provider == null || log.provider.trim().isEmpty() ? "محفظة" : log.provider.trim();
         String sender = log.sender == null ? "" : log.sender.trim();
+        String identityValue = PaymentParser.extractWalletIdentityForReview(log.message);
         String nameValue = log.customerName == null ? "" : log.customerName.trim();
+        if (nameValue.isEmpty() && !identityValue.trim().isEmpty()) nameValue = "مصدر دفع " + identityValue.trim();
 
-        TextView help = small("تم التعرف على إيداع صحيح، لكن الرسالة لا تحتوي رقم زبون صحيح 9 أرقام يبدأ بـ 7. راجع الاسم، اكتب رقم الزبون، ثم احفظه داخل نفس المحفظة التي وصل منها الإيداع فقط. الإشعار سيبقى قائمًا حتى تضغط زر تمت المراجعة.");
+        TextView help = small("اختصار سريع من بطاقة المراجعة: أضف هذا المصدر إلى المحافظ والبنوك بدون إعادة كتابة بيانات الرسالة. اربطه برقم زبون صحيح، وسيُحفظ افتراضيًا كسداد فقط ما لم تفعل الإرسال التلقائي يدويًا.");
         EditText wallet = new EditText(this); wallet.setHint("اسم المحفظة"); wallet.setGravity(Gravity.RIGHT); wallet.setInputType(InputType.TYPE_CLASS_TEXT); wallet.setText(provider);
         EditText keywords = new EditText(this); keywords.setHint("كلمات التعرف"); keywords.setGravity(Gravity.RIGHT); keywords.setInputType(InputType.TYPE_CLASS_TEXT); keywords.setText(defaultKeywordsForProvider(provider, sender));
         EditText name = new EditText(this); name.setHint("الاسم كما ظهر في رسالة المحفظة"); name.setGravity(Gravity.RIGHT); name.setInputType(InputType.TYPE_CLASS_TEXT); name.setText(nameValue);
-        EditText identity = new EditText(this); identity.setHint("رقم المحفظة / رقم الحساب إن وجد"); identity.setGravity(Gravity.RIGHT); identity.setInputType(InputType.TYPE_CLASS_TEXT); identity.setText(PaymentParser.extractWalletIdentityForReview(log.message));
+        EditText identity = new EditText(this); identity.setHint("رقم المحفظة / رقم الحساب / معرف الدفع"); identity.setGravity(Gravity.RIGHT); identity.setInputType(InputType.TYPE_CLASS_TEXT); identity.setText(identityValue);
         EditText phone = new EditText(this); phone.setHint("رقم الزبون: 7xxxxxxxx"); phone.setGravity(Gravity.RIGHT); phone.setInputType(InputType.TYPE_CLASS_PHONE);
         CheckBox autoCard = new CheckBox(this); autoCard.setText("السماح بإرسال كرت تلقائيًا لهذا المصدر"); autoCard.setTextColor(text);
         layout.addView(help);
@@ -2841,15 +2977,15 @@ public class MainActivity extends Activity {
         layout.addView(autoCard);
 
         AlertDialog dialog = new AlertDialog.Builder(this)
-                .setTitle("اعتماد الاسم الموثوق")
+                .setTitle("إضافة إلى المحافظ والبنوك")
                 .setView(layout)
-                .setPositiveButton("حفظ وإرسال كرت", null)
-                .setNeutralButton("حفظ فقط", null)
+                .setPositiveButton("حفظ فقط", null)
+                .setNeutralButton("حفظ وإرسال كرت", null)
                 .setNegativeButton("إلغاء", null)
                 .create();
         dialog.setOnShowListener(d -> {
-            dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(v -> approveTrustedNameFromLog(dialog, log, wallet, keywords, name, identity, phone, autoCard, true));
-            dialog.getButton(AlertDialog.BUTTON_NEUTRAL).setOnClickListener(v -> approveTrustedNameFromLog(dialog, log, wallet, keywords, name, identity, phone, autoCard, false));
+            dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(v -> approveTrustedNameFromLog(dialog, log, wallet, keywords, name, identity, phone, autoCard, false));
+            dialog.getButton(AlertDialog.BUTTON_NEUTRAL).setOnClickListener(v -> approveTrustedNameFromLog(dialog, log, wallet, keywords, name, identity, phone, autoCard, true));
         });
         dialog.show();
     }
@@ -3912,13 +4048,49 @@ public class MainActivity extends Activity {
     }
 
     private void renderUiQuickControl(LinearLayout pane) {
-        pane.addView(tv("الأقسام السريعة", 17, text, true));
-        pane.addView(small("الأقسام السريعة الحالية: البيع المباشر، الدفتر، المخزون، السجلات، المراجعة، التقارير، نقاط البيع، الرسائل، الإعدادات."));
+        pane.addView(tv("تخصيص القائمة الرئيسية", 17, text, true));
+        pane.addView(small("اختر ما يظهر في القائمة الرئيسية. تستطيع إظهار إضافة قيد، بحث عميل، المحافظ، الدفتر، نقاط البيع أو إخفاء أي عنصر. يتم العرض في الرئيسية حسب ترتيب القائمة هنا، 3 خانات في كل سطر."));
         pane.addView(separator());
-        pane.addView(action("فتح البيع المباشر", neonCyan, Color.rgb(2, 12, 22), v -> showDirectSale()));
-        pane.addView(action("فتح الدفتر", gold, Color.rgb(35,24,8), v -> showSmartLedger()));
-        pane.addView(action("فتح الرسائل", neonPink, Color.WHITE, v -> showMessageTemplates()));
+
+        ArrayList<String> selected = loadHomeTileKeys();
+        ArrayList<String> all = homeTileAvailableKeys();
+        HashMap<String, CheckBox> checks = new HashMap<>();
+        for (String key : all) {
+            CheckBox cb = new CheckBox(this);
+            cb.setText(homeTileIcon(key) + "  " + homeTileTitle(key) + " - " + homeTileSubtitle(key));
+            cb.setTextColor(text);
+            cb.setTextSize(15);
+            cb.setTypeface(appTypeface(true));
+            cb.setGravity(Gravity.RIGHT | Gravity.CENTER_VERTICAL);
+            cb.setChecked(selected.contains(key));
+            cb.setPadding(dp(6), dp(7), dp(6), dp(7));
+            if (Build.VERSION.SDK_INT >= 21) cb.setButtonTintList(android.content.res.ColorStateList.valueOf(neonCyan));
+            checks.put(key, cb);
+            pane.addView(cb);
+        }
+
+        pane.addView(separator());
+        pane.addView(action("حفظ القائمة الرئيسية", green, Color.rgb(3, 22, 12), v -> {
+            ArrayList<String> next = new ArrayList<>();
+            for (String key : homeTileAvailableKeys()) {
+                CheckBox cb = checks.get(key);
+                if (cb != null && cb.isChecked()) next.add(key);
+            }
+            if (next.isEmpty()) {
+                showNeonAlert("لا توجد اختصارات", "اختر اختصارًا واحدًا على الأقل حتى لا تصبح القائمة الرئيسية فارغة.", orange, true);
+                return;
+            }
+            saveHomeTileKeys(next);
+            toast("تم حفظ القائمة الرئيسية");
+            showHome();
+        }), new LinearLayout.LayoutParams(-1, dp(54)));
+        pane.addView(action("استعادة الافتراضي", card2, text, v -> {
+            saveHomeTileKeys(defaultHomeTileKeys());
+            toast("تمت استعادة اختصارات الرئيسية الافتراضية");
+            showUiControlPanel();
+        }), new LinearLayout.LayoutParams(-1, dp(52)));
     }
+
 
 
 
@@ -3941,7 +4113,7 @@ public class MainActivity extends Activity {
         actions.addView(action("إعدادات", purple, Color.WHITE, v -> showSmartLedgerSettings()), new LinearLayout.LayoutParams(0, dp(50), 1));
         actions.addView(action("زبون جديد", gold, Color.rgb(35,24,8), v -> showLedgerCustomerDialog(null)), new LinearLayout.LayoutParams(0, dp(50), 1));
         head.addView(actions);
-        head.addView(action("قيد يومي", card2, text, v -> showLedgerEntryDialog()), new LinearLayout.LayoutParams(-1, dp(50)));
+        head.addView(action("➕ إضافة قيد", card2, text, v -> showLedgerEntryDialog()), new LinearLayout.LayoutParams(-1, dp(50)));
         content.addView(head);
 
         LinearLayout help = cardBox();
@@ -4140,39 +4312,147 @@ public class MainActivity extends Activity {
         try { return Math.max(0, Integer.parseInt(value == null ? "0" : value.trim())); } catch(Exception e) { return 0; }
     }
 
-    private void showLedgerEntryDialog() {
+    private LedgerCustomer findLedgerCustomerByQuery(String query) {
+        String q = query == null ? "" : query.trim();
+        if (q.isEmpty()) return null;
+        String phone = AppStore.normalizeLocalPhone(q);
+        if (AppStore.isValidLocalMobile(phone)) return AppStore.findLedgerCustomerByPhone(this, phone);
+        LedgerCustomer byName = AppStore.findLedgerCustomerByName(this, q);
+        if (byName != null) return byName;
+        String cleanDigits = q.replaceAll("[^0-9٠-٩]", "");
+        for (LedgerCustomer c : AppStore.loadLedgerCustomers(this)) {
+            if (c == null) continue;
+            String cp = AppStore.normalizeLocalPhone(c.phone);
+            if (!cleanDigits.isEmpty() && cp.contains(AppStore.normalizeLocalPhone(cleanDigits))) return c;
+            String name = c.name == null ? "" : c.name;
+            if (q.length() >= 2 && name.contains(q)) return c;
+        }
+        return null;
+    }
+
+    private void showCustomerSearchDialog() {
         LinearLayout layout = new LinearLayout(this);
         layout.setOrientation(LinearLayout.VERTICAL);
-        layout.setPadding(dp(16), dp(12), dp(16), dp(8));
-        layout.setBackgroundColor(bg);
-        EditText phone = ledgerEdit("رقم الزبون", "", InputType.TYPE_CLASS_PHONE);
-        EditText desc = ledgerEdit("الملاحظة / البيان", "قيد يدوي", InputType.TYPE_CLASS_TEXT);
-        EditText debit = ledgerEdit("مدين: يزيد الدين على الزبون", "0", InputType.TYPE_CLASS_NUMBER);
-        EditText credit = ledgerEdit("دائن: سداد/ينقص الدين", "0", InputType.TYPE_CLASS_NUMBER);
-        Spinner method = new Spinner(this);
-        String[] methods = new String[]{"قيد يدوي", "ون كاش", "جوالي", "جيب", "كريمي", "فلوسك", "عن طريق المحل", "إدارة"};
-        method.setAdapter(new ArrayAdapter<String>(this, android.R.layout.simple_spinner_dropdown_item, methods));
-        method.setBackground(round(Color.rgb(10, 14, 30), dp(16), Color.rgb(48, 62, 102), dp(1)));
-        layout.addView(phone);
+        layout.setPadding(dp(14), dp(10), dp(14), dp(8));
+        layout.setBackground(round(Color.rgb(11, 15, 31), dp(24), neonCyan, dp(1)));
+
+        layout.addView(premiumDialogSection("بحث عميل"));
+        EditText query = premiumEdit("اكتب رقم العميل أو اسمه", "", InputType.TYPE_CLASS_TEXT);
+        layout.addView(query);
+        TextView result = messagePreviewText("اكتب رقم العميل أو الاسم ثم اضغط بحث. يبحث أيضًا في جزء من الاسم أو الرقم.");
+        layout.addView(result);
+        final LedgerCustomer[] selected = new LedgerCustomer[]{null};
+
+        final AlertDialog[] holder = new AlertDialog[]{null};
+        Button search = action("🔎 بحث", neonCyan, Color.rgb(2, 12, 22), v -> {
+            LedgerCustomer c = findLedgerCustomerByQuery(query.getText().toString());
+            selected[0] = c;
+            if (c == null) {
+                result.setText("لم يتم العثور على عميل مطابق. إذا كتبت رقمًا صحيحًا تستطيع إضافته من زر إضافة قيد وسيُنشأ حسابه تلقائيًا عند الحفظ.");
+            } else {
+                result.setText("العميل: " + c.name
+                        + "\nالرقم: " + c.phone
+                        + "\nالمتبقي عليه: " + c.debt + " ريال"
+                        + "\nرصيده: " + c.creditBalance + " ريال"
+                        + "\nوضع التعامل: " + AppStore.ledgerModeLabel(c.effectiveMode()));
+            }
+        });
+        layout.addView(search, new LinearLayout.LayoutParams(-1, dp(52)));
+        layout.addView(action("➕ إضافة قيد لهذا العميل", gold, Color.rgb(35, 24, 8), v -> {
+            LedgerCustomer c = selected[0] == null ? findLedgerCustomerByQuery(query.getText().toString()) : selected[0];
+            try { if (holder[0] != null) holder[0].dismiss(); } catch(Exception ignored) {}
+            showLedgerEntryDialog(c, query.getText().toString());
+        }), new LinearLayout.LayoutParams(-1, dp(52)));
+
+        AlertDialog dialog = showPremiumDialog("بحث عميل", scrollableDialogView(layout), "كشف الحساب", null, "إغلاق", neonCyan);
+        holder[0] = dialog;
+        dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(v -> {
+            LedgerCustomer c = selected[0] == null ? findLedgerCustomerByQuery(query.getText().toString()) : selected[0];
+            if (c == null) { toast("ابحث عن العميل أولًا"); return; }
+            dialog.dismiss();
+            showLedgerStatementDialog(c);
+        });
+    }
+
+    private void showLedgerEntryDialog() {
+        showLedgerEntryDialog(null, "");
+    }
+
+    private void showLedgerEntryDialog(LedgerCustomer prefill, String initialQuery) {
+        LinearLayout layout = new LinearLayout(this);
+        layout.setOrientation(LinearLayout.VERTICAL);
+        layout.setPadding(dp(14), dp(10), dp(14), dp(8));
+        layout.setBackground(round(Color.rgb(11, 15, 31), dp(24), gold, dp(1)));
+
+        layout.addView(premiumDialogSection("العميل"));
+        String startQuery = prefill != null ? (prefill.phone == null || prefill.phone.isEmpty() ? prefill.name : prefill.phone) : (initialQuery == null ? "" : initialQuery);
+        EditText query = premiumEdit("ابحث برقم أو اسم العميل", startQuery, InputType.TYPE_CLASS_TEXT);
+        layout.addView(query);
+        TextView customerInfo = messagePreviewText("اختر العميل أولًا. إذا كتبت رقمًا غير موجود سيتم إنشاء حساب له عند الحفظ.");
+        layout.addView(customerInfo);
+        final LedgerCustomer[] selected = new LedgerCustomer[]{prefill};
+        if (prefill != null) {
+            customerInfo.setText("العميل: " + prefill.name + "\nالرقم: " + prefill.phone + "\nالدين الحالي: " + prefill.debt + " ريال\nالرصيد: " + prefill.creditBalance + " ريال");
+        }
+        layout.addView(action("🔎 بحث العميل", card2, text, v -> {
+            LedgerCustomer c = findLedgerCustomerByQuery(query.getText().toString());
+            selected[0] = c;
+            if (c == null) customerInfo.setText("لم يتم العثور على عميل مطابق. إذا كان المدخل رقمًا صحيحًا يبدأ بـ 7، سيُنشأ حساب عند حفظ القيد.");
+            else customerInfo.setText("العميل: " + c.name + "\nالرقم: " + c.phone + "\nالدين الحالي: " + c.debt + " ريال\nالرصيد: " + c.creditBalance + " ريال\nوضع التعامل: " + AppStore.ledgerModeLabel(c.effectiveMode()));
+        }), new LinearLayout.LayoutParams(-1, dp(50)));
+
+        layout.addView(separator());
+        layout.addView(premiumDialogSection("نوع القيد"));
+        final String[] entryType = new String[]{"payment"};
+        LinearLayout typeRow = new LinearLayout(this);
+        typeRow.setOrientation(LinearLayout.HORIZONTAL);
+        typeRow.setLayoutDirection(View.LAYOUT_DIRECTION_RTL);
+        Button payBtn = action("واصل من العميل\nينقص الدين", green, Color.rgb(3, 22, 12), v -> {});
+        Button debtBtn = action("قيد على العميل\nيزيد الدين", card2, text, v -> {});
+        Runnable refreshType = () -> {
+            payBtn.setBackground(round("payment".equals(entryType[0]) ? green : card2, dp(18), "payment".equals(entryType[0]) ? Color.WHITE : borderSoft, dp(1)));
+            payBtn.setTextColor("payment".equals(entryType[0]) ? Color.rgb(3, 22, 12) : text);
+            debtBtn.setBackground(round("debt".equals(entryType[0]) ? red : card2, dp(18), "debt".equals(entryType[0]) ? Color.WHITE : borderSoft, dp(1)));
+            debtBtn.setTextColor("debt".equals(entryType[0]) ? Color.WHITE : text);
+        };
+        payBtn.setOnClickListener(v -> { entryType[0] = "payment"; refreshType.run(); });
+        debtBtn.setOnClickListener(v -> { entryType[0] = "debt"; refreshType.run(); });
+        typeRow.addView(payBtn, new LinearLayout.LayoutParams(0, dp(62), 1));
+        typeRow.addView(debtBtn, new LinearLayout.LayoutParams(0, dp(62), 1));
+        layout.addView(typeRow);
+        layout.addView(small("واصل من العميل = سداد ينقص الدين. قيد على العميل = دين جديد يزيد المديونية."));
+
+        layout.addView(separator());
+        layout.addView(premiumDialogSection("بيانات القيد"));
+        EditText amount = premiumEdit("المبلغ", "", InputType.TYPE_CLASS_NUMBER);
+        EditText desc = premiumEdit("الملاحظة: سداد نقدي / باقة آجل / تصحيح", "", InputType.TYPE_CLASS_TEXT);
+        layout.addView(amount);
         layout.addView(desc);
-        layout.addView(debit);
-        layout.addView(credit);
-        layout.addView(method);
-        new AlertDialog.Builder(this)
-                .setTitle("إضافة قيد يومي")
-                .setView(layout)
-                .setPositiveButton("حفظ القيد", (d,w) -> {
-                    String ph = phone.getText().toString();
-                    if (!AppStore.isValidLocalMobile(ph)) { toast("رقم الزبون غير صحيح"); return; }
-                    int deb = safeInt(debit.getText().toString());
-                    int cr = safeInt(credit.getText().toString());
-                    String pm = method.getSelectedItem() == null ? "قيد يدوي" : method.getSelectedItem().toString();
-                    LedgerCustomer c = AppStore.changeLedgerDebtByPhone(this, ph, deb, cr, deb > 0 ? "قيد مدين" : "سداد", desc.getText().toString(), pm, pm, deb > 0 ? "سلفة" : "سداد");
-                    toast("تم حفظ القيد. المتبقي عليه: " + c.debt + " | رصيده: " + c.creditBalance);
-                    showSmartLedger();
-                })
-                .setNegativeButton("إلغاء", null)
-                .show();
+        Spinner method = new Spinner(this);
+        String[] methods = new String[]{"قيد يدوي", "نقدًا", "ون كاش", "جوالي", "جيب", "كريمي", "فلوسك", "عن طريق المحل", "إدارة"};
+        method.setAdapter(new ArrayAdapter<String>(this, android.R.layout.simple_spinner_dropdown_item, methods));
+        method.setBackground(round(Color.rgb(8, 12, 27), dp(16), Color.rgb(48, 68, 112), dp(1)));
+        layout.addView(method, new LinearLayout.LayoutParams(-1, dp(52)));
+
+        AlertDialog dialog = showPremiumDialog("إضافة قيد", scrollableDialogView(layout), "حفظ القيد", null, "إلغاء", gold);
+        dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(v -> {
+            LedgerCustomer c = selected[0] == null ? findLedgerCustomerByQuery(query.getText().toString()) : selected[0];
+            String ph = c != null ? c.phone : AppStore.normalizeLocalPhone(query.getText().toString());
+            if (!AppStore.isValidLocalMobile(ph)) {
+                showNeonAlert("العميل غير محدد", "ابحث عن العميل أو اكتب رقمًا صحيحًا يبدأ بـ 7.", orange, true);
+                return;
+            }
+            int val = safeInt(amount.getText().toString());
+            if (val <= 0) { toast("اكتب المبلغ"); return; }
+            String pm = method.getSelectedItem() == null ? "قيد يدوي" : method.getSelectedItem().toString();
+            boolean debt = "debt".equals(entryType[0]);
+            String note = desc.getText().toString().trim();
+            if (note.isEmpty()) note = debt ? "قيد على العميل" : "واصل من العميل";
+            LedgerCustomer after = AppStore.changeLedgerDebtByPhone(this, ph, debt ? val : 0, debt ? 0 : val, debt ? "قيد على العميل" : "سداد", note, pm, pm, debt ? "دين" : "سداد");
+            toast("تم حفظ القيد. المتبقي عليه: " + after.debt + " | رصيده: " + after.creditBalance);
+            dialog.dismiss();
+            showSmartLedger();
+        });
     }
 
     private void showLedgerStatementDialog(LedgerCustomer c) {
