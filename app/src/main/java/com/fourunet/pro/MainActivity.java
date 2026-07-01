@@ -887,12 +887,11 @@ public class MainActivity extends Activity {
 
     private void rebuildNav() {
         nav.removeAllViews();
+        // Stage 14.7: شريط سفلي أنظف؛ حذف الدفتر والفئات، وإبراز البيع المباشر.
         nav.addView(navButton("الإعدادات", "settings", "⚙", v -> showSettings()));
-        nav.addView(navButton("دفتر", "ledger", "▤", v -> showSmartLedger()));
         nav.addView(navButton("السجل", "logs", "◷", v -> showLogs()));
         nav.addView(navButton("استيراد", "import", "⇧", v -> showImport()));
-        nav.addView(navButton("بيع مباشر", "direct", "●", v -> showDirectSale()));
-        nav.addView(navButton("الفئات", "categories", "▦", v -> showCategories()));
+        nav.addView(navButton("بيع مباشر", "direct", "⬤", v -> showDirectSale()));
         nav.addView(navButton("الرئيسية", "home", "⌂", v -> showHome()));
     }
 
@@ -900,13 +899,13 @@ public class MainActivity extends Activity {
         boolean selected = key.equals(activeTab);
         Button b = new Button(this);
         b.setText(icon + "\n" + label);
-        b.setTextSize(selected ? 11 : 10);
+        b.setTextSize("direct".equals(key) ? (selected ? 12 : 11) : (selected ? 11 : 10));
         b.setTypeface(appTypeface(selected));
         b.setAllCaps(false);
         b.setGravity(Gravity.CENTER);
         b.setTextColor(selected ? Color.WHITE : Color.rgb(150, 156, 178));
-        int bgColor = selected ? Color.rgb(31, 24, 62) : Color.rgb(8, 10, 22);
-        int stroke = selected ? neonCyan : Color.rgb(31, 38, 62);
+        int bgColor = selected ? ("direct".equals(key) ? Color.rgb(18, 34, 48) : Color.rgb(31, 24, 62)) : Color.rgb(8, 10, 22);
+        int stroke = selected ? ("direct".equals(key) ? neonCyan : neonCyan) : Color.rgb(31, 38, 62);
         b.setBackground(round(bgColor, dp(22), stroke, selected ? dp(2) : dp(1)));
         b.setPadding(dp(2), dp(4), dp(2), dp(4));
         b.setOnClickListener(listener);
@@ -1283,20 +1282,38 @@ public class MainActivity extends Activity {
 
         box.addView(top);
         box.addView(separator());
-        TextView note = small(autoOn
-                ? "كرت برو يتابع الرسائل والطلبات تلقائيًا حسب إعداداتك."
-                : "الإرسال التلقائي متوقف، ويمكنك تنفيذ العمليات يدويًا.");
-        box.addView(note);
-
-        LinearLayout actions = new LinearLayout(this);
-        actions.setOrientation(LinearLayout.HORIZONTAL);
-        actions.setPadding(0, dp(12), 0, 0);
-        LinearLayout.LayoutParams left = new LinearLayout.LayoutParams(0, dp(52), 1);
-        left.setMargins(dp(4), 0, dp(4), 0);
-        actions.addView(action("بيع كرت", Color.rgb(24, 197, 220), Color.rgb(2, 12, 22), v -> showDirectSale()), left);
-        actions.addView(action("الدفتر", Color.rgb(42, 31, 84), Color.WHITE, v -> showSmartLedger()), left);
-        box.addView(actions);
+        LinearLayout quick = new LinearLayout(this);
+        quick.setOrientation(LinearLayout.HORIZONTAL);
+        quick.setLayoutDirection(View.LAYOUT_DIRECTION_RTL);
+        quick.setPadding(0, dp(10), 0, 0);
+        quick.addView(compactDashboardAction("💵", "بيع", neonCyan, v -> showDirectSale()), quickActionLp());
+        quick.addView(compactDashboardAction("⇧", "استيراد", purpleLight, v -> showImport()), quickActionLp());
+        quick.addView(compactDashboardAction("◷", "سجل", Color.rgb(80, 160, 255), v -> showLogs()), quickActionLp());
+        quick.addView(compactDashboardAction("⚙", "إدارة", gold, v -> showUiControlPanel()), quickActionLp());
+        box.addView(quick);
         return box;
+    }
+
+    private LinearLayout.LayoutParams quickActionLp() {
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0, dp(50), 1);
+        lp.setMargins(dp(3), 0, dp(3), 0);
+        return lp;
+    }
+
+    private Button compactDashboardAction(String icon, String label, int accent, View.OnClickListener listener) {
+        Button b = new Button(this);
+        b.setText(icon + "
+" + label);
+        b.setTextSize(11);
+        b.setAllCaps(false);
+        b.setGravity(Gravity.CENTER);
+        b.setTypeface(appTypeface(true));
+        b.setTextColor(Color.WHITE);
+        b.setPadding(dp(2), dp(2), dp(2), dp(2));
+        b.setBackground(round(Color.argb(40, Color.red(accent), Color.green(accent), Color.blue(accent)), dp(18), accent, dp(1)));
+        b.setOnClickListener(listener);
+        applyNeonPress(b);
+        return b;
     }
 
     private View dashboardStatsGrid() {
@@ -1306,12 +1323,12 @@ public class MainActivity extends Activity {
         LinearLayout row1 = dashboardMetricRow();
         LinearLayout row2 = dashboardMetricRow();
 
-        row1.addView(dashboardStatCard("إجمالي العمليات", String.valueOf(AppStore.visibleLogsCount(this)), "📊", gold, v -> openDashboardReport("all")), statCellLp());
-        row1.addView(dashboardStatCard("كروت مباعة", String.valueOf(AppStore.sentOperationsCount(this)), "💳", neonCyan, v -> openDashboardReport("sold")), statCellLp());
+        row1.addView(dashboardStatCard("إجمالي العمليات", String.valueOf(AppStore.visibleLogsCount(this)), "📈", gold, v -> openDashboardReport("all")), statCellLp());
+        row1.addView(dashboardStatCard("كروت مباعة", String.valueOf(AppStore.sentOperationsCount(this)), "🎫", neonCyan, v -> openDashboardReport("sold")), statCellLp());
         row1.addView(dashboardStatCard("مبيعات اليوم", todaySalesSummary(), "💵", green, v -> openDashboardReport("today")), statCellLp());
 
         row2.addView(dashboardStatCard("الديون", AppStore.ledgerTotalDebt(this) + " ر.ي", "📒", orange, v -> showDebtCustomers()), statCellLp());
-        row2.addView(dashboardStatCard("المكافآت", rewardsSummary(), "⭐", gold, v -> openDashboardReport("rewards")), statCellLp());
+        row2.addView(dashboardStatCard("المكافآت", rewardsSummary(), "🏅", gold, v -> openDashboardReport("rewards")), statCellLp());
         row2.addView(dashboardStatCard("الزبائن", String.valueOf(AppStore.loadLedgerCustomers(this).size()), "👥", purpleLight, v -> showSmartLedger()), statCellLp());
 
         grid.addView(row1);
@@ -1414,6 +1431,9 @@ public class MainActivity extends Activity {
         tools.addView(action("فترة مخصصة", purple, Color.WHITE, v -> showDashboardDateRangeDialog()));
         tools.addView(action("رجوع للرئيسية", card2, text, v -> showHome()));
         content.addView(tools);
+        if ("all".equals(dashboardReportType) || "sold".equals(dashboardReportType)) {
+            content.addView(dashboardSalesPyramidCard());
+        }
 
         ArrayList<OperationLog> filtered = filteredDashboardLogs();
         LinearLayout summary = cardBox();
@@ -1431,6 +1451,41 @@ public class MainActivity extends Activity {
             more.addView(action("المزيد: عرض 20 عملية أخرى", card2, text, v -> { dashboardReportLimit += 20; showDashboardReport(); }), new LinearLayout.LayoutParams(-1, dp(50)));
             content.addView(more);
         }
+    }
+
+    private View dashboardSalesPyramidCard() {
+        LinearLayout box = cardBox();
+        box.addView(tv("تحليل هرمي للمبيعات", 17, text, true));
+        box.addView(small("مقارنة سريعة بين اليوم، الأسبوع، والإجمالي بدون تحميل كل السجلات دفعة واحدة."));
+        box.addView(separator());
+        box.addView(periodPyramidRow("اليوم", "today", green));
+        box.addView(periodPyramidRow("الأسبوع", "week", neonCyan));
+        box.addView(periodPyramidRow("الإجمالي", "all", gold));
+        return box;
+    }
+
+    private View periodPyramidRow(String label, String period, int accent) {
+        int count = 0;
+        int amount = 0;
+        String oldPeriod = dashboardReportPeriod;
+        String oldType = dashboardReportType;
+        dashboardReportPeriod = period;
+        if ("all".equals(oldType)) dashboardReportType = "sold";
+        ArrayList<OperationLog> logs = filteredDashboardLogs();
+        dashboardReportPeriod = oldPeriod;
+        dashboardReportType = oldType;
+        for (OperationLog log : logs) {
+            count++;
+            amount += Math.max(0, log.amount);
+        }
+        TextView row = tv(label + "  |  " + count + " عملية  |  " + amount + " ريال", 13, text, true);
+        row.setGravity(Gravity.RIGHT | Gravity.CENTER_VERTICAL);
+        row.setPadding(dp(12), dp(8), dp(12), dp(8));
+        row.setBackground(round(Color.argb(26, Color.red(accent), Color.green(accent), Color.blue(accent)), dp(14), accent, dp(1)));
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, -2);
+        lp.setMargins(0, dp(4), 0, dp(4));
+        row.setLayoutParams(lp);
+        return row;
     }
 
     private void showDashboardPeriodDialog() {
@@ -1461,7 +1516,7 @@ public class MainActivity extends Activity {
         ArrayList<String> wallets = dashboardWalletOptions();
         String[] labels = wallets.toArray(new String[0]);
         showPremiumChoiceDialog("اختر المحفظة", labels, dashboardWalletLabel(dashboardReportWallet), neonCyan, which -> {
-            dashboardReportWallet = labels[which];
+            dashboardReportWallet = "كل المحافظ".equals(labels[which]) ? "all" : labels[which];
             dashboardReportLimit = 20;
             showDashboardReport();
         });
@@ -1469,7 +1524,7 @@ public class MainActivity extends Activity {
 
     private ArrayList<String> dashboardWalletOptions() {
         ArrayList<String> list = new ArrayList<>();
-        list.add("all");
+        list.add("كل المحافظ");
         String[] base = new String[]{"ONE Cash", "جوالي", "جيب", "كريمي", "فلوسك", "يمن كاش", "سبأ كاش", "بيس"};
         for (String w : base) list.add(w);
         HashSet<String> seen = new HashSet<>();
@@ -1667,22 +1722,16 @@ public class MainActivity extends Activity {
 
         LinearLayout row1 = dashboardServiceRow();
         row1.addView(serviceTile("💵", "البيع المباشر", "بيع سريع", v -> showDirectSale()), serviceCellLp());
+        row1.addView(serviceTile("🎫", "الفئات والكروت", "مخزون وإدارة", v -> showCategories()), serviceCellLp());
         row1.addView(serviceTile("📒", "دفتر الحسابات", "زبائن وديون", v -> showSmartLedger()), serviceCellLp());
-        row1.addView(serviceTile("▦", "المخزون", "الفئات والكروت", v -> showCategories()), serviceCellLp());
 
         LinearLayout row2 = dashboardServiceRow();
-        row2.addView(serviceTile("◷", "السجلات", "عمليات فقط", v -> showLogs()), serviceCellLp());
-        row2.addView(serviceTile("🚨", "عمليات المراجعة", "تنبيهات معلقة", v -> { reviewFocusLogId = ""; showLogs(); }), serviceCellLp());
-        row2.addView(serviceTile("📄", "التقارير", "PDF وإجماليات", v -> showLogs()), serviceCellLp());
-
-        LinearLayout row3 = dashboardServiceRow();
-        row3.addView(serviceTile("🏪", "نقاط البيع", "دفعات محمية", v -> showPosOutlets()), serviceCellLp());
-        row3.addView(serviceTile("✉", "الرسائل", "تعديل النصوص", v -> showMessageTemplates()), serviceCellLp());
-        row3.addView(serviceTile("⚙", "الإعدادات", "تحكم كامل", v -> showSettings()), serviceCellLp());
+        row2.addView(serviceTile("📈", "السجلات", "عمليات وتقارير", v -> showLogs()), serviceCellLp());
+        row2.addView(serviceTile("🏪", "نقاط البيع", "دفعات محمية", v -> showPosOutlets()), serviceCellLp());
+        row2.addView(serviceTile("⚙", "إدارة الاختصارات", "تخصيص الواجهة", v -> showUiControlPanel()), serviceCellLp());
 
         grid.addView(row1);
         grid.addView(row2);
-        grid.addView(row3);
         return grid;
     }
 
@@ -1713,7 +1762,7 @@ public class MainActivity extends Activity {
         applyNeonPress(box);
         if (Build.VERSION.SDK_INT >= 21) box.setElevation(title.contains("بيع") ? dp(9) : dp(4));
 
-        TextView i = tv(icon, 25, accent, true);
+        TextView i = tv(icon, 27, accent, true);
         i.setGravity(Gravity.CENTER);
         i.setPadding(0, dp(7), 0, dp(7));
         i.setBackground(round(Color.argb(34, Color.red(accent), Color.green(accent), Color.blue(accent)), dp(38), accent, dp(1)));
@@ -1760,7 +1809,6 @@ public class MainActivity extends Activity {
                 showHome();
             }), new LinearLayout.LayoutParams(-1, dp(48)));
         }
-        box.addView(action("فتح السجل كاملًا", card2, text, v -> showLogs()), new LinearLayout.LayoutParams(-1, dp(46)));
         return box;
     }
 
@@ -1875,7 +1923,16 @@ public class MainActivity extends Activity {
             if (available <= 0) head.addView(badge("نفدت", red));
             else if (available < 10) head.addView(lowStockCornerBadge(available));
             box.addView(head);
-            box.addView(small("الحالة: " + (c.active ? "مفعلة" : "موقفة") + "\nالمتاح: " + available + " | المباع: " + AppStore.soldCount(this, c.amount)));
+            box.addView(small("الحالة: " + (c.active ? "مفعلة" : "موقفة")
+                    + "\nالمتاح: " + available + " | المباع: " + AppStore.soldCount(this, c.amount)
+                    + "\nترتيب البيع: " + AppStore.cardSaleOrderLabelForAmount(this, c.amount)));
+            LinearLayout order = new LinearLayout(this);
+            order.setOrientation(LinearLayout.HORIZONTAL);
+            order.setLayoutDirection(View.LAYOUT_DIRECTION_RTL);
+            boolean newestForCat = AppStore.isCardSaleNewestFirstForAmount(this, c.amount);
+            order.addView(action("الأقدم", newestForCat ? card2 : green, newestForCat ? text : Color.rgb(3,22,12), v -> { AppStore.setCardSaleOrderForAmount(this, c.amount, false); toast("تم ضبط فئة " + c.amount + " على الأقدم أولًا"); showCategories(); }), new LinearLayout.LayoutParams(0, dp(44), 1));
+            order.addView(action("الأحدث", newestForCat ? gold : card2, newestForCat ? Color.rgb(35,24,8) : text, v -> { AppStore.setCardSaleOrderForAmount(this, c.amount, true); toast("تم ضبط فئة " + c.amount + " على الأحدث أولًا"); showCategories(); }), new LinearLayout.LayoutParams(0, dp(44), 1));
+            box.addView(order);
 
             LinearLayout actions = new LinearLayout(this);
             actions.setOrientation(LinearLayout.HORIZONTAL);
@@ -2554,7 +2611,7 @@ public class MainActivity extends Activity {
     }
 
     private LinearLayout.LayoutParams saleOptionLp() {
-        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0, dp(66), 1);
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0, dp(53), 1);
         lp.setMargins(dp(3), dp(4), dp(3), dp(4));
         return lp;
     }
@@ -2563,9 +2620,9 @@ public class MainActivity extends Activity {
         CheckBox cb = new CheckBox(this);
         cb.setAllCaps(false);
         cb.setGravity(Gravity.CENTER);
-        cb.setTextSize(12);
+        cb.setTextSize(10);
         cb.setTypeface(appTypeface(true));
-        cb.setPadding(dp(3), dp(3), dp(3), dp(3));
+        cb.setPadding(dp(2), dp(2), dp(2), dp(2));
         if (Build.VERSION.SDK_INT >= 21) cb.setButtonTintList(android.content.res.ColorStateList.valueOf(accentColor));
         cb.setOnCheckedChangeListener((buttonView, isChecked) -> styleSaleIconCheckBox(cb, icon, label, isChecked, accentColor));
         cb.setChecked(checked);
@@ -2576,7 +2633,7 @@ public class MainActivity extends Activity {
     }
 
     private void styleSaleIconCheckBox(CheckBox cb, String icon, String label, boolean checked, int accentColor) {
-        cb.setText(icon + "\n" + label + (checked ? "  ✓" : ""));
+        cb.setText(icon + "\n" + label + (checked ? " ✓" : ""));
         cb.setTextColor(checked ? Color.WHITE : muted);
         int bgColor = checked ? Color.argb(58, Color.red(accentColor), Color.green(accentColor), Color.blue(accentColor)) : Color.rgb(10, 15, 31);
         int stroke = checked ? accentColor : Color.rgb(61, 73, 112);
@@ -3649,14 +3706,8 @@ public class MainActivity extends Activity {
 
         LinearLayout saleOrder = cardBox();
         saleOrder.addView(tv("طريقة إخراج الكروت", 17, text, true));
-        saleOrder.addView(small("التحكم في ترتيب بيع الكروت من المخزون. الافتراضي: الأقدم أولًا، ويمكن اختيار الأحدث أولًا لترويج دفعة جديدة."));
-        saleOrder.addView(small("الوضع الحالي: " + AppStore.cardSaleOrderLabel(this)));
-        LinearLayout orderRow = new LinearLayout(this);
-        orderRow.setOrientation(LinearLayout.HORIZONTAL);
-        orderRow.setLayoutDirection(View.LAYOUT_DIRECTION_RTL);
-        orderRow.addView(action("الأقدم أولًا", AppStore.isCardSaleNewestFirst(this) ? card2 : green, AppStore.isCardSaleNewestFirst(this) ? text : Color.rgb(3,22,12), v -> { AppStore.setCardSaleOrder(this, false); toast("تم اختيار البيع من الأقدم أولًا"); showSettings(); }), new LinearLayout.LayoutParams(0, dp(52), 1));
-        orderRow.addView(action("الأحدث أولًا", AppStore.isCardSaleNewestFirst(this) ? gold : card2, AppStore.isCardSaleNewestFirst(this) ? Color.rgb(35,24,8) : text, v -> { AppStore.setCardSaleOrder(this, true); toast("تم اختيار البيع من الدفعة الأحدث أولًا"); showSettings(); }), new LinearLayout.LayoutParams(0, dp(52), 1));
-        saleOrder.addView(orderRow);
+        saleOrder.addView(small("أصبح ترتيب بيع الكروت قابلًا للتحكم لكل باقة على حدة من إدارة الفئات: الأقدم أولًا أو الأحدث أولًا."));
+        saleOrder.addView(action("فتح إدارة الفئات", gold, Color.rgb(35,24,8), v -> showCategories()));
         content.addView(saleOrder);
 
         LinearLayout backupRestore = cardBox();

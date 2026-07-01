@@ -54,6 +54,7 @@ class AppStore {
     private static final String KEY_LAST_AUTO_BACKUP_AT = "last_auto_backup_at";
     private static final String KEY_CARD_PRIVACY_ENABLED = "card_privacy_enabled";
     private static final String KEY_CARD_SALE_NEWEST_FIRST = "card_sale_newest_first_v143";
+    private static final String KEY_CARD_SALE_ORDER_BY_AMOUNT_PREFIX = "card_sale_newest_first_amount_";
     private static final String KEY_TRUSTED = "trusted_contacts";
     private static final String KEY_TRUSTED_CREDIT_AGENTS = "trusted_credit_agents";
     private static final String KEY_POS_OUTLETS = "pos_outlets";
@@ -449,12 +450,30 @@ class AppStore {
         prefs(c).edit().putBoolean(KEY_CARD_SALE_NEWEST_FIRST, newestFirst).apply();
     }
 
+    static boolean isCardSaleNewestFirstForAmount(Context c, int amount) {
+        String key = KEY_CARD_SALE_ORDER_BY_AMOUNT_PREFIX + amount;
+        if (prefs(c).contains(key)) return prefs(c).getBoolean(key, false);
+        return isCardSaleNewestFirst(c);
+    }
+
+    static void setCardSaleOrderForAmount(Context c, int amount, boolean newestFirst) {
+        prefs(c).edit().putBoolean(KEY_CARD_SALE_ORDER_BY_AMOUNT_PREFIX + amount, newestFirst).apply();
+    }
+
     static String cardSaleOrderLabel(Context c) {
         return isCardSaleNewestFirst(c) ? "الأحدث إدخالًا أولًا" : "الأقدم إدخالًا أولًا";
     }
 
+    static String cardSaleOrderLabelForAmount(Context c, int amount) {
+        return isCardSaleNewestFirstForAmount(c, amount) ? "الأحدث إدخالًا أولًا" : "الأقدم إدخالًا أولًا";
+    }
+
     private static String cardSaleSqlOrder(Context c) {
         return isCardSaleNewestFirst(c) ? "rowid DESC" : "rowid ASC";
+    }
+
+    private static String cardSaleSqlOrder(Context c, int amount) {
+        return isCardSaleNewestFirstForAmount(c, amount) ? "rowid DESC" : "rowid ASC";
     }
 
     static SharedPreferences prefs(Context c) {
@@ -2143,7 +2162,7 @@ class AppStore {
                 db = cardDb(c);
                 cur = db.query("cards", null,
                         "amount=? AND sold=0 AND (source IS NULL OR source NOT LIKE 'reward_stock%')",
-                        new String[]{String.valueOf(amount)}, null, null, cardSaleSqlOrder(c), "1");
+                        new String[]{String.valueOf(amount)}, null, null, cardSaleSqlOrder(c, amount), "1");
                 if (!cur.moveToFirst()) {
                     if (!prefs(c).getBoolean(KEY_CARDS_DB_READY, false) && hasLegacyCardsPrefs(c)) {
                         return takeAvailableCardLegacyPrefs(c, amount, buyerPhone);
@@ -2233,7 +2252,7 @@ class AppStore {
                 for (int amount : amounts) {
                     cur = db.query("cards", null,
                             "amount=? AND sold=0 AND (source IS NULL OR source NOT LIKE 'reward_stock%')",
-                            new String[]{String.valueOf(amount)}, null, null, cardSaleSqlOrder(c), "10");
+                            new String[]{String.valueOf(amount)}, null, null, cardSaleSqlOrder(c, amount), "10");
                     CardItem found = null;
                     while (cur.moveToNext()) {
                         CardItem tmp = cardFromCursor(cur);
@@ -4202,7 +4221,7 @@ class AppStore {
             try {
                 cur = db.query("cards", null,
                         "amount=? AND sold=0 AND source LIKE 'reward_stock%'",
-                        new String[]{String.valueOf(amount)}, null, null, cardSaleSqlOrder(c), "1");
+                        new String[]{String.valueOf(amount)}, null, null, cardSaleSqlOrder(c, amount), "1");
                 if (!cur.moveToFirst()) return null;
                 CardItem selected = cardFromCursor(cur);
                 String when = now();
