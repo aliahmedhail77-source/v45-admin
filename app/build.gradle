@@ -10,8 +10,8 @@ android {
         applicationId 'com.fourunet.onlineadmin.stable'
         minSdk 23
         targetSdk 34
-        versionCode 72
-        versionName '45.0-stage14.7.7-quick-ux-wallet-cleanup' 
+        versionCode 73
+        versionName '45.0-stage14.7.8-ledger-conditions-reward-points-only' 
     }
 
     signingConfigs {

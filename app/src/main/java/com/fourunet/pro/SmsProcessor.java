@@ -305,7 +305,32 @@ class SmsProcessor {
                     AppStore.performAutoBackupIfDue(context, "سداد دفتر محاسبي");
                     return;
                 }
-                messageNote = messageNote + "\nالحساب في الدفتر مضبوط آلي كامل ويسمح بإرسال باقة؛ سيتم إرسال الكرت لنفس رقم الدفع: " + receiver;
+                if (AppStore.hasActiveCategoryAmount(context, payment.amount)) {
+                    String equalPolicy = AppStore.getLedgerEqualCardPolicy(context);
+                    if (AppStore.LEDGER_EQUAL_POLICY_SETTLE_FIRST.equals(equalPolicy)) {
+                        int debtBefore = debtor.debt;
+                        int creditBefore = debtor.creditBalance;
+                        String method = friendlyPaymentMethod(payment.provider, sender, body);
+                        LedgerCustomer updated = AppStore.applyLedgerPaymentByPhone(context, receiver, payment.amount, method,
+                                "سداد حسب شرط الدفتر: السداد أولًا عند وصول مبلغ يساوي فئة كرت. المبلغ: " + payment.amount + " ر.ي", method);
+                        String msg = AppStore.buildLedgerPaymentMessage(context, updated, payment.amount, debtBefore, creditBefore);
+                        String logId = addLog(context, payment.provider, sender, payment.customerName, receiver, payment.amount,
+                                "جاري إرسال SMS", messageNote + "\nشرط الدفتر الحالي: السداد أولًا عند تعارض مبلغ يساوي كرت مع مديونية/رصيد.", "");
+                        sendSmsWithTracking(context, receiver, msg, logId, payment.amount, "", false,
+                                "تم إرسال رسالة السداد للزبون",
+                                "تم تسجيل السداد لكن فشل إرسال SMS؛ راجع كشف الحساب");
+                        AppStore.performAutoBackupIfDue(context, "سداد دفتر محاسبي - السداد أولًا");
+                        return;
+                    }
+                    if (AppStore.LEDGER_EQUAL_POLICY_REVIEW.equals(equalPolicy)) {
+                        String pendingLogId = addLog(context, payment.provider, sender, payment.customerName, receiver, payment.amount,
+                                "مراجعة: تعارض مبلغ مع كرت", messageNote + "\nالمبلغ يساوي فئة كرت موجودة، والحساب في الدفتر قد يكون عليه مديونية/رصيد. شرط الدفتر مضبوط على المراجعة عند التعارض؛ لم يتم خصم دين ولم يتم إرسال كرت.", "");
+                        NotifyHelper.notifyExplicitDepositReview(context, pendingLogId, payment.amount, payment.provider, payment.customerName, "تعارض مبلغ كرت مع الدفتر");
+                        AppStore.performAutoBackupIfDue(context, "محفظة - مراجعة تعارض دفتر");
+                        return;
+                    }
+                }
+                messageNote = messageNote + "\nالحساب في الدفتر مضبوط آلي كامل. سياسة مبلغ يساوي كرت: " + AppStore.ledgerEqualCardPolicyLabel(AppStore.getLedgerEqualCardPolicy(context)) + ". سيتم إرسال الكرت لنفس رقم الدفع إذا لم يوجد شرط أقوى يمنع ذلك: " + receiver;
             }
         }
 
@@ -315,6 +340,20 @@ class SmsProcessor {
                     messageNote + "\nهذا المصدر الموثوق مضبوط على سداد فقط. لم يتم حجز كرت ولم يتم إرسال كرت تلقائيًا. لتفعيل إرسال الكرت، فعّل خيار إرسال كرت تلقائيًا لهذا المصدر من إدارة المحافظ.", "");
             NotifyHelper.notifyExplicitDepositReview(context, pendingLogId, saleAmount, payment.provider, payment.customerName, "المصدر مضبوط على سداد فقط");
             AppStore.performAutoBackupIfDue(context, "محفظة - سداد فقط بدون إرسال كرت");
+            return;
+        }
+
+        if (AppStore.isRewardsEnabled(context) && AppStore.isRewardEnabledForAmount(context, saleAmount) && AppStore.isRewardPointsOnlyPackage(context, saleAmount)) {
+            RewardResult points = AppStore.applyPointsOnlyRewardPackage(context, receiver, payment.customerName, saleAmount);
+            String msg = "تم استلام " + saleAmount + " ريال.\nهذه باقة نقاط فقط، لا يتم إرسال كرت بيع ولا خصم كرت من المخزون.";
+            if (points != null && points.customerMessagePart != null && !points.customerMessagePart.trim().isEmpty()) msg += points.customerMessagePart;
+            String note = messageNote + "\nتم تنفيذ باقة نقاط فقط لفئة " + saleAmount + " ريال." + ((points == null || points.internalNote == null || points.internalNote.isEmpty()) ? "" : "\n" + points.internalNote);
+            String logId = addLog(context, payment.provider, sender, payment.customerName, receiver, saleAmount,
+                    "جاري إرسال SMS", note, "");
+            sendSmsWithTracking(context, receiver, msg + "\n" + AppStore.getMessageSignature(context), logId, saleAmount, "", false,
+                    "تم إرسال رسالة باقة النقاط فقط للزبون",
+                    "تمت إضافة النقاط لكن فشل إرسال SMS؛ راجع سجل النقاط");
+            AppStore.performAutoBackupIfDue(context, "محفظة - باقة نقاط فقط");
             return;
         }
 

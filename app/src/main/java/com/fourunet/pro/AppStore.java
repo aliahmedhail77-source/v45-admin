@@ -42,6 +42,7 @@ class AppStore {
     private static final String KEY_LEDGER_ENABLED = "ledger_enabled_v12";
     private static final String KEY_LEDGER_LOAN_ENABLED = "ledger_loan_enabled_v12";
     private static final String KEY_LEDGER_AUTO_SETTLE_ENABLED = "ledger_auto_settle_enabled_v12";
+    private static final String KEY_LEDGER_EQUAL_CARD_POLICY = "ledger_equal_card_policy_v1478";
     private static final String KEY_PROCESSED = "processed";
     private static final String KEY_EXACT_PAYMENT_TEXTS = "exact_payment_texts_v44";
     private static final String KEY_TRUSTED_REQUEST_LOCKS = "trusted_request_locks_v48";
@@ -122,6 +123,9 @@ class AppStore {
     static final String LOCK_METHOD_FINGERPRINT = "fingerprint";
     static final String LOCK_METHOD_PIN = "pin";
     static final String LOCK_METHOD_FINGERPRINT_PIN = "fingerprint_pin";
+    static final String LEDGER_EQUAL_POLICY_CARD_FIRST = "card_first";
+    static final String LEDGER_EQUAL_POLICY_SETTLE_FIRST = "settle_first";
+    static final String LEDGER_EQUAL_POLICY_REVIEW = "review";
 
     private static final String DEFAULT_NETWORK_NAME = "فور يو";
     private static final String DEFAULT_ADMIN_PHONE = "";
@@ -3288,6 +3292,35 @@ class AppStore {
                 .apply();
     }
 
+
+    static String getLedgerEqualCardPolicy(Context c) {
+        String value = prefs(c).getString(KEY_LEDGER_EQUAL_CARD_POLICY, LEDGER_EQUAL_POLICY_CARD_FIRST);
+        if (LEDGER_EQUAL_POLICY_SETTLE_FIRST.equals(value) || LEDGER_EQUAL_POLICY_REVIEW.equals(value) || LEDGER_EQUAL_POLICY_CARD_FIRST.equals(value)) return value;
+        return LEDGER_EQUAL_POLICY_CARD_FIRST;
+    }
+
+    static void setLedgerEqualCardPolicy(Context c, String policy) {
+        String value = policy == null ? "" : policy.trim();
+        if (!LEDGER_EQUAL_POLICY_SETTLE_FIRST.equals(value) && !LEDGER_EQUAL_POLICY_REVIEW.equals(value) && !LEDGER_EQUAL_POLICY_CARD_FIRST.equals(value)) value = LEDGER_EQUAL_POLICY_CARD_FIRST;
+        prefs(c).edit().putString(KEY_LEDGER_EQUAL_CARD_POLICY, value).apply();
+    }
+
+    static String ledgerEqualCardPolicyLabel(String policy) {
+        String value = policy == null ? "" : policy.trim();
+        if (LEDGER_EQUAL_POLICY_SETTLE_FIRST.equals(value)) return "السداد أولًا";
+        if (LEDGER_EQUAL_POLICY_REVIEW.equals(value)) return "مراجعة عند التعارض";
+        return "إرسال كرت إذا المبلغ يساوي فئة";
+    }
+
+    static boolean hasActiveCategoryAmount(Context c, int amount) {
+        int a = Math.max(0, amount);
+        if (a <= 0) return false;
+        for (CategoryItem item : loadCategories(c)) {
+            if (item != null && item.active && item.amount == a) return true;
+        }
+        return false;
+    }
+
     static ArrayList<LedgerCustomer> loadLedgerCustomers(Context c) {
         ArrayList<LedgerCustomer> list = new ArrayList<>();
         try {
@@ -4317,15 +4350,80 @@ class AppStore {
         } catch (Exception e) { return DEFAULT_REWARD_PERCENT; }
     }
 
-    static void setRewardCategorySetting(Context c, int amount, boolean enabled, int percent) {
+    static boolean isRewardPointsOnlyPackage(Context c, int amount) {
         try {
             JSONObject root = loadRewardCategorySettingsObject(c);
-            JSONObject o = new JSONObject();
+            JSONObject o = root.optJSONObject(String.valueOf(amount));
+            return o != null && o.optBoolean("pointsOnly", false);
+        } catch (Exception e) { return false; }
+    }
+
+    static int getRewardPointsOnlyFixedPoints(Context c, int amount) {
+        try {
+            JSONObject root = loadRewardCategorySettingsObject(c);
+            JSONObject o = root.optJSONObject(String.valueOf(amount));
+            if (o == null) return Math.max(0, amount);
+            return Math.max(0, o.optInt("pointsOnlyPoints", Math.max(0, amount)));
+        } catch (Exception e) { return Math.max(0, amount); }
+    }
+
+    static void setRewardCategorySetting(Context c, int amount, boolean enabled, int percent) {
+        setRewardCategorySetting(c, amount, enabled, percent, isRewardPointsOnlyPackage(c, amount), getRewardPointsOnlyFixedPoints(c, amount));
+    }
+
+    static void setRewardCategorySetting(Context c, int amount, boolean enabled, int percent, boolean pointsOnly, int pointsOnlyPoints) {
+        try {
+            JSONObject root = loadRewardCategorySettingsObject(c);
+            JSONObject old = root.optJSONObject(String.valueOf(amount));
+            JSONObject o = old == null ? new JSONObject() : old;
             o.put("enabled", enabled);
             o.put("percent", Math.max(0, Math.min(100, percent)));
+            o.put("pointsOnly", pointsOnly);
+            o.put("pointsOnlyPoints", Math.max(0, pointsOnlyPoints));
             root.put(String.valueOf(amount), o);
             prefs(c).edit().putString(KEY_REWARD_CATEGORY_SETTINGS, root.toString()).apply();
         } catch (Exception ignored) {}
+    }
+
+    static RewardResult applyPointsOnlyRewardPackage(Context c, String customerPhone, String customerName, int amount) {
+        if (!isRewardsEnabled(c)) return new RewardResult("", "نظام النقاط متوقف", "", 0, 0, false, false);
+        if (!isRewardEnabledForAmount(c, amount)) return new RewardResult("", "النقاط متوقفة لهذه الفئة", "", 0, 0, false, false);
+        if (!isRewardPointsOnlyPackage(c, amount)) return new RewardResult("", "هذه الفئة ليست باقة نقاط فقط", "", 0, 0, false, false);
+        String phone = normalizeRewardPhone(customerPhone);
+        if (phone.isEmpty()) return new RewardResult("", "لم يتم تسجيل نقاط: لا يوجد رقم زبون", "", 0, 0, false, false);
+        int added = getRewardPointsOnlyFixedPoints(c, amount);
+        if (added <= 0) return new RewardResult("", "باقة النقاط فقط مضبوطة على صفر", "", 0, 0, false, false);
+
+        ArrayList<CustomerReward> list = loadCustomerRewards(c);
+        CustomerReward cr = null;
+        for (CustomerReward item : list) {
+            if (phone.equals(normalizeRewardPhone(item.phone))) { cr = item; break; }
+        }
+        if (cr == null) {
+            cr = new CustomerReward(phone, customerName, 0, 0, 0, 0, 0, "");
+            list.add(cr);
+        }
+        if (customerName != null && !customerName.trim().isEmpty()) cr.name = customerName.trim();
+        if (isRewardExpiryEnabled(c) && shouldExpireCustomerReward(c, cr, System.currentTimeMillis())) {
+            int expiredPoints = cr.points;
+            cr.points = 0;
+            addLog(c, new OperationLog(UUID.randomUUID().toString(), "مصادرة نقاط", "rewards_expiry", cr.name, phone, expiredPoints,
+                    "تمت مصادرة نقاط", "تمت مصادرة " + expiredPoints + " نقطة بسبب عدم إجراء تعبئة خلال " + getRewardExpiryDays(c) + " أيام قبل احتساب باقة النقاط فقط. آخر تعبئة: " + cr.lastPurchaseAt, "", now()));
+        }
+        cr.points += added;
+        cr.totalPaid += Math.max(0, amount);
+        cr.totalEarnedPoints += added;
+        cr.lastPurchaseAt = now();
+        saveCustomerRewards(c, list);
+
+        int threshold = getRewardThreshold(c);
+        int rewardAmount = getRewardCardAmount(c);
+        int remain = Math.max(0, threshold - cr.points);
+        String msg = "\n" + buildRewardTemplate(c, getRewardPointsTemplate(c), added, cr.points, remain, threshold, rewardAmount, "");
+        String note = "باقة نقاط فقط: +" + added + " نقطة | الرصيد: " + cr.points + " | لا يتم إرسال كرت بيع ولا خصم كرت من المخزون";
+        addLog(c, new OperationLog(UUID.randomUUID().toString(), "باقة نقاط فقط", "rewards_points_only", cr.name, phone, amount,
+                "تمت إضافة نقاط فقط", note, "", now()));
+        return new RewardResult(msg, note, "", added, cr.points, false, false);
     }
 
     static ArrayList<CustomerReward> loadCustomerRewards(Context c) {

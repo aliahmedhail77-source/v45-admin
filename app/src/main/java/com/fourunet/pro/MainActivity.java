@@ -4241,8 +4241,35 @@ public class MainActivity extends Activity {
         settle.setTextColor(text); settle.setTextSize(16); settle.setTypeface(appTypeface(true));
         settle.setChecked(AppStore.isLedgerAutoSettleEnabled(this));
         box.addView(settle);
+
+        box.addView(separator());
+        box.addView(tv("عند وصول مبلغ يساوي فئة كرت", 17, text, true));
+        box.addView(small("هذا الشرط يعمل فقط إذا لم يوجد شرط أقوى قبله مثل: الحساب موقوف، سداد فقط، الإرسال التلقائي مغلق، أو مراجعة إلزامية. إذا كان الحساب آلي كامل، تستطيع تحديد ماذا يحدث عندما يساوي الإيداع سعر كرت موجود."));
+        String oldPolicy = AppStore.getLedgerEqualCardPolicy(this);
+        final String[] selectedPolicy = new String[]{oldPolicy};
+        LinearLayout policyCard = premiumOptionCard("إرسال كرت", "إذا المبلغ يساوي فئة كرت في النظام يتم إرسال الكرت لنفس رقم الدفع ولا يخصم من المديونية.", green, AppStore.LEDGER_EQUAL_POLICY_CARD_FIRST.equals(oldPolicy));
+        LinearLayout policySettle = premiumOptionCard("السداد أولًا", "يتم خصم المبلغ من الدين/الرصيد حتى لو كان يساوي فئة كرت.", gold, AppStore.LEDGER_EQUAL_POLICY_SETTLE_FIRST.equals(oldPolicy));
+        LinearLayout policyReview = premiumOptionCard("مراجعة عند التعارض", "إذا يصلح المبلغ ككرت وسداد في نفس الوقت، لا يتصرف النظام تلقائيًا.", red, AppStore.LEDGER_EQUAL_POLICY_REVIEW.equals(oldPolicy));
+        Runnable refreshPolicy = () -> {
+            setPremiumOptionState(policyCard, AppStore.LEDGER_EQUAL_POLICY_CARD_FIRST.equals(selectedPolicy[0]), green);
+            setPremiumOptionState(policySettle, AppStore.LEDGER_EQUAL_POLICY_SETTLE_FIRST.equals(selectedPolicy[0]), gold);
+            setPremiumOptionState(policyReview, AppStore.LEDGER_EQUAL_POLICY_REVIEW.equals(selectedPolicy[0]), red);
+            try {
+                ((TextView)policyCard.getChildAt(0)).setText((AppStore.LEDGER_EQUAL_POLICY_CARD_FIRST.equals(selectedPolicy[0]) ? "✓  " : "○  ") + "إرسال كرت");
+                ((TextView)policySettle.getChildAt(0)).setText((AppStore.LEDGER_EQUAL_POLICY_SETTLE_FIRST.equals(selectedPolicy[0]) ? "✓  " : "○  ") + "السداد أولًا");
+                ((TextView)policyReview.getChildAt(0)).setText((AppStore.LEDGER_EQUAL_POLICY_REVIEW.equals(selectedPolicy[0]) ? "✓  " : "○  ") + "مراجعة عند التعارض");
+            } catch(Exception ignored) {}
+        };
+        policyCard.setOnClickListener(v -> { selectedPolicy[0] = AppStore.LEDGER_EQUAL_POLICY_CARD_FIRST; refreshPolicy.run(); });
+        policySettle.setOnClickListener(v -> { selectedPolicy[0] = AppStore.LEDGER_EQUAL_POLICY_SETTLE_FIRST; refreshPolicy.run(); });
+        policyReview.setOnClickListener(v -> { selectedPolicy[0] = AppStore.LEDGER_EQUAL_POLICY_REVIEW; refreshPolicy.run(); });
+        box.addView(policyCard);
+        box.addView(policySettle);
+        box.addView(policyReview);
+
         box.addView(action("حفظ إعدادات الدفتر", gold, Color.rgb(35,24,8), v -> {
             AppStore.saveLedgerSettings(this, enabled.isChecked(), loans.isChecked(), settle.isChecked());
+            AppStore.setLedgerEqualCardPolicy(this, selectedPolicy[0]);
             toast("تم حفظ إعدادات الدفتر المحاسبي");
             showSmartLedger();
         }), new LinearLayout.LayoutParams(-1, dp(54)));
@@ -4285,8 +4312,11 @@ public class MainActivity extends Activity {
         EditText debt = premiumEdit("المتبقي عليه / المديونية", old == null ? "0" : String.valueOf(old.debt), InputType.TYPE_CLASS_NUMBER);
         EditText credit = premiumEdit("رصيد العميل الزائد", old == null ? "0" : String.valueOf(old.creditBalance), InputType.TYPE_CLASS_NUMBER);
         layout.addView(limit);
+        layout.addView(small("سقف السلفة: أعلى مبلغ يمكن أن يصل إليه دين العميل عند طلب كروت آجل. إذا كان صفرًا فلن يستطيع أخذ سلفة."));
         layout.addView(debt);
+        layout.addView(small("المديونية: المبلغ المتبقي على العميل الآن. أي سداد يدخل يخصم منها حسب شروط الحساب."));
         layout.addView(credit);
+        layout.addView(small("الرصيد الزائد: أي مبلغ دفعه العميل فوق دينه. يمكن استخدامه لاحقًا قبل تسجيل دين جديد."));
 
         layout.addView(separator());
         layout.addView(premiumDialogSection("ملاحظات داخلية"));
@@ -4320,8 +4350,11 @@ public class MainActivity extends Activity {
         optSettle.setOnClickListener(v -> { selectedMode[0] = LedgerCustomer.MODE_SETTLE_ONLY; refresh.run(); });
         optStop.setOnClickListener(v -> { selectedMode[0] = LedgerCustomer.MODE_STOPPED; refresh.run(); });
         layout.addView(optAuto);
+        layout.addView(small("آلي كامل: يسمح بالسداد، واستخدام الرصيد، وإرسال الكروت إذا لم يمنعه شرط أقوى في إعدادات الدفتر."));
         layout.addView(optSettle);
+        layout.addView(small("سداد فقط: أي إيداع لهذا العميل يخصم الدين أو يصبح رصيدًا. لا يتم صرف كرت تلقائيًا."));
         layout.addView(optStop);
+        layout.addView(small("موقوف: لا سداد تلقائي ولا إرسال كرت. أي عملية تحتاج مراجعة يدوية."));
 
         AlertDialog dialog = showPremiumDialog(old == null ? "إضافة زبون للدفتر" : "تعديل زبون", scrollableDialogView(layout), "حفظ", null, "إلغاء", neonCyan);
         dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(v -> {
@@ -5535,7 +5568,7 @@ public class MainActivity extends Activity {
             toast("تم حفظ إعدادات المكافآت");
             showRewardsSettings();
         }));
-        main.addView(small("كرت المكافأة لا يضيف نقاطًا. إذا لم تتوفر كروت فئة المكافأة، يسجل النظام العملية كمكافأة معلقة في السجل."));
+        main.addView(small("يمكنك من تبويب الفئات جعل فئة معينة باقة نقاط فقط؛ مثل 50 ريال تضيف 55 نقطة ولا ترسل كرت بيع ولا تخصم من المخزون. كرت المكافأة لا يضيف نقاطًا. إذا لم تتوفر كروت فئة المكافأة، يسجل النظام العملية كمكافأة معلقة في السجل."));
         pane.addView(main);
     }
 
@@ -5549,8 +5582,9 @@ public class MainActivity extends Activity {
             boolean catEnabled = AppStore.isRewardEnabledForAmount(this, cat.amount);
             int percent = AppStore.getRewardPercentForAmount(this, cat.amount);
             int samplePoints = (int)Math.floor((cat.amount * percent) / 100.0d);
+            String pointsOnlyInfo = AppStore.isRewardPointsOnlyPackage(this, cat.amount) ? ("\nباقة نقاط فقط: " + AppStore.getRewardPointsOnlyFixedPoints(this, cat.amount) + " نقطة، بدون إرسال كرت بيع") : "";
             box.addView(tv(cat.name + " - " + cat.amount + " ريال", 16, text, true));
-            box.addView(small("الحالة: " + (catEnabled ? "مفعلة" : "متوقفة") + " | النسبة: " + percent + "% | نقاط الكرت: " + samplePoints));
+            box.addView(small("الحالة: " + (catEnabled ? "مفعلة" : "متوقفة") + " | النسبة: " + percent + "% | نقاط الكرت: " + samplePoints + pointsOnlyInfo));
             LinearLayout row = new LinearLayout(this);
             row.setOrientation(LinearLayout.HORIZONTAL);
             row.addView(action(catEnabled ? "إيقاف" : "تشغيل", catEnabled ? Color.rgb(91, 41, 43) : Color.rgb(45, 88, 62), Color.WHITE, v -> {
@@ -5724,21 +5758,43 @@ public class MainActivity extends Activity {
         layout.setPadding(dp(8), dp(4), dp(8), dp(4));
         CheckBox enabled = new CheckBox(this);
         enabled.setText("النقاط مفعلة لهذه الفئة");
+        enabled.setTextColor(text);
         enabled.setChecked(AppStore.isRewardEnabledForAmount(this, cat.amount));
         EditText percent = new EditText(this);
-        percent.setHint("النسبة مثل 8");
+        percent.setHint("نسبة النقاط العادية مثل 8");
         percent.setInputType(InputType.TYPE_CLASS_NUMBER);
         percent.setGravity(Gravity.RIGHT);
         percent.setText(String.valueOf(AppStore.getRewardPercentForAmount(this, cat.amount)));
+        percent.setTextColor(text);
+        percent.setHintTextColor(muted);
+
+        CheckBox pointsOnly = new CheckBox(this);
+        pointsOnly.setText("هذه الفئة باقة نقاط فقط ولا ترسل كرت بيع");
+        pointsOnly.setTextColor(text);
+        pointsOnly.setChecked(AppStore.isRewardPointsOnlyPackage(this, cat.amount));
+        EditText fixedPoints = new EditText(this);
+        fixedPoints.setHint("عدد النقاط الثابتة، مثال 55");
+        fixedPoints.setInputType(InputType.TYPE_CLASS_NUMBER);
+        fixedPoints.setGravity(Gravity.RIGHT);
+        fixedPoints.setText(String.valueOf(AppStore.getRewardPointsOnlyFixedPoints(this, cat.amount)));
+        fixedPoints.setTextColor(text);
+        fixedPoints.setHintTextColor(muted);
+
         layout.addView(enabled);
+        layout.addView(small("النقاط العادية تُحسب كنسبة من قيمة البيع عندما يتم إرسال كرت عادي."));
         layout.addView(percent);
+        layout.addView(separator());
+        layout.addView(pointsOnly);
+        layout.addView(small("مثال: فعّلها لفئة 50 واجعل النقاط 55؛ عند إيداع 50 من محفظة موثوقة يحصل العميل على 55 نقطة فقط، ولا يُخصم كرت من المخزون."));
+        layout.addView(fixedPoints);
         new AlertDialog.Builder(this)
                 .setTitle("نقاط فئة " + cat.amount + " ريال")
                 .setView(layout)
                 .setPositiveButton("حفظ", (d,w) -> {
                     int p = safeInt(percent.getText().toString(), 8);
-                    AppStore.setRewardCategorySetting(this, cat.amount, enabled.isChecked(), p);
-                    toast("تم حفظ نسبة الفئة");
+                    int fp = safeInt(fixedPoints.getText().toString(), cat.amount);
+                    AppStore.setRewardCategorySetting(this, cat.amount, enabled.isChecked(), p, pointsOnly.isChecked(), fp);
+                    toast("تم حفظ إعدادات الفئة");
                     showRewardsSettings();
                 })
                 .setNegativeButton("إلغاء", null)
