@@ -1742,12 +1742,18 @@ class AppStore {
 
     static String normalizeCardCode(String value) {
         if (value == null) return "";
-        String v = value.trim();
+        String original = value.trim();
+        String lower = original.toLowerCase(Locale.US);
+        if (lower.contains("page") || original.contains("صفحة") || original.contains("رقم الصفحة")) return "";
+        String v = original;
         v = v.replace('٠','0').replace('١','1').replace('٢','2').replace('٣','3').replace('٤','4')
                 .replace('٥','5').replace('٦','6').replace('٧','7').replace('٨','8').replace('٩','9')
                 .replace('۰','0').replace('۱','1').replace('۲','2').replace('۳','3').replace('۴','4')
                 .replace('۵','5').replace('۶','6').replace('۷','7').replace('۸','8').replace('۹','9');
         v = v.replaceAll("\\s+", "");
+        if (v.length() < 3) return "";
+        if (!v.matches(".*[0-9A-Za-z].*")) return "";
+        if (v.matches("(?i)^(page|p|صفحة|no|number)[0-9]*$")) return "";
         return v;
     }
 
@@ -2809,7 +2815,7 @@ class AppStore {
                         o.optString("phone"),
                         o.optString("walletIdentity", ""),
                         o.optString("identityType", ""),
-                        o.optBoolean("autoCardAllowed", false),
+                        o.optBoolean("autoCardAllowed", true),
                         o.optBoolean("active", true)
                 ));
             }
@@ -2830,7 +2836,7 @@ class AppStore {
                 o.put("phone", contact.phone);
                 o.put("walletIdentity", contact.walletIdentity == null ? "" : contact.walletIdentity);
                 o.put("identityType", contact.identityType == null ? "" : contact.identityType);
-                o.put("autoCardAllowed", contact.autoCardAllowed);
+                o.put("autoCardAllowed", true);
                 o.put("active", contact.active);
                 arr.put(o);
             }
@@ -2908,7 +2914,7 @@ class AppStore {
         if (wallet.isEmpty()) return "اكتب اسم المحفظة";
         if (cleanName.isEmpty()) return "اكتب الاسم كما يظهر في رسالة المحفظة";
         if (triple.isEmpty()) return "اكتب الاسم الثلاثي على الأقل كما يظهر في الرسالة";
-        if (normalizedPhones.isEmpty()) return "أضف رقمًا موثوقًا واحدًا على الأقل يبدأ بـ 7. يمكن إضافة أكثر من رقم مفصول بفاصلة.";
+        if (normalizedPhones.isEmpty()) return "أضف رقمًا واحدًا مرتبطًا يبدأ بـ 7.";
         return "";
     }
 
@@ -2949,18 +2955,14 @@ class AppStore {
 
     static String normalizeTrustedPhoneList(String phones) {
         if (phones == null) return "";
-        java.util.LinkedHashSet<String> set = new java.util.LinkedHashSet<>();
+        // Stage 14.7.7: كل مصدر محفظة يرتبط برقم واحد فقط.
+        // إذا كتب المستخدم أكثر من رقم بالخطأ، نعتمد أول رقم صحيح ونترك الباقي.
         String[] parts = phones.split("[,،\n;؛ ]+");
         for (String part : parts) {
             String clean = normalizeLocalPhone(part);
-            if (isValidLocalMobile(clean)) set.add(clean);
+            if (isValidLocalMobile(clean)) return clean;
         }
-        StringBuilder sb = new StringBuilder();
-        for (String ph : set) {
-            if (sb.length() > 0) sb.append(",");
-            sb.append(ph);
-        }
-        return sb.toString();
+        return "";
     }
 
     static boolean trustedContactHasPhone(TrustedContact contact, String phone) {
@@ -3148,12 +3150,12 @@ class AppStore {
             for (TrustedContact contact : candidates) {
                 if (trustedContactHasPhone(contact, msgPhone)) {
                     return new WalletIdentityResolution(true, contact, msgPhone, contact.fullName,
-                            "تم الاعتماد لأن رقم الرسالة موجود ضمن أرقام الحساب الموثوق: " + msgPhone + ". سيتم التعامل مع نفس الرقم ولا يعتمد الاسم للربط.", contact.autoCardAllowed);
+                            "تم الاعتماد لأن رقم الرسالة موجود ضمن أرقام الحساب الموثوق: " + msgPhone + ". سيتم التعامل مع نفس الرقم ولا يعتمد الاسم للربط.", true);
                 }
                 String ci = normalizeWalletIdentity(contact.walletIdentity);
                 if (!ci.isEmpty() && msgPhone.equals(normalizeLocalPhone(ci))) {
                     return new WalletIdentityResolution(true, contact, msgPhone, contact.fullName,
-                            "تم الاعتماد بتطابق رقم الدفع المحفوظ مع رقم الرسالة: " + msgPhone + ". الإرسال لنفس رقم الرسالة.", contact.autoCardAllowed);
+                            "تم الاعتماد بتطابق رقم الدفع المحفوظ مع رقم الرسالة: " + msgPhone + ". الإرسال لنفس رقم الرسالة.", true);
                 }
             }
             return new WalletIdentityResolution(true, null, msgPhone, payment.customerName,
@@ -3167,7 +3169,7 @@ class AppStore {
                 if (!ci.isEmpty() && ci.equals(msgIdentity)) {
                     String receiver = primaryTrustedPhone(contact);
                     return new WalletIdentityResolution(true, contact, receiver, contact.fullName,
-                            "تم الاعتماد بتطابق رقم الحساب/هوية الدفع: " + msgIdentity, contact.autoCardAllowed);
+                            "تم الاعتماد بتطابق رقم الحساب/هوية الدفع: " + msgIdentity, true);
                 }
             }
             return new WalletIdentityResolution(false, null, "", payment.customerName,
@@ -3185,7 +3187,7 @@ class AppStore {
             TrustedContact contact = nameMatches.get(0);
             String receiver = primaryTrustedPhone(contact);
             return new WalletIdentityResolution(true, contact, receiver, contact.fullName,
-                    "تم الاعتماد بتطابق المحفظة + الاسم المحفوظ يدويًا، واستخدام الرقم الافتراضي للحساب.", contact.autoCardAllowed);
+                    "تم الاعتماد بتطابق المحفظة + الاسم المحفوظ يدويًا، واستخدام الرقم الافتراضي للحساب.", true);
         }
         if (nameMatches.size() > 1) {
             return new WalletIdentityResolution(false, null, "", payment.customerName,

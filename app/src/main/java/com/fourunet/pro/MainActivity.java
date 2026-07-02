@@ -85,6 +85,7 @@ public class MainActivity extends Activity {
     LinearLayout content;
     LinearLayout nav;
     String activeTab = "home";
+    String previousTab = "home";
     int selectedAmount = 50;
     int pendingReportAmount = -1;
     boolean pendingReportSummaryOnly = false;
@@ -200,10 +201,26 @@ public class MainActivity extends Activity {
     @Override
     public void onBackPressed() {
         if (appUnlocked && !"home".equals(activeTab)) {
-            showHome();
+            String target = previousTab == null || previousTab.trim().isEmpty() ? "home" : previousTab;
+            if (target.equals(activeTab)) target = "home";
+            previousTab = "home";
+            openTabByKey(target);
             return;
         }
         super.onBackPressed();
+    }
+
+    private void openTabByKey(String key) {
+        if ("direct".equals(key) || "direct_sale".equals(key)) showDirectSale();
+        else if ("import".equals(key)) showImport();
+        else if ("logs".equals(key)) showLogs();
+        else if ("ledger".equals(key)) showSmartLedger();
+        else if ("categories".equals(key)) showCategories();
+        else if ("settings".equals(key)) showSettings();
+        else if ("trusted_wallets".equals(key)) showTrustedContacts();
+        else if ("rewards".equals(key)) showRewardsSettings();
+        else if ("pos".equals(key)) showPosOutlets();
+        else showHome();
     }
 
     private void openMainAfterSecurity() {
@@ -920,8 +937,20 @@ public class MainActivity extends Activity {
         return b;
     }
 
-    private void setTab(String key) { activeTab = key; rebuildNav(); }
-    private void clear() { content.removeAllViews(); content.setPadding(dp(18), dp(18), dp(18), dp(18)); content.setBackgroundColor(currentBgColor()); }
+    private void setTab(String key) {
+        if (key != null && !key.equals(activeTab)) previousTab = activeTab;
+        activeTab = key;
+        rebuildNav();
+    }
+    private void clear() {
+        content.removeAllViews();
+        content.setPadding(dp(18), dp(18), dp(18), dp(18));
+        content.setBackgroundColor(currentBgColor());
+        try {
+            final View parent = (View) content.getParent();
+            if (parent instanceof ScrollView) parent.post(() -> ((ScrollView) parent).fullScroll(View.FOCUS_UP));
+        } catch (Exception ignored) {}
+    }
     private int dp(int v) { return (int)(v * getResources().getDisplayMetrics().density + 0.5f); }
 
     private GradientDrawable round(int color, int radius, int strokeColor, int strokeWidth) {
@@ -2667,7 +2696,9 @@ public class MainActivity extends Activity {
                     saleOnCredit
             );
         });
-        LinearLayout.LayoutParams primaryLp = new LinearLayout.LayoutParams(-1, dp(62));
+        primary.setTextSize(24);
+        primary.setTypeface(appTypeface(true));
+        LinearLayout.LayoutParams primaryLp = new LinearLayout.LayoutParams(-1, dp(68));
         primaryLp.setMargins(0, dp(14), 0, dp(4));
         form.addView(primary, primaryLp);
 
@@ -2875,17 +2906,6 @@ public class MainActivity extends Activity {
             logs = ordered;
         }
 
-        LinearLayout perf = cardBox();
-        perf.addView(tv("عرض السجلات", 16, text, true));
-        perf.addView(small("المعروض الآن: " + logs.size() + " من " + totalLogs + " سجل مفيد. تم إخفاء رسائل الطابور والقراءة الداخلية غير المتعلقة بالسداد أو البيع."));
-        if (totalLogs > logs.size()) {
-            perf.addView(action("تحميل " + AppStore.performanceLogPageSize() + " سجل آخر", card2, text, v -> {
-                logsVisibleLimit += AppStore.performanceLogPageSize();
-                showLogs();
-            }));
-        }
-        content.addView(perf);
-
         for (OperationLog log : logs) {
             boolean focused = reviewFocusLogId != null && reviewFocusLogId.equals(log.id);
             boolean pendingAlert = isPendingAlertStatus(log);
@@ -2920,6 +2940,19 @@ public class MainActivity extends Activity {
             box.addView(action("حذف إشعار السداد", Color.rgb(82,30,42), Color.WHITE, v -> confirmDeleteLog(log)));
             content.addView(box);
         }
+
+        LinearLayout moreBox = cardBox();
+        moreBox.addView(tv("عرض المزيد", 16, text, true));
+        moreBox.addView(small("المعروض الآن: " + logs.size() + " من " + totalLogs + " سجل مفيد."));
+        if (totalLogs > logs.size()) {
+            moreBox.addView(action("تحميل " + AppStore.performanceLogPageSize() + " سجل آخر", card2, text, v -> {
+                logsVisibleLimit += AppStore.performanceLogPageSize();
+                showLogs();
+            }), new LinearLayout.LayoutParams(-1, dp(52)));
+        } else {
+            moreBox.addView(badge("تم عرض كل السجلات الظاهرة", green));
+        }
+        content.addView(moreBox);
     }
 
 
@@ -4337,28 +4370,35 @@ public class MainActivity extends Activity {
         layout.setPadding(dp(14), dp(10), dp(14), dp(8));
         layout.setBackground(round(Color.rgb(11, 15, 31), dp(24), neonCyan, dp(1)));
 
-        layout.addView(premiumDialogSection("بحث عميل"));
-        EditText query = premiumEdit("اكتب رقم العميل أو اسمه", "", InputType.TYPE_CLASS_TEXT);
+        layout.addView(premiumDialogSection("بحث عميل تلقائي"));
+        EditText query = premiumEdit("اكتب جزءًا من رقم العميل أو اسمه", "", InputType.TYPE_CLASS_TEXT);
         layout.addView(query);
-        TextView result = messagePreviewText("اكتب رقم العميل أو الاسم ثم اضغط بحث. يبحث أيضًا في جزء من الاسم أو الرقم.");
+        TextView result = messagePreviewText("أول ما تكتب رقمًا أو جزءًا من الاسم سيظهر الحساب هنا تلقائيًا بدون زر بحث.");
         layout.addView(result);
         final LedgerCustomer[] selected = new LedgerCustomer[]{null};
 
-        final AlertDialog[] holder = new AlertDialog[]{null};
-        Button search = action("🔎 بحث", neonCyan, Color.rgb(2, 12, 22), v -> {
+        Runnable updateResult = () -> {
             LedgerCustomer c = findLedgerCustomerByQuery(query.getText().toString());
             selected[0] = c;
             if (c == null) {
-                result.setText("لم يتم العثور على عميل مطابق. إذا كتبت رقمًا صحيحًا تستطيع إضافته من زر إضافة قيد وسيُنشأ حسابه تلقائيًا عند الحفظ.");
+                result.setText("لا يوجد حساب مطابق حتى الآن. اكتب رقمًا أو اسمًا أو رقمًا موثوقًا تابعًا للعميل.");
             } else {
                 result.setText("العميل: " + c.name
                         + "\nالرقم: " + c.phone
                         + "\nالمتبقي عليه: " + c.debt + " ريال"
                         + "\nرصيده: " + c.creditBalance + " ريال"
-                        + "\nوضع التعامل: " + AppStore.ledgerModeLabel(c.effectiveMode()));
+                        + "\nوضع التعامل: " + AppStore.ledgerModeLabel(c.effectiveMode())
+                        + "\n\nيمكنك فتح كشف الحساب أو إضافة قيد مباشرة.");
             }
+        };
+        query.addTextChangedListener(new TextWatcher() {
+            public void beforeTextChanged(CharSequence s, int start, int count, int after) {}
+            public void onTextChanged(CharSequence s, int start, int before, int count) { updateResult.run(); }
+            public void afterTextChanged(Editable s) {}
         });
-        layout.addView(search, new LinearLayout.LayoutParams(-1, dp(52)));
+        updateResult.run();
+
+        final AlertDialog[] holder = new AlertDialog[]{null};
         layout.addView(action("➕ إضافة قيد لهذا العميل", gold, Color.rgb(35, 24, 8), v -> {
             LedgerCustomer c = selected[0] == null ? findLedgerCustomerByQuery(query.getText().toString()) : selected[0];
             try { if (holder[0] != null) holder[0].dismiss(); } catch(Exception ignored) {}
@@ -4369,7 +4409,7 @@ public class MainActivity extends Activity {
         holder[0] = dialog;
         dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(v -> {
             LedgerCustomer c = selected[0] == null ? findLedgerCustomerByQuery(query.getText().toString()) : selected[0];
-            if (c == null) { toast("ابحث عن العميل أولًا"); return; }
+            if (c == null) { toast("اكتب رقمًا أو اسمًا حتى يظهر العميل تلقائيًا"); return; }
             dialog.dismiss();
             showLedgerStatementDialog(c);
         });
@@ -4395,12 +4435,18 @@ public class MainActivity extends Activity {
         if (prefill != null) {
             customerInfo.setText("العميل: " + prefill.name + "\nالرقم: " + prefill.phone + "\nالدين الحالي: " + prefill.debt + " ريال\nالرصيد: " + prefill.creditBalance + " ريال");
         }
-        layout.addView(action("🔎 بحث العميل", card2, text, v -> {
+        Runnable updateLedgerCustomer = () -> {
             LedgerCustomer c = findLedgerCustomerByQuery(query.getText().toString());
             selected[0] = c;
-            if (c == null) customerInfo.setText("لم يتم العثور على عميل مطابق. إذا كان المدخل رقمًا صحيحًا يبدأ بـ 7، سيُنشأ حساب عند حفظ القيد.");
+            if (c == null) customerInfo.setText("لا يوجد حساب مطابق حتى الآن. إذا كان المدخل رقمًا صحيحًا يبدأ بـ 7، سيُنشأ حساب عند حفظ القيد.");
             else customerInfo.setText("العميل: " + c.name + "\nالرقم: " + c.phone + "\nالدين الحالي: " + c.debt + " ريال\nالرصيد: " + c.creditBalance + " ريال\nوضع التعامل: " + AppStore.ledgerModeLabel(c.effectiveMode()));
-        }), new LinearLayout.LayoutParams(-1, dp(50)));
+        };
+        query.addTextChangedListener(new TextWatcher() {
+            public void beforeTextChanged(CharSequence s, int start, int count, int after) {}
+            public void onTextChanged(CharSequence s, int start, int before, int count) { updateLedgerCustomer.run(); }
+            public void afterTextChanged(Editable s) {}
+        });
+        updateLedgerCustomer.run();
 
         layout.addView(separator());
         layout.addView(premiumDialogSection("نوع القيد"));
@@ -5727,8 +5773,8 @@ public class MainActivity extends Activity {
             box.addView(small("كلمات التعرف: " + (contact.senderKeywords == null || contact.senderKeywords.trim().isEmpty() ? contact.walletName : contact.senderKeywords)
                     + "\nالاسم الثلاثي: " + contact.tripleName
                     + "\nهوية الدفع: " + (contact.walletIdentity == null || contact.walletIdentity.trim().isEmpty() ? "اسم فقط" : contact.walletIdentity)
-                    + "\nالأرقام الموثوقة للحساب: " + contact.phone
-                    + "\nطريقة التعامل للحساب: " + (contact.autoCardAllowed ? "سداد + إرسال باقة لنفس رقم الدفع" : "سداد فقط")
+                    + "\nالرقم المرتبط: " + contact.phone
+                    + "\nطريقة التعامل: حسب شروط الدفتر المحاسبي الذكي"
                     + "\nالحالة: " + (contact.active ? "مفعّل" : "معطّل")));
             LinearLayout tools = new LinearLayout(this);
             tools.setOrientation(LinearLayout.HORIZONTAL);
@@ -5776,7 +5822,7 @@ public class MainActivity extends Activity {
         layout.addView(premiumDialogSection("الاسم الموثوق"));
         EditText name = premiumEdit("الاسم كما يظهر في رسالة المحفظة", "", InputType.TYPE_CLASS_TEXT);
         EditText identity = premiumEdit("رقم المحفظة / رقم الحساب إن وجد", "", InputType.TYPE_CLASS_TEXT);
-        EditText phone = premiumEdit("الأرقام الموثوقة: 7xxxxxxxx, 7xxxxxxxx", "", InputType.TYPE_CLASS_TEXT);
+        EditText phone = premiumEdit("رقم واحد مرتبط: 7xxxxxxxx", "", InputType.TYPE_CLASS_TEXT);
         layout.addView(name);
         layout.addView(identity);
         layout.addView(phone);
@@ -5787,7 +5833,7 @@ public class MainActivity extends Activity {
         autoCard.setTypeface(appTypeface(false));
         autoCard.setPadding(dp(4), dp(8), dp(4), dp(8));
         if (Build.VERSION.SDK_INT >= 21) autoCard.setButtonTintList(android.content.res.ColorStateList.valueOf(neonCyan));
-        layout.addView(autoCard);
+        // Stage 14.7.7: تم إلغاء خيار الإرسال من شاشة المحفظة؛ الإرسال يحدده الرقم وشروط الدفتر فقط.
 
         CheckBox addAllWallets = new CheckBox(this);
         addAllWallets.setText("إضافة نفس الاسم والرقم إلى جميع المحافظ الموجودة والافتراضية");
@@ -5795,9 +5841,9 @@ public class MainActivity extends Activity {
         addAllWallets.setTypeface(appTypeface(false));
         addAllWallets.setPadding(dp(4), dp(8), dp(4), dp(8));
         if (Build.VERSION.SDK_INT >= 21) addAllWallets.setButtonTintList(android.content.res.ColorStateList.valueOf(neonCyan));
-        if (old == null) layout.addView(addAllWallets);
+        // لم يعد خيار إضافة نفس الاسم لكل المحافظ ظاهرًا حتى لا تتكرر الروابط بالخطأ.
 
-        TextView hint = small("قاعدة الأمان: الرقم الموجود داخل رسالة المحفظة هو الأساس ويستلم الكرت هو نفسه. يمكن إضافة أكثر من رقم موثوق للحساب مفصولًا بفاصلة. الشروط تطبق على الحساب لا على رقم منفرد. إذا وصلت رسالة باسم فقط يستخدم الربط اليدوي المحفوظ.");
+        TextView hint = small("قاعدة الأمان: رقم الرسالة هو الأساس ويستلم الكرت هو نفسه. في تعريف المحفظة يُحفظ رقم واحد فقط. إذا وصلت رسالة باسم فقط أو رقم حساب قصير يستخدم الربط اليدوي المحفوظ. السماح أو المنع يكون من شروط الدفتر المحاسبي الذكي.");
         hint.setPadding(0, dp(8), 0, 0);
         layout.addView(hint);
 
@@ -5807,7 +5853,7 @@ public class MainActivity extends Activity {
             name.setText(old.fullName);
             identity.setText(old.walletIdentity);
             phone.setText(old.phone);
-            autoCard.setChecked(old.autoCardAllowed);
+            autoCard.setChecked(true);
         } else {
             wallet.setText("ONE Cash");
             keywords.setText("one cash, onecash, ون كاش");
@@ -5827,14 +5873,12 @@ public class MainActivity extends Activity {
             }
             boolean ok;
             if (old != null) {
-                ok = AppStore.updateTrustedContact(this, old.id, walletText, keywordText, nameText, phoneText, identityText, autoCard.isChecked(), true);
+                ok = AppStore.updateTrustedContact(this, old.id, walletText, keywordText, nameText, phoneText, identityText, true, true);
             } else {
-                ok = addAllWallets.isChecked()
-                        ? AppStore.addWalletContactToAllWallets(this, walletText, keywordText, nameText, phoneText)
-                        : AppStore.addWalletContact(this, walletText, keywordText, nameText, phoneText, identityText, autoCard.isChecked());
+                ok = AppStore.addWalletContact(this, walletText, keywordText, nameText, phoneText, identityText, true);
             }
             if (!ok) {
-                showNeonAlert("لم يتم الحفظ", "تأكد من الاسم الثلاثي وأضف رقمًا موثوقًا واحدًا على الأقل يبدأ بـ 7. يمكن إضافة أكثر من رقم مفصول بفاصلة.", red, true);
+                showNeonAlert("لم يتم الحفظ", "تأكد من الاسم الثلاثي وأضف رقمًا واحدًا مرتبطًا يبدأ بـ 7.", red, true);
                 return;
             }
             toast(old == null ? "تم حفظ المحفظة / الاسم الموثوق" : "تم تعديل المحفظة / الاسم الموثوق");
