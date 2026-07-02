@@ -2922,7 +2922,7 @@ public class MainActivity extends Activity {
                 box.addView(action("✅ تمت المراجعة", green, Color.rgb(12, 30, 18), v -> confirmMarkReviewed(log)));
             }
             if (canAddTrustedNameFromLog(log)) {
-                box.addView(action("➕ إضافة إلى المحافظ والبنوك", gold, Color.rgb(35, 24, 8), v -> showApproveTrustedNameDialog(log)));
+                box.addView(action("🔗 ربط وإرسال سريع", gold, Color.rgb(35, 24, 8), v -> showApproveTrustedNameDialog(log)));
             }
             if (log.customerPhone != null && !log.customerPhone.isEmpty()) {
                 LinearLayout tools = new LinearLayout(this);
@@ -2978,9 +2978,10 @@ public class MainActivity extends Activity {
         String st = log.status == null ? "" : log.status;
         String phone = log.customerPhone == null ? "" : log.customerPhone.trim();
         String name = log.customerName == null ? "" : log.customerName.trim();
+        if (name.isEmpty()) name = PaymentParser.extractNameForReview(log.message);
         String identity = PaymentParser.extractWalletIdentityForReview(log.message);
-        boolean pending = st.contains("معلق") || st.contains("إيداع صريح") || st.contains("يحتاج مراجعة") || st.contains("مراجعة");
-        return pending && phone.isEmpty() && log.amount > 0 && (!name.isEmpty() || !identity.trim().isEmpty());
+        boolean pending = st.contains("معلق") || st.contains("إيداع صريح") || st.contains("يحتاج مراجعة") || st.contains("مراجعة") || st.contains("غير منفذ");
+        return pending && phone.isEmpty() && log.amount > 0 && (!name.trim().isEmpty() || !identity.trim().isEmpty());
     }
 
     private void showApproveTrustedNameDialog(OperationLog log) {
@@ -2993,15 +2994,16 @@ public class MainActivity extends Activity {
         String sender = log.sender == null ? "" : log.sender.trim();
         String identityValue = PaymentParser.extractWalletIdentityForReview(log.message);
         String nameValue = log.customerName == null ? "" : log.customerName.trim();
+        if (nameValue.isEmpty()) nameValue = PaymentParser.extractNameForReview(log.message);
         if (nameValue.isEmpty() && !identityValue.trim().isEmpty()) nameValue = "مصدر دفع " + identityValue.trim();
 
-        TextView help = small("اختصار سريع من بطاقة المراجعة: أضف هذا المصدر إلى المحافظ والبنوك بدون إعادة كتابة بيانات الرسالة. اربطه برقم زبون صحيح، وسيُحفظ افتراضيًا كسداد فقط ما لم تفعل الإرسال التلقائي يدويًا.");
+        TextView help = small("ربط سريع من نفس الإشعار: أدخل رقم العميل فقط غالبًا، ثم اضغط حفظ الربط وإرسال الكرت. سيحفظ التطبيق المحفظة + الاسم أو رقم الحساب، وأي حوالة لاحقة من نفس المصدر سترسل آليًا.");
         EditText wallet = new EditText(this); wallet.setHint("اسم المحفظة"); wallet.setGravity(Gravity.RIGHT); wallet.setInputType(InputType.TYPE_CLASS_TEXT); wallet.setText(provider);
         EditText keywords = new EditText(this); keywords.setHint("كلمات التعرف"); keywords.setGravity(Gravity.RIGHT); keywords.setInputType(InputType.TYPE_CLASS_TEXT); keywords.setText(defaultKeywordsForProvider(provider, sender));
         EditText name = new EditText(this); name.setHint("الاسم كما ظهر في رسالة المحفظة"); name.setGravity(Gravity.RIGHT); name.setInputType(InputType.TYPE_CLASS_TEXT); name.setText(nameValue);
         EditText identity = new EditText(this); identity.setHint("رقم المحفظة / رقم الحساب / معرف الدفع"); identity.setGravity(Gravity.RIGHT); identity.setInputType(InputType.TYPE_CLASS_TEXT); identity.setText(identityValue);
         EditText phone = new EditText(this); phone.setHint("رقم الزبون: 7xxxxxxxx"); phone.setGravity(Gravity.RIGHT); phone.setInputType(InputType.TYPE_CLASS_PHONE);
-        CheckBox autoCard = new CheckBox(this); autoCard.setText("السماح بإرسال كرت تلقائيًا لهذا المصدر"); autoCard.setTextColor(text);
+        CheckBox autoCard = new CheckBox(this); autoCard.setText("السماح بالإرسال الآلي لهذا الاسم/الحساب مستقبلاً"); autoCard.setTextColor(text); autoCard.setChecked(true);
         layout.addView(help);
         layout.addView(wallet);
         layout.addView(keywords);
@@ -3011,10 +3013,10 @@ public class MainActivity extends Activity {
         layout.addView(autoCard);
 
         AlertDialog dialog = new AlertDialog.Builder(this)
-                .setTitle("إضافة إلى المحافظ والبنوك")
+                .setTitle("🔗 ربط سريع بالمحفظة")
                 .setView(layout)
                 .setPositiveButton("حفظ فقط", null)
-                .setNeutralButton("حفظ وإرسال كرت", null)
+                .setNeutralButton("حفظ الربط وإرسال الكرت", null)
                 .setNegativeButton("إلغاء", null)
                 .create();
         dialog.setOnShowListener(d -> {
@@ -3050,9 +3052,9 @@ public class MainActivity extends Activity {
             return;
         }
 
-        AppStore.addWalletContact(this, walletName, keywordText, fullName, cleanPhone, identityText, autoCard.isChecked());
+        AppStore.addWalletContact(this, walletName, keywordText, fullName, cleanPhone, identityText, sendNow || autoCard.isChecked());
         if (!sendNow) {
-            AppStore.updateLogDetails(this, log.id, fullName, "", "معلق: تمت إضافة الاسم بانتظار المراجعة", "تمت إضافة الاسم والرقم إلى نفس المحفظة فقط: " + walletName + " برقم: " + cleanPhone + ". لم يتم حجز كرت ولم يتم إرسال رسالة. اضغط تمت المراجعة بعد إكمال المعالجة لإيقاف الإشعار.", "");
+            AppStore.updateLogDetails(this, log.id, fullName, "", "معلق: تمت إضافة الاسم بانتظار المراجعة", "تم حفظ الربط في المحفظة: " + walletName + " برقم: " + cleanPhone + ". إذا فعلت الإرسال الآلي فسيعمل تلقائياً للعمليات القادمة. لم يتم حجز كرت الآن.", "");
             NotifyHelper.notifyExplicitDepositReview(this, log.id, log.amount, walletName, fullName, "تمت إضافة الاسم بانتظار المراجعة");
             toast("تم حفظ الاسم والرقم في نفس المحفظة، والإشعار باقٍ حتى المراجعة");
             dialog.dismiss();

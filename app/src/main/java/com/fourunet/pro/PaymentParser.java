@@ -412,6 +412,12 @@ class PaymentParser {
         p = parseOneCash(normalizedBody);
         if (p != null) return p;
 
+        p = parseKuraimi(normalizedBody);
+        if (p != null) return p;
+
+        p = parseFloosak(normalizedBody);
+        if (p != null) return p;
+
         p = parseFallback(sender, normalizedBody);
         if (p != null) return p;
 
@@ -430,15 +436,37 @@ class PaymentParser {
     }
 
     private static ParsedPayment parseJaib(String body) {
+        String b = normalizeArabicLetters(normalizeDigitsInText(body == null ? "" : body));
+
+        // النمط القديم: من الاسم-رقم جوال
         Pattern pattern = Pattern.compile("اضيف\\s+(\\d+(?:[\\.,]\\d+)?)\\s*ر\\.?ي.*?من\\s+(.+?)-(\\d+)");
-        Matcher m = pattern.matcher(body);
+        Matcher m = pattern.matcher(b);
         if (m.find()) {
             int amount = toIntAmount(m.group(1));
-            String name = m.group(2).trim();
+            String name = cleanName(m.group(2));
             String phone = normalizeLocalPhone(m.group(3));
             if (amount > 0 && hasValidLocalMobile(phone)) return new ParsedPayment("Jaib", amount, "", name, phone, "phone");
             if (amount > 0 && !name.isEmpty()) return new ParsedPayment("Jaib", amount, "", name, "", "name");
         }
+
+        // نمط جيب الجديد: من رقم حساب قصير
+        Pattern accountPattern = Pattern.compile("اضيف\\s+(\\d+(?:[\\.,]\\d+)?)\\s*ر\\.?ي.*?من\\s+([0-9]{4,20})(?:\\s|$)", Pattern.CASE_INSENSITIVE | Pattern.DOTALL);
+        Matcher ma = accountPattern.matcher(b);
+        if (ma.find()) {
+            int amount = toIntAmount(ma.group(1));
+            String account = ma.group(2).trim();
+            if (amount > 0 && !account.isEmpty()) return new ParsedPayment("Jaib", amount, "", "مصدر دفع " + account, account, "account");
+        }
+
+        // نمط جيب الجديد: من اسم فقط
+        Pattern namePattern = Pattern.compile("اضيف\\s+(\\d+(?:[\\.,]\\d+)?)\\s*ر\\.?ي.*?من\\s+(.+?)(?:\\n|رصيدك|الرصيد|$)", Pattern.CASE_INSENSITIVE | Pattern.DOTALL);
+        Matcher mn = namePattern.matcher(b);
+        if (mn.find()) {
+            int amount = toIntAmount(mn.group(1));
+            String name = cleanName(mn.group(2));
+            if (amount > 0 && !name.isEmpty()) return new ParsedPayment("Jaib", amount, "", name, "", "name");
+        }
+
         return null;
     }
 
@@ -458,6 +486,44 @@ class PaymentParser {
             int amount = toIntAmount(mf.group(1));
             String name = cleanName(mf.group(2));
             if (amount > 0 && !name.isEmpty()) return new ParsedPayment("ONE Cash", amount, "", name, "", "name");
+        }
+        return null;
+    }
+
+    private static ParsedPayment parseKuraimi(String body) {
+        String b = normalizeArabicLetters(normalizeDigitsInText(body == null ? "" : body));
+        Pattern p = Pattern.compile("(?:اودع|أودع)\\s*/?\\s*(.+?)\\s*لحسابك\\s*(\\d+(?:[\\.,]\\d+)?)\\s*(?:YER|YR|ريال|ر\\.?ي)", Pattern.CASE_INSENSITIVE | Pattern.DOTALL);
+        Matcher m = p.matcher(b);
+        if (m.find()) {
+            String name = cleanName(m.group(1));
+            int amount = toIntAmount(m.group(2));
+            if (amount > 0 && !name.isEmpty()) return new ParsedPayment("كريمي", amount, "", name, "", "name");
+        }
+        Pattern p2 = Pattern.compile("(?:اودع|أودع)\\s*/?\\s*(.+?)\\s*لحسابك.*?(\\d+(?:[\\.,]\\d+)?)\\s*(?:YER|YR|ريال|ر\\.?ي)", Pattern.CASE_INSENSITIVE | Pattern.DOTALL);
+        Matcher m2 = p2.matcher(b);
+        if (m2.find()) {
+            String name = cleanName(m2.group(1));
+            int amount = toIntAmount(m2.group(2));
+            if (amount > 0 && !name.isEmpty()) return new ParsedPayment("كريمي", amount, "", name, "", "name");
+        }
+        return null;
+    }
+
+    private static ParsedPayment parseFloosak(String body) {
+        String b = normalizeArabicLetters(normalizeDigitsInText(body == null ? "" : body));
+        Pattern p = Pattern.compile("استلمت\\s+حوال[هة]\\s+من\\s+(.+?)\\s+بمبلغ\\s+(\\d+(?:[\\.,]\\d+)?)\\s*(?:ريال|ر\\.?ي|YER|YR)", Pattern.CASE_INSENSITIVE | Pattern.DOTALL);
+        Matcher m = p.matcher(b);
+        if (m.find()) {
+            String name = cleanName(m.group(1));
+            int amount = toIntAmount(m.group(2));
+            if (amount > 0 && !name.isEmpty()) return new ParsedPayment("فلوسك", amount, "", name, "", "name");
+        }
+        Pattern p2 = Pattern.compile("استلمت\\s+حوال[هة]\\s+من\\s+(.+?)\\s+بمبلغ\\s+(\\d+(?:[\\.,]\\d+)?)", Pattern.CASE_INSENSITIVE | Pattern.DOTALL);
+        Matcher m2 = p2.matcher(b);
+        if (m2.find()) {
+            String name = cleanName(m2.group(1));
+            int amount = toIntAmount(m2.group(2));
+            if (amount > 0 && !name.isEmpty()) return new ParsedPayment("فلوسك", amount, "", name, "", "name");
         }
         return null;
     }
@@ -544,6 +610,13 @@ class PaymentParser {
         // رقم حساب / حساب / اكاونت / account
         Matcher account = Pattern.compile("(?:رقم\\s*الحساب|حساب|account|acc|acct)\\s*[:：#-]?\\s*([0-9]{4,20})", Pattern.CASE_INSENSITIVE).matcher(b);
         if (account.find()) return account.group(1).trim();
+
+        // بعض المحافظ مثل جيب ترسل رقم الحساب بعد كلمة "من" فقط: من 1272925
+        Matcher fromAccount = Pattern.compile("(?:من|from)\\s*[:：-]?\\s*([0-9]{4,20})(?:\\s|$)", Pattern.CASE_INSENSITIVE | Pattern.DOTALL).matcher(b);
+        String lastAccount = "";
+        while (fromAccount.find()) lastAccount = fromAccount.group(1).trim();
+        if (!lastAccount.isEmpty()) return lastAccount;
+
         return "";
     }
 
@@ -556,15 +629,20 @@ class PaymentParser {
 
     static String extractNameAfterFrom(String body) {
         if (body == null) return "";
-        String b = normalizeDigitsInText(body);
+        String b = normalizeArabicLetters(normalizeDigitsInText(body));
         Pattern[] patterns = new Pattern[]{
-                Pattern.compile("(?:من|From|from)\\s*[:：-]?\\s*(.+?)(?:\\n|رصيدك|الرصيد|المبلغ|رقم|هاتف|جوال|رسوم|عمولة|التاريخ|تاريخ|الوقت|وقت|$)", Pattern.CASE_INSENSITIVE | Pattern.DOTALL),
+                Pattern.compile("(?:اودع|أودع)\\s*/?\\s*(.+?)\\s*لحسابك", Pattern.CASE_INSENSITIVE | Pattern.DOTALL),
+                Pattern.compile("استلمت\\s+حوال[هة]\\s+من\\s+(.+?)\\s+بمبلغ", Pattern.CASE_INSENSITIVE | Pattern.DOTALL),
+                Pattern.compile("(?:من|From|from)\\s*[:：-]?\\s*(.+?)(?:\\n|رصيدك|الرصيد|بمبلغ|المبلغ|رقم|هاتف|جوال|رسوم|عمولة|التاريخ|تاريخ|الوقت|وقت|$)", Pattern.CASE_INSENSITIVE | Pattern.DOTALL),
                 Pattern.compile("(?:المرسل|مرسل|اسم\\s+المرسل|اسم\\s+العميل|العميل)\\s*[:：-]?\\s*(.+?)(?:\\n|رقم|هاتف|جوال|$)", Pattern.CASE_INSENSITIVE | Pattern.DOTALL),
-                Pattern.compile("(?:حوالة|حواله|ايداع|سداد|دفع).*?(?:من)\\s*[:：-]?\\s*(.+?)(?:\\n|رقم|هاتف|جوال|رصيد|$)", Pattern.CASE_INSENSITIVE | Pattern.DOTALL)
+                Pattern.compile("(?:حوالة|حواله|ايداع|سداد|دفع).*?(?:من)\\s*[:：-]?\\s*(.+?)(?:\\n|رقم|هاتف|جوال|رصيد|بمبلغ|$)", Pattern.CASE_INSENSITIVE | Pattern.DOTALL)
         };
         for (Pattern pattern : patterns) {
             Matcher m = pattern.matcher(b);
-            if (m.find()) return cleanName(m.group(1));
+            if (m.find()) {
+                String name = cleanName(m.group(1));
+                if (!name.isEmpty()) return name;
+            }
         }
         return "";
     }
