@@ -12,6 +12,12 @@ public class SmsStatusReceiver extends BroadcastReceiver {
     @Override
     public void onReceive(Context context, Intent intent) {
         if (intent == null) return;
+
+        if (SmsProcessor.ACTION_SMS_TIMEOUT.equals(intent.getAction())) {
+            handleSmsTimeout(context, intent);
+            return;
+        }
+
         String logId = intent.getStringExtra("logId");
         String phone = intent.getStringExtra("phone");
         int amount = intent.getIntExtra("amount", 0);
@@ -30,17 +36,52 @@ public class SmsStatusReceiver extends BroadcastReceiver {
         if (result == Activity.RESULT_OK) {
             // في الرسائل الطويلة ننتظر آخر جزء حتى لا نكرر الإشعارات.
             if (part >= total) {
-                if (trustedCreditAgentId != null && !trustedCreditAgentId.trim().isEmpty() && trustedCreditAmount > 0 && !noStock) {
-                    AppStore.addTrustedCreditUsage(context, trustedCreditAgentId, trustedCreditAmount);
+                OperationLog current = AppStore.findLog(context, logId);
+                String currentStatus = current == null || current.status == null ? "" : current.status;
+                if (!currentStatus.contains("فشل")) {
+                    if (trustedCreditAgentId != null && !trustedCreditAgentId.trim().isEmpty() && trustedCreditAmount > 0 && !noStock) {
+                        AppStore.addTrustedCreditUsage(context, trustedCreditAgentId, trustedCreditAmount);
+                    }
+                    SmsProcessor.clearSmsInFlight(context, logId);
+                    AppStore.updateLogStatus(context, logId, "تم إرسال SMS", successMsg == null ? "تم إرسال الرسالة للزبون" : successMsg);
+                    sendTrustedConfirmationIfNeeded(trustedNotifyPhone, trustedNotifyText);
+                    if (noStock) NotifyHelper.notifyNoStockSent(context, amount, phone);
+                    else NotifyHelper.notifyCardSold(context, amount, cardCode == null ? "" : cardCode, phone);
+                } else {
+                    SmsProcessor.clearSmsInFlight(context, logId);
                 }
-                AppStore.updateLogStatus(context, logId, "تم إرسال SMS", successMsg == null ? "تم إرسال الرسالة للزبون" : successMsg);
-                sendTrustedConfirmationIfNeeded(trustedNotifyPhone, trustedNotifyText);
-                if (noStock) NotifyHelper.notifyNoStockSent(context, amount, phone);
-                else NotifyHelper.notifyCardSold(context, amount, cardCode == null ? "" : cardCode, phone);
             }
         } else {
+            SmsProcessor.clearSmsInFlight(context, logId);
             String reason = smsFailureReason(result);
             AppStore.updateLogStatus(context, logId, "فشل إرسال SMS", (failMsg == null ? "فشل إرسال الرسالة" : failMsg) + "\nسبب النظام: " + reason);
+            if (noStock) NotifyHelper.notifyNoStockFailed(context, amount, phone);
+            else NotifyHelper.notifySendFailed(context, amount, cardCode == null ? "" : cardCode, phone);
+        }
+    }
+
+    private void handleSmsTimeout(Context context, Intent intent) {
+        String logId = intent.getStringExtra("logId");
+        String phone = intent.getStringExtra("phone");
+        int amount = intent.getIntExtra("amount", 0);
+        String cardCode = intent.getStringExtra("cardCode");
+        boolean noStock = intent.getBooleanExtra("noStock", false);
+
+        OperationLog log = AppStore.findLog(context, logId);
+        String status = log == null || log.status == null ? "" : log.status;
+
+        if (status.contains("تم إرسال SMS") || status.contains("فشل إرسال SMS")) {
+            SmsProcessor.clearSmsInFlight(context, logId);
+            return;
+        }
+
+        if (status.contains("جاري") || status.contains("تسليم طلب SMS") || status.trim().isEmpty()) {
+            SmsProcessor.clearSmsInFlight(context, logId);
+            AppStore.updateLogStatus(context, logId,
+                    "لم يتم تأكيد إرسال SMS",
+                    "تم تسليم الطلب للهاتف لكن لم يصل تأكيد Android خلال 20 ثانية.\n"
+                            + "قد تكون الرسالة خرجت وتأخر التأكيد، أو توجد مشكلة في الشريحة/الشبكة/صلاحية SMS.\n"
+                            + "لا يعيد التطبيق الإرسال تلقائياً حتى لا يتكرر الكرت للزبون. استخدم زر إعادة SMS فقط بعد التأكد.");
             if (noStock) NotifyHelper.notifyNoStockFailed(context, amount, phone);
             else NotifyHelper.notifySendFailed(context, amount, cardCode == null ? "" : cardCode, phone);
         }

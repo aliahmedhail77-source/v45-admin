@@ -1,8 +1,11 @@
 package com.fourunet.pro;
 
+import android.Manifest;
 import android.app.PendingIntent;
+import android.app.AlarmManager;
 import android.content.Context;
 import android.content.Intent;
+import android.content.pm.PackageManager;
 import android.telephony.SmsManager;
 
 import java.security.MessageDigest;
@@ -12,6 +15,9 @@ import java.util.UUID;
 
 class SmsProcessor {
     static final String ACTION_SMS_SENT = "com.fourunet.pro.SMS_SENT";
+    static final String ACTION_SMS_TIMEOUT = "com.fourunet.pro.SMS_SEND_TIMEOUT";
+    private static final String SMS_GUARD_PREF = "krtpro_sms_send_guard_v1479";
+    private static final long SMS_IN_FLIGHT_MS = 20000L;
     private static final Object SMS_QUEUE_LOCK = new Object();
 
 
@@ -708,9 +714,43 @@ class SmsProcessor {
     static boolean sendSmsWithTracking(Context context, String phone, String text, String logId, int amount, String cardCode, boolean noStock, String successMsg, String failMsg, String trustedCreditAgentId, int trustedCreditAmount, String trustedNotifyPhone, String trustedNotifyText) {
         try {
             String clean = cleanPhone(phone);
-            if (!isValidLocalMobile(clean)) return false;
+            if (!isValidLocalMobile(clean)) {
+                AppStore.updateLogStatus(context, logId, "فشل إرسال SMS", "رقم الزبون غير صحيح أو غير مكتمل: " + (phone == null ? "" : phone));
+                if (noStock) NotifyHelper.notifyNoStockFailed(context, amount, phone);
+                else NotifyHelper.notifySendFailed(context, amount, cardCode, phone);
+                return false;
+            }
+
+            if (!hasSendSmsPermission(context)) {
+                AppStore.updateLogStatus(context, logId, "فشل إرسال SMS", "صلاحية إرسال SMS غير مفعّلة للتطبيق. افتح إعدادات التطبيق ثم الأذونات ثم فعّل SMS.");
+                if (noStock) NotifyHelper.notifyNoStockFailed(context, amount, phone);
+                else NotifyHelper.notifySendFailed(context, amount, cardCode, phone);
+                return false;
+            }
+
+            String safeText = text == null ? "" : text;
+            if (safeText.trim().isEmpty()) {
+                AppStore.updateLogStatus(context, logId, "فشل إرسال SMS", "نص الرسالة فارغ؛ لم يتم إرسال SMS.");
+                if (noStock) NotifyHelper.notifyNoStockFailed(context, amount, phone);
+                else NotifyHelper.notifySendFailed(context, amount, cardCode, phone);
+                return false;
+            }
+
+            if (!markSmsInFlight(context, logId)) {
+                AppStore.appendLogMessage(context, logId, "تم تجاهل محاولة إرسال مكررة خلال 20 ثانية لحماية الزبون من تكرار الكرت أو تكرار الرسالة.");
+                return false;
+            }
+
             SmsManager sms = SmsManager.getDefault();
-            ArrayList<String> parts = sms.divideMessage(text == null ? "" : text);
+            ArrayList<String> parts = sms.divideMessage(safeText);
+            if (parts == null || parts.isEmpty()) {
+                clearSmsInFlight(context, logId);
+                AppStore.updateLogStatus(context, logId, "فشل إرسال SMS", "لم يستطع Android تقسيم الرسالة للإرسال.");
+                if (noStock) NotifyHelper.notifyNoStockFailed(context, amount, phone);
+                else NotifyHelper.notifySendFailed(context, amount, cardCode, phone);
+                return false;
+            }
+
             ArrayList<PendingIntent> sentIntents = new ArrayList<>();
             for (int i = 0; i < parts.size(); i++) {
                 Intent intent = new Intent(context, SmsStatusReceiver.class);
@@ -730,17 +770,88 @@ class SmsProcessor {
                 intent.putExtra("trustedNotifyText", trustedNotifyText == null ? "" : trustedNotifyText);
                 int flags = PendingIntent.FLAG_UPDATE_CURRENT;
                 if (android.os.Build.VERSION.SDK_INT >= 23) flags |= PendingIntent.FLAG_IMMUTABLE;
-                sentIntents.add(PendingIntent.getBroadcast(context, (logId + i).hashCode(), intent, flags));
+                sentIntents.add(PendingIntent.getBroadcast(context, (logId + "_" + i).hashCode(), intent, flags));
             }
+
             sms.sendMultipartTextMessage(clean, null, parts, sentIntents, null);
+
+            AppStore.updateLogStatus(context, logId,
+                    "تم تسليم طلب SMS للهاتف",
+                    "تم تسليم الرسالة إلى نظام Android فوراً بدون تأخير.\nننتظر تأكيد الشريحة خلال 20 ثانية.\nالأجزاء: " + parts.size() + "\nالرقم: " + clean);
+            scheduleSmsSendTimeout(context, logId, clean, amount, cardCode, noStock, failMsg);
             return true;
         } catch (Exception e) {
-            AppStore.updateLogStatus(context, logId, "فشل إرسال SMS", failMsg + "\nالسبب: " + e.getMessage());
+            clearSmsInFlight(context, logId);
+            AppStore.updateLogStatus(context, logId, "فشل إرسال SMS", (failMsg == null ? "فشل إرسال SMS" : failMsg) + "\nالسبب: " + e.getMessage());
             if (noStock) NotifyHelper.notifyNoStockFailed(context, amount, phone);
             else NotifyHelper.notifySendFailed(context, amount, cardCode, phone);
             return false;
         }
     }
+
+
+    private static boolean markSmsInFlight(Context context, String logId) {
+        try {
+            if (context == null || logId == null || logId.trim().isEmpty()) return true;
+            android.content.SharedPreferences prefs = context.getSharedPreferences(SMS_GUARD_PREF, Context.MODE_PRIVATE);
+            String key = "sms_" + logId;
+            long now = System.currentTimeMillis();
+            long last = prefs.getLong(key, 0L);
+            if (last > 0L && (now - last) < SMS_IN_FLIGHT_MS) return false;
+            prefs.edit().putLong(key, now).apply();
+            return true;
+        } catch (Exception ignored) {
+            return true;
+        }
+    }
+
+    static void clearSmsInFlight(Context context, String logId) {
+        try {
+            if (context == null || logId == null || logId.trim().isEmpty()) return;
+            context.getSharedPreferences(SMS_GUARD_PREF, Context.MODE_PRIVATE)
+                    .edit()
+                    .remove("sms_" + logId)
+                    .apply();
+        } catch (Exception ignored) {}
+    }
+
+    private static boolean hasSendSmsPermission(Context context) {
+        try {
+            if (context == null) return false;
+            if (android.os.Build.VERSION.SDK_INT < 23) return true;
+            return context.checkSelfPermission(Manifest.permission.SEND_SMS) == PackageManager.PERMISSION_GRANTED;
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    private static void scheduleSmsSendTimeout(Context context, String logId, String phone, int amount, String cardCode, boolean noStock, String failMsg) {
+        try {
+            if (context == null || logId == null || logId.trim().isEmpty()) return;
+            Intent timeout = new Intent(context, SmsStatusReceiver.class);
+            timeout.setAction(ACTION_SMS_TIMEOUT);
+            timeout.putExtra("logId", logId);
+            timeout.putExtra("phone", cleanPhone(phone));
+            timeout.putExtra("amount", amount);
+            timeout.putExtra("cardCode", cardCode == null ? "" : cardCode);
+            timeout.putExtra("noStock", noStock);
+            timeout.putExtra("failMsg", failMsg == null ? "لم يتم تأكيد إرسال SMS" : failMsg);
+            int flags = PendingIntent.FLAG_UPDATE_CURRENT;
+            if (android.os.Build.VERSION.SDK_INT >= 23) flags |= PendingIntent.FLAG_IMMUTABLE;
+            PendingIntent pi = PendingIntent.getBroadcast(context, ("timeout_" + logId).hashCode(), timeout, flags);
+            AlarmManager alarm = (AlarmManager) context.getSystemService(Context.ALARM_SERVICE);
+            if (alarm == null) return;
+            long at = System.currentTimeMillis() + SMS_IN_FLIGHT_MS;
+            if (android.os.Build.VERSION.SDK_INT >= 23) {
+                alarm.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, at, pi);
+            } else if (android.os.Build.VERSION.SDK_INT >= 19) {
+                alarm.setExact(AlarmManager.RTC_WAKEUP, at, pi);
+            } else {
+                alarm.set(AlarmManager.RTC_WAKEUP, at, pi);
+            }
+        } catch (Exception ignored) {}
+    }
+
 
     private static String addLog(Context context, String provider, String sender, String name, String phone, int amount, String status, String message, String cardCode) {
         String id = UUID.randomUUID().toString();
